@@ -2,7 +2,7 @@
 // Usage:
 //   dotnet run --project tools/PhotoGallery.Cli -- index [root...]
 //   dotnet run --project tools/PhotoGallery.Cli -- stats
-//   dotnet run --project tools/PhotoGallery.Cli -- thumbs [count]
+//   dotnet run --project tools/PhotoGallery.Cli -- thumbs [count] [skip]
 //   dotnet run --project tools/PhotoGallery.Cli -- motion <mediaId>
 using System.Diagnostics;
 using PhotoGallery.Core;
@@ -18,7 +18,7 @@ var settings = AppSettings.Load(paths);
 var database = new GalleryDatabase(paths.Database);
 database.Migrate();
 var media = new MediaRepository(database);
-var thumbs = new ThumbnailCache(paths.Thumbnails, shellThreads: 8);
+var thumbs = new ThumbnailCache(paths.Thumbnails);
 thumbs.Failed += (path, ex) => Console.WriteLine($"  thumbnail error {Path.GetFileName(path)}: {ex.GetType().Name} {ex.Message}");
 
 switch (args.FirstOrDefault())
@@ -44,7 +44,8 @@ switch (args.FirstOrDefault())
     case "thumbs":
     {
         var count = args.Length > 1 ? int.Parse(args[1]) : 500;
-        var items = media.Query(MediaFilter.Timeline).Take(count).ToList();
+        var skip = args.Length > 2 ? int.Parse(args[2]) : 0;
+        var items = media.Query(MediaFilter.Timeline).Skip(skip).Take(count).ToList();
         var clock = Stopwatch.StartNew();
         int ok = 0, failed = 0;
         var perType = new System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, double Ms)>();

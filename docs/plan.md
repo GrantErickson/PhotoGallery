@@ -1,5 +1,18 @@
 # Plan: Local OneDrive Photo Gallery (WinUI 3 Desktop App)
 
+## Status (2026-09-25): v1 core built
+Done, running against the real library (253k files):
+- Phases 0–3, plus Phase 5 (ratings, tags, albums): incremental indexing (full index 3m40s, no-change rescan ~1s, watcher + startup rescan), SQLite/FTS5, virtualized timeline with year/month jump list, folders, search, on this day, favorites, screenshot filter.
+- Viewer: zoom, video, Live Photo motion from all three sources (local pair, embedded, OneDrive `format=video`), details, rating, tags, albums, Explorer/OneDrive links.
+- Counts after indexing: 226k photos, 10.5k videos, 14.3k screenshots; motion: 2,503 local pairs, 54 embedded, ~32k cloud-only Live Photos.
+
+Not yet done (next milestones): Phase 6 editing, Phase 7 map, Phase 4 Graph tags/people sync, duplicate detection, inline month headers in the grid (the jump list covers navigation for now), drag-to-reorder in albums (the repository supports it; there's no UI yet).
+
+How the build differs from the architecture below:
+- **Thumbnails:** no Win2D or FFmpeg. The thumbnail cache (`ThumbnailCache`) first probes the Windows thumbnail cache (IShellItemImageFactory, cache-only), then falls back to a WIC decode for images (using the embedded HEVC preview for HEIC) or a Media Foundation frame for video. HEIC decoding is capped by the codec at ~10–12 files/s, so warming takes a while on first run; tiles on screen get priority.
+- **Metadata:** MetadataExtractor for images, plus our own QuickTime `moov` parser for video (so MOVs aren't read in full). `LibraryIndexer.MetadataVersion` forces a one-time re-read when extraction rules change.
+- **Graph:** a plain HttpClient plus MSAL (no Graph SDK) — only content and webUrl calls so far.
+
 ## Decisions from discussion
 - Platform: Native Windows desktop app, WinUI 3 (.NET 10 LTS — .NET 8 support ends Nov 2026), for best perf + virtualization at 250k+ items.
 - Language: C#.
@@ -81,7 +94,7 @@ OneDrive/Graph (`spikes/OneDriveLivePhoto`, app registration `5f0b2132-a2b1-45ef
 2. ~~**Spike**: Live Photo container format~~ — DONE, see findings above. OneDrive `format=video` spike also DONE — it works via Graph.
 3. **Spike**: verify Windows HEIC codec available (WIC) for decode via Win2D on target machine; confirm large-image performance.
 4. ~~Register Azure AD app~~ — DONE: client ID `5f0b2132-a2b1-45ef-9f3c-2ffc26fe24b5` (personal accounts, public client, redirect `http://localhost`, Files.Read).
-5. **Spike**: classify the 11k `.MOV` files — Live Photo videos (Apple `content.identifier`, short, next to a still) vs ordinary videos.
+5. ~~**Spike**: classify the 11k `.MOV` files~~ — DONE: ~2.1k are Live Photo videos (paired by content identifier); the rest are ordinary videos.
 
 ### Phase 1 — Core Indexing & Data Layer (*depends on Phase 0*)
 1. Define SQLite schema + migrations, enable WAL + FTS5.

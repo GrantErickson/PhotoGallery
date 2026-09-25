@@ -9,8 +9,8 @@ public sealed record ThumbnailPixels(int Width, int Height, byte[] Bgra);
 /// <summary>
 /// Probes the Windows thumbnail cache via IShellItemImageFactory (THUMBNAILONLY). Files Explorer has already
 /// shown come back in a few milliseconds (~700/s measured). For uncached files the shell answers
-/// WTS_E_EXTRACTIONPENDING while a surrogate process renders them at only 5–10/s, so we don't wait: a miss
-/// returns null and the caller decodes the file itself. COM calls run on dedicated STA threads.
+/// WTS_E_EXTRACTIONPENDING while a surrogate process renders them at only 5–10/s, so we ask for cached
+/// thumbnails only: a miss returns null and the caller decodes the file itself. COM calls run on dedicated STA threads.
 /// </summary>
 public sealed class ShellThumbnailer : IDisposable
 {
@@ -61,8 +61,10 @@ public sealed class ShellThumbnailer : IDisposable
         if (SHCreateItemFromParsingName(path, IntPtr.Zero, ref iid, out var factory) != 0 || factory is null) return null;
         try
         {
-            // THUMBNAILONLY: fail instead of returning the file type icon.
-            if (factory.GetImage(new NativeSize(size, size), SiigbfThumbnailOnly, out var hbitmap) != 0 || hbitmap == IntPtr.Zero) return null;
+            // THUMBNAILONLY: never the file-type icon. INCACHEONLY: never start an extraction — an uncached probe
+            // would otherwise make the shell decode the file in a surrogate process while we decode it too.
+            if (factory.GetImage(new NativeSize(size, size), SiigbfThumbnailOnly | SiigbfInCacheOnly, out var hbitmap) != 0 || hbitmap == IntPtr.Zero)
+                return null;
             try
             {
                 return ToPixels(hbitmap);
@@ -112,6 +114,7 @@ public sealed class ShellThumbnailer : IDisposable
     private sealed record WorkItem(string Path, int Size, CancellationToken Cancellation, TaskCompletionSource<ThumbnailPixels?> Completion);
 
     private const int SiigbfThumbnailOnly = 0x8;
+    private const int SiigbfInCacheOnly = 0x10;
 
     [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IShellItemImageFactory
