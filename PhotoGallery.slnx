@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PhotoGallery.App/PhotoGallery.App.csproj" />
+    <Project Path="src/PhotoGallery.Core/PhotoGallery.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PhotoGallery.Core.Tests/PhotoGallery.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/PhotoGallery.Cli/PhotoGallery.Cli.csproj" />
+  </Folder>
+</Solution>
