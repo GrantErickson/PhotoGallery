@@ -1,19 +1,36 @@
 using Microsoft.UI.Xaml;
+using PhotoGallery.App.Services;
 
 namespace PhotoGallery.App;
 
 public partial class App : Application
 {
-    private Window? _window;
+    private static AppServices? _services;
+    private static MainWindow? _window;
 
     public App()
     {
         InitializeComponent();
+        UnhandledException += (_, e) =>
+        {
+            PhotoGallery.Core.Log.Error("Unhandled exception", e.Exception);
+            e.Handled = true;
+            _window?.ShowStatus($"Something went wrong: {e.Exception.Message}");
+        };
     }
+
+    public static AppServices Services => _services ?? throw new InvalidOperationException("App not started");
+
+    public static MainWindow MainWindow => _window ?? throw new InvalidOperationException("App not started");
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        _services = new AppServices();
         _window = new MainWindow();
+        _window.Closed += (_, _) => _services.Thumbnails.Dispose();
         _window.Activate();
+
+        _services.Indexing.Start();
+        _ = _services.OneDrive.TrySignInSilentAsync();
     }
 }

@@ -40,6 +40,18 @@ public sealed class MediaRepository(GalleryDatabase database)
         return map;
     }
 
+    public string? GetSyncValue(string key)
+    {
+        using var db = database.Open();
+        return db.ExecuteScalar<string?>("SELECT Value FROM SyncState WHERE Key = @key", new { key });
+    }
+
+    public void SetSyncValue(string key, string? value)
+    {
+        using var db = database.Open();
+        db.Execute("INSERT INTO SyncState (Key, Value) VALUES (@key, @value) ON CONFLICT(Key) DO UPDATE SET Value = excluded.Value", new { key, value });
+    }
+
     public Dictionary<string, long> GetFolderIds()
     {
         using var db = database.Open();
@@ -87,7 +99,9 @@ public sealed class MediaRepository(GalleryDatabase database)
                 Orientation = excluded.Orientation, DurationMs = excluded.DurationMs, CameraMake = excluded.CameraMake,
                 CameraModel = excluded.CameraModel, Latitude = excluded.Latitude, Longitude = excluded.Longitude,
                 IsScreenshot = excluded.IsScreenshot, ContentId = excluded.ContentId,
-                MotionOffset = excluded.MotionOffset, MotionLength = excluded.MotionLength, Motion = excluded.Motion
+                MotionOffset = excluded.MotionOffset, MotionLength = excluded.MotionLength,
+                -- Pairing/cloud state is owned by RecomputeMotion; only embedded motion comes from the file itself.
+                Motion = CASE WHEN excluded.MotionLength > 0 THEN 2 WHEN Media.Motion = 2 THEN 0 ELSE Media.Motion END
             RETURNING Id
             """, item, tx);
 
@@ -108,6 +122,22 @@ public sealed class MediaRepository(GalleryDatabase database)
             db.Execute("DELETE FROM MediaFts WHERE rowid IN @chunk", new { chunk }, tx);
             db.Execute("DELETE FROM Media WHERE Id IN @chunk", new { chunk }, tx);
         }
+    }
+
+    /// <summary>Forgets everything under a library root that was removed from settings (files are untouched).</summary>
+    public void RemoveRoot(string root)
+    {
+        var prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
+        using (var db = database.Open())
+        using (var tx = db.BeginTransaction())
+        {
+            var ids = db.Query<long>("SELECT Id FROM Media WHERE substr(Path, 1, length(@prefix)) = @prefix COLLATE NOCASE", new { prefix }, tx);
+            Delete(db, tx, ids);
+            db.Execute("DELETE FROM Folders WHERE Path = @root COLLATE NOCASE OR substr(Path, 1, length(@prefix)) = @prefix COLLATE NOCASE",
+                new { root = Path.TrimEndingDirectorySeparator(root), prefix }, tx);
+            tx.Commit();
+        }
+        RecomputeMotion();
     }
 
     /// <summary>
@@ -254,6 +284,12 @@ public sealed class MediaRepository(GalleryDatabase database)
     {
         using var db = database.Open();
         return db.QuerySingleOrDefault<MediaItem>("SELECT * FROM Media WHERE Id = @id", new { id });
+    }
+
+    public string? GetPath(long id)
+    {
+        using var db = database.Open();
+        return db.ExecuteScalar<string?>("SELECT Path FROM Media WHERE Id = @id", new { id });
     }
 
     public string? GetFolderPath(long folderId)

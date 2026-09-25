@@ -27,6 +27,10 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
 {
     private const int BatchSize = 500;
 
+    /// <summary>Bump when metadata extraction rules change; every file is then re-read once.</summary>
+    public const int MetadataVersion = 2;
+    private const string MetadataVersionKey = "MetadataVersion";
+
     /// <summary>Raised (from the writer thread) with the ids of files whose content changed, so caches can drop them.</summary>
     public event Action<IReadOnlyList<long>>? ItemsChanged;
 
@@ -34,8 +38,9 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
     {
         var clock = Stopwatch.StartNew();
         var existing = media.GetIndexState();
+        var rereadAll = media.GetSyncValue(MetadataVersionKey) != MetadataVersion.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var seen = new HashSet<long>();
-        var work = new List<(string Path, string Root, long Size, long Modified, MediaKind Kind, bool IsNew)>();
+        var work = new List<(string Path, string Root, long Size, long Modified, MediaKind Kind, bool IsNew, bool FileChanged)>();
         var found = 0;
 
         var reportClock = Stopwatch.StartNew();
@@ -63,12 +68,13 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
                 if (existing.TryGetValue(file.Path, out var known))
                 {
                     seen.Add(known.Id);
-                    if (known.FileSize == file.Size && known.FileModified == file.Modified) continue;
-                    work.Add((file.Path, root, file.Size, file.Modified, file.Kind, false));
+                    var fileChanged = known.FileSize != file.Size || known.FileModified != file.Modified;
+                    if (!rereadAll && !fileChanged) continue;
+                    work.Add((file.Path, root, file.Size, file.Modified, file.Kind, false, fileChanged));
                 }
                 else
                 {
-                    work.Add((file.Path, root, file.Size, file.Modified, file.Kind, true));
+                    work.Add((file.Path, root, file.Size, file.Modified, file.Kind, true, true));
                 }
                 Report(IndexPhase.Scanning, 0, 0, file.Path);
             }
@@ -81,7 +87,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
             .Select(e => e.Value.Id)
             .ToList();
 
-        var channel = Channel.CreateBounded<(MediaItem Item, string Root, bool IsNew)>(new BoundedChannelOptions(BatchSize * 4)
+        var channel = Channel.CreateBounded<(MediaItem Item, string Root, bool IsNew, bool FileChanged)>(new BoundedChannelOptions(BatchSize * 4)
         {
             SingleReader = true,
             FullMode = BoundedChannelFullMode.Wait,
@@ -93,7 +99,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
         {
             using var db = database.Open();
             var folders = media.GetFolderIds();
-            var batch = new List<(MediaItem Item, string Root, bool IsNew)>(BatchSize);
+            var batch = new List<(MediaItem Item, string Root, bool IsNew, bool FileChanged)>(BatchSize);
             var reader = channel.Reader;
             while (reader.WaitToReadAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult())
             {
@@ -101,7 +107,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
                 if (batch.Count == 0) continue;
                 using (var tx = db.BeginTransaction())
                 {
-                    foreach (var (item, root, _) in batch)
+                    foreach (var (item, root, _, _) in batch)
                     {
                         var folder = Path.GetDirectoryName(item.Path)!;
                         item.FolderId = media.EnsureFolder(db, tx, folders, folder, root);
@@ -109,10 +115,11 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
                     }
                     tx.Commit();
                 }
-                var changed = batch.Where(b => !b.IsNew).Select(b => b.Item.Id).ToList();
+                // Only files whose bytes changed invalidate caches; a metadata-version re-read does not.
+                var changed = batch.Where(b => !b.IsNew && b.FileChanged).Select(b => b.Item.Id).ToList();
                 if (changed.Count > 0) ItemsChanged?.Invoke(changed);
                 added += batch.Count(b => b.IsNew);
-                updated += changed.Count;
+                updated += batch.Count(b => !b.IsNew);
                 batch.Clear();
             }
         }, CancellationToken.None);
@@ -123,7 +130,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
                 async (file, token) =>
                 {
                     var item = BuildItem(file.Path, file.Size, file.Modified, file.Kind);
-                    await channel.Writer.WriteAsync((item, file.Root, file.IsNew), token);
+                    await channel.Writer.WriteAsync((item, file.Root, file.IsNew, file.FileChanged), token);
                     var done = Interlocked.Increment(ref processed);
                     Report(IndexPhase.Reading, done, 0, file.Path);
                 });
@@ -145,6 +152,8 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
         }
         if (work.Count > 0 || missing.Count > 0)
             media.RecomputeMotion();
+        if (rereadAll && scannedRoots.Count > 0)
+            media.SetSyncValue(MetadataVersionKey, MetadataVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         var result = new IndexResult(found, added, updated, missing.Count, found - work.Count, clock.Elapsed);
         progress?.Report(new IndexProgress(IndexPhase.Done, found, work.Count, processed, missing.Count, null));

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PhotoGallery.App.Controls.ViewerControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:data="using:PhotoGallery.Core.Data"
+    IsTabStop="True"
+    PreviewKeyDown="OnPreviewKeyDown">
+
+    <Grid Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="InfoColumn" Width="320" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Top bar -->
+        <Grid Grid.ColumnSpan="2" Padding="8,6" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Click="OnClose" ToolTipService.ToolTip="Back (Esc)" Style="{StaticResource SubtleButtonStyle}">
+                <SymbolIcon Symbol="Back" />
+            </Button>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock x:Name="TitleText" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="SubtitleText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                <Button x:Name="LiveButton" Click="OnPlayMotion" Visibility="Collapsed" ToolTipService.ToolTip="Play Live Photo (Space)">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="◉ LIVE" FontWeight="SemiBold" />
+                        <ProgressRing x:Name="LiveBusy" Width="14" Height="14" IsActive="False" />
+                    </StackPanel>
+                </Button>
+                <Button Click="OnOpenLocation" ToolTipService.ToolTip="Show in File Explorer" Style="{StaticResource SubtleButtonStyle}">
+                    <FontIcon Glyph="&#xED25;" FontSize="16" />
+                </Button>
+                <Button Click="OnOpenOneDrive" ToolTipService.ToolTip="Open in OneDrive" Style="{StaticResource SubtleButtonStyle}">
+                    <FontIcon Glyph="&#xE753;" FontSize="16" />
+                </Button>
+                <ToggleButton x:Name="InfoToggle" IsChecked="True" Click="OnToggleInfo" ToolTipService.ToolTip="Info (I)">
+                    <FontIcon Glyph="&#xE946;" FontSize="16" />
+                </ToggleButton>
+            </StackPanel>
+        </Grid>
+
+        <!-- Media -->
+        <Grid x:Name="Stage" Grid.Row="1" SizeChanged="OnStageSizeChanged">
+            <ScrollViewer
+                x:Name="Zoom"
+                ZoomMode="Enabled"
+                MinZoomFactor="1"
+                MaxZoomFactor="10"
+                HorizontalScrollMode="Auto"
+                VerticalScrollMode="Auto"
+                HorizontalScrollBarVisibility="Auto"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                DoubleTapped="OnZoomDoubleTapped">
+                <Image x:Name="Photo" Stretch="Uniform" />
+            </ScrollViewer>
+            <MediaPlayerElement x:Name="Player" Visibility="Collapsed" AreTransportControlsEnabled="True" />
+            <ProgressRing x:Name="LoadingRing" IsActive="False" Width="40" Height="40" />
+            <TextBlock x:Name="ErrorText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="24" />
+
+            <Button x:Name="PrevButton" Click="OnPrevious" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12"
+                    Height="64" Opacity="0.7" ToolTipService.ToolTip="Previous (←)">
+                <FontIcon Glyph="&#xE76B;" />
+            </Button>
+            <Button x:Name="NextButton" Click="OnNext" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12"
+                    Height="64" Opacity="0.7" ToolTipService.ToolTip="Next (→)">
+                <FontIcon Glyph="&#xE76C;" />
+            </Button>
+        </Grid>
+
+        <!-- Info pane -->
+        <ScrollViewer x:Name="InfoPane" Grid.Row="1" Grid.Column="1" Padding="16,8,16,16"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,0,0,0">
+            <StackPanel Spacing="14">
+                <RatingControl x:Name="Rating" HorizontalAlignment="Left" IsClearEnabled="True" ValueChanged="OnRatingChanged" />
+
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Taken" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="TakenText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                </StackPanel>
+                <StackPanel Spacing="2">
+                    <TextBlock Text="File" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="FileText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock x:Name="FolderText" TextWrapping="Wrap" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <StackPanel x:Name="CameraPanel" Spacing="2">
+                    <TextBlock Text="Camera" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="CameraText" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel x:Name="LocationPanel" Spacing="2">
+                    <TextBlock Text="Location" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <HyperlinkButton x:Name="LocationLink" Padding="0" Click="OnOpenMap" />
+                </StackPanel>
+                <StackPanel x:Name="MotionPanel" Spacing="2">
+                    <TextBlock Text="Motion" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="MotionText" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Tags" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <ItemsControl x:Name="TagList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="data:TagRow">
+                                <Grid ColumnSpacing="4" Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <HyperlinkButton Content="{x:Bind Name}" Padding="0" Click="OnTagClick" Tag="{x:Bind Name}" />
+                                    <Button Grid.Column="1" Tag="{x:Bind Id}" Click="OnRemoveTag" Style="{StaticResource SubtleButtonStyle}"
+                                            Padding="4" ToolTipService.ToolTip="Remove tag">
+                                        <FontIcon Glyph="&#xE711;" FontSize="10" />
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <AutoSuggestBox x:Name="TagBox" PlaceholderText="Add a tag" TextChanged="OnTagBoxTextChanged" QuerySubmitted="OnTagSubmitted">
+                        <AutoSuggestBox.QueryIcon>
+                            <SymbolIcon Symbol="Add" />
+                        </AutoSuggestBox.QueryIcon>
+                    </AutoSuggestBox>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Albums" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="AlbumsText" TextWrapping="Wrap" />
+                    <DropDownButton Content="Add to album">
+                        <DropDownButton.Flyout>
+                            <MenuFlyout x:Name="AlbumMenu" Opening="OnAlbumMenuOpening" />
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

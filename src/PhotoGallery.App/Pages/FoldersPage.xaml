@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.FoldersPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:PhotoGallery.App.Controls"
+    xmlns:data="using:PhotoGallery.Core.Data">
+
+    <Grid Padding="20,12,8,0" ColumnSpacing="12" RowSpacing="8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Folders" Style="{StaticResource TitleTextBlockStyle}" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+            <TextBlock x:Name="FolderTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+            <CheckBox x:Name="SubfoldersBox" Content="Include subfolders" IsChecked="True" Click="OnSubfoldersClick" />
+        </StackPanel>
+
+        <TreeView x:Name="Tree" Grid.Row="1" SelectionMode="Single" Expanding="OnExpanding" ItemInvoked="OnItemInvoked">
+            <TreeView.ItemTemplate>
+                <DataTemplate x:DataType="TreeViewNode">
+                    <TreeViewItem>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE8B7;" FontSize="14" />
+                            <TextBlock Text="{x:Bind ((data:FolderRow)Content).Name}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </TreeViewItem>
+                </DataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+
+        <controls:GalleryView x:Name="Gallery" Grid.Row="1" Grid.Column="1" Visibility="Collapsed" />
+        <TextBlock x:Name="Hint" Grid.Row="1" Grid.Column="1" Text="Pick a folder" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    </Grid>
+</Page>

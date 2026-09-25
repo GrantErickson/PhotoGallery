@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.AlbumsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:pages="using:PhotoGallery.App.Pages">
+
+    <Grid Padding="20,12,20,0" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Text="Albums" Style="{StaticResource TitleTextBlockStyle}" />
+            <Button Click="OnNewAlbum" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <SymbolIcon Symbol="Add" />
+                    <TextBlock Text="New album" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+
+        <GridView x:Name="Albums" Grid.Row="1" IsItemClickEnabled="True" SelectionMode="None" ItemClick="OnAlbumClick">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="pages:AlbumTile">
+                    <StackPanel Width="200" Spacing="6" Margin="4" RightTapped="OnAlbumRightTapped">
+                        <Grid Height="200" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                            <Image Source="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                            <FontIcon Glyph="&#xE8B9;" FontSize="32" Visibility="{x:Bind NoCover, Mode=OneWay}"
+                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        </Grid>
+                        <TextBlock Text="{x:Bind Row.Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{x:Bind CountText}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+
+        <TextBlock x:Name="EmptyText" Grid.Row="1" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   Text="No albums yet.&#x0a;Select photos in any view and choose “Add to album”, or create one here." />
+    </Grid>
+</Page>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.GalleryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:PhotoGallery.App.Controls"
+    NavigationCacheMode="Disabled">
+
+    <Grid Padding="20,12,8,0" RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Spacing="12">
+            <TextBlock x:Name="TitleText" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock x:Name="SubtitleText" VerticalAlignment="Bottom" Margin="0,0,0,4" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+        <controls:GalleryView x:Name="Gallery" Grid.Row="1" />
+    </Grid>
+</Page>

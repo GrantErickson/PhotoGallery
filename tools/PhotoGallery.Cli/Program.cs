@@ -18,7 +18,8 @@ var settings = AppSettings.Load(paths);
 var database = new GalleryDatabase(paths.Database);
 database.Migrate();
 var media = new MediaRepository(database);
-var thumbs = new ThumbnailCache(paths.Thumbnails, Environment.ProcessorCount);
+var thumbs = new ThumbnailCache(paths.Thumbnails, shellThreads: 8);
+thumbs.Failed += (path, ex) => Console.WriteLine($"  thumbnail error {Path.GetFileName(path)}: {ex.GetType().Name} {ex.Message}");
 
 switch (args.FirstOrDefault())
 {
@@ -46,16 +47,23 @@ switch (args.FirstOrDefault())
         var items = media.Query(MediaFilter.Timeline).Take(count).ToList();
         var clock = Stopwatch.StartNew();
         int ok = 0, failed = 0;
+        var perType = new System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, double Ms)>();
         await Parallel.ForEachAsync(items, async (s, ct) =>
         {
             var item = media.Get(s.Id)!;
-            if (await thumbs.GetOrCreateAsync(item.Id, item.Path, ct) is null)
+            var one = Stopwatch.StartNew();
+            var made = await thumbs.GetOrCreateAsync(item.Id, item.Path, ct);
+            perType.AddOrUpdate(Path.GetExtension(item.Path).ToLowerInvariant(), (1, one.Elapsed.TotalMilliseconds),
+                (_, v) => (v.Count + 1, v.Ms + one.Elapsed.TotalMilliseconds));
+            if (made is null)
             {
                 Interlocked.Increment(ref failed);
                 Console.WriteLine($"  no thumbnail: {item.Path}");
             }
             else Interlocked.Increment(ref ok);
         });
+        foreach (var (ext, (n, ms)) in perType.OrderByDescending(p => p.Value.Count))
+            Console.WriteLine($"  {ext,-6} {n,5} files, {ms / n,6:F0} ms each (in parallel)");
         Console.WriteLine($"{ok} thumbnails, {failed} failed in {clock.Elapsed.TotalSeconds:F1}s ({items.Count / clock.Elapsed.TotalSeconds:F0}/s)");
         break;
     }

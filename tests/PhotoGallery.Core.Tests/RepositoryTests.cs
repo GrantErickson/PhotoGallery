@@ -119,6 +119,22 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
+    public void Reindex_keeps_pairing_state_until_recompute()
+    {
+        var still = Add("IMG_1.JPG", contentId: "P");
+        Add("IMG_1.MOV", MediaKind.Video, contentId: "P", durationMs: 2000);
+        var cloud = Add("x_iOS.heic", contentId: "Q");
+        _media.RecomputeMotion();
+        _media.SetMotion(cloud.Id, MotionSource.CloudMissing);
+
+        Add("IMG_1.JPG", contentId: "P");
+        Add("x_iOS.heic", contentId: "Q");
+
+        Assert.Equal(MotionSource.LocalPair, _media.Get(still.Id)!.Motion);
+        Assert.Equal(MotionSource.CloudMissing, _media.Get(cloud.Id)!.Motion);
+    }
+
+    [Fact]
     public void Timeline_is_newest_first_and_hides_screenshots_unless_asked()
     {
         var old = Add("old.jpg", taken: new DateTime(2010, 1, 1));

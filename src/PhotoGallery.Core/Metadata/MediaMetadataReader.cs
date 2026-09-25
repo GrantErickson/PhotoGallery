@@ -45,7 +45,7 @@ public static class MediaMetadataReader
             // Corrupt or unsupported: fall through to the name/mtime date below.
         }
 
-        if (result.Taken is null && FileNameDates.Parse(Path.GetFileName(path)) is { } fromName)
+        if (result.Taken is null && FileNameDates.Parse(Path.GetFileName(path)) is { } fromName && IsPlausible(fromName))
             (result.Taken, result.DateSource) = (fromName, DateSource.FileName);
         return result;
     }
@@ -62,9 +62,9 @@ public static class MediaMetadataReader
         result.Model = qt.Model;
         result.Latitude = qt.Latitude;
         result.Longitude = qt.Longitude;
-        if (qt.AppleCreationDate is { } apple)
+        if (qt.AppleCreationDate is { } apple && IsPlausible(apple.DateTime))
             (result.Taken, result.DateSource) = (apple.DateTime, DateSource.Container); // wall clock where it was shot
-        else if (qt.CreatedUtc is { } utc)
+        else if (qt.CreatedUtc is { } utc && IsPlausible(utc.ToLocalTime()))
             (result.Taken, result.DateSource) = (utc.ToLocalTime(), DateSource.Container);
     }
 
@@ -75,9 +75,9 @@ public static class MediaMetadataReader
         var ifd0 = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
         var sub = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
 
-        if (sub is not null && sub.TryGetDateTime(ExifDirectoryBase.TagDateTimeOriginal, out var taken) && taken.Year >= 1900)
+        if (sub is not null && sub.TryGetDateTime(ExifDirectoryBase.TagDateTimeOriginal, out var taken) && IsPlausible(taken))
             (result.Taken, result.DateSource) = (taken, DateSource.Exif);
-        else if (ifd0 is not null && ifd0.TryGetDateTime(ExifDirectoryBase.TagDateTime, out taken) && taken.Year >= 1900)
+        else if (ifd0 is not null && ifd0.TryGetDateTime(ExifDirectoryBase.TagDateTime, out taken) && IsPlausible(taken))
             (result.Taken, result.DateSource) = (taken, DateSource.Exif);
 
         if (sub?.GetDescription(ExifDirectoryBase.TagUserComment) is { } comment && comment.Contains("Screenshot", StringComparison.OrdinalIgnoreCase))
@@ -127,6 +127,9 @@ public static class MediaMetadataReader
         }
         return best;
     }
+
+    /// <summary>Rejects corrupt dates (the library has JPEGs whose EXIF says 3913) so the next source is used.</summary>
+    internal static bool IsPlausible(DateTime taken) => taken.Year >= 1900 && taken <= DateTime.Now.AddDays(2);
 
     private static string? Clean(string? s)
     {
