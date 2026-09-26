@@ -67,6 +67,9 @@ public sealed partial class MainWindow : Window
             case "map":
                 ContentFrame.Navigate(typeof(MapPage));
                 break;
+            case "duplicates":
+                ContentFrame.Navigate(typeof(DuplicatesPage));
+                break;
             case "albums":
                 ContentFrame.Navigate(typeof(AlbumsPage));
                 break;

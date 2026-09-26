@@ -43,7 +43,7 @@ public sealed record DuplicateScanProgress(string Stage, int Done, int Total);
 /// </summary>
 public sealed class DuplicateFinder(GalleryDatabase database, Func<long, string, CancellationToken, Task<string?>> thumbnailFor)
 {
-    public const int SimilarThreshold = 6;
+    public const int SimilarThreshold = 5;
 
     public async Task<IReadOnlyList<DuplicateGroup>> FindAsync(IProgress<DuplicateScanProgress>? progress = null, CancellationToken ct = default)
     {
@@ -62,6 +62,9 @@ public sealed class DuplicateFinder(GalleryDatabase database, Func<long, string,
         public string? QuickHash { get; init; }
         public long? PerceptualHash { get; init; }
         public long DateTaken { get; init; }
+        public int Width { get; init; }
+        public int Height { get; init; }
+        public string FileName { get; init; } = "";
     }
 
     private async Task<List<DuplicateGroup>> FindExactAsync(IProgress<DuplicateScanProgress>? progress, CancellationToken ct)
@@ -95,7 +98,7 @@ public sealed class DuplicateFinder(GalleryDatabase database, Func<long, string,
         using (var db = database.Open())
             candidates = db.Query<Candidate>(
                 """
-                SELECT Id, Path, FileSize, QuickHash, PerceptualHash, DateTaken FROM Media
+                SELECT Id, Path, FileSize, QuickHash, PerceptualHash, DateTaken, Width, Height, FileName FROM Media
                 WHERE IsHidden = 0 AND Kind IN (1, 3) AND DateSource IN (2, 3)
                   AND DateTaken IN (SELECT DateTaken FROM Media WHERE IsHidden = 0 AND Kind IN (1, 3) AND DateSource IN (2, 3)
                                     GROUP BY DateTaken HAVING count(*) > 1)
@@ -114,12 +117,13 @@ public sealed class DuplicateFinder(GalleryDatabase database, Func<long, string,
         var clusters = new List<List<long>>();
         foreach (var moment in candidates.GroupBy(c => c.DateTaken))
         {
+            var byId = moment.ToDictionary(c => c.Id);
             var items = moment
                 .Select(c => (c.Id, Hash: c.PerceptualHash ?? hashes.GetValueOrDefault(c.Id) as long?))
                 .Where(x => x.Hash is not null)
                 .Select(x => (x.Id, Hash: x.Hash!.Value))
                 .ToList();
-            foreach (var cluster in Cluster(items, SimilarThreshold))
+            foreach (var cluster in Cluster(items, SimilarThreshold, (a, b) => IsResave(byId[a], byId[b])))
             {
                 var distinctCopies = cluster.Select(id => exactGroupOf.TryGetValue(id, out var g) ? -1 - g : id).Distinct().Count();
                 if (distinctCopies > 1) clusters.Add(cluster);
@@ -128,14 +132,23 @@ public sealed class DuplicateFinder(GalleryDatabase database, Func<long, string,
         return BuildGroups(DuplicateKind.Similar, clusters);
     }
 
-    /// <summary>Single-linkage clusters (union-find) of items whose hashes are within the threshold.</summary>
-    internal static List<List<long>> Cluster(IReadOnlyList<(long Id, long Hash)> items, int threshold)
+    /// <summary>
+    /// Two same-moment photos count as copies only if one looks re-saved: different pixel size, a different
+    /// format, or a "(1)"-style copy name. Same-size originals a fraction of a second apart are burst shots.
+    /// </summary>
+    private static bool IsResave(Candidate a, Candidate b) =>
+        (long)a.Width * a.Height != (long)b.Width * b.Height ||
+        !string.Equals(System.IO.Path.GetExtension(a.FileName), System.IO.Path.GetExtension(b.FileName), StringComparison.OrdinalIgnoreCase) ||
+        IsCopyName(a.FileName) || IsCopyName(b.FileName);
+
+    /// <summary>Single-linkage clusters (union-find) of items whose hashes are within the threshold (and pass <paramref name="linkable"/>).</summary>
+    internal static List<List<long>> Cluster(IReadOnlyList<(long Id, long Hash)> items, int threshold, Func<long, long, bool>? linkable = null)
     {
         var parent = Enumerable.Range(0, items.Count).ToArray();
         int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
         for (var i = 0; i < items.Count; i++)
             for (var j = i + 1; j < items.Count; j++)
-                if (ContentHashes.Distance(items[i].Hash, items[j].Hash) <= threshold)
+                if (ContentHashes.Distance(items[i].Hash, items[j].Hash) <= threshold && (linkable?.Invoke(items[i].Id, items[j].Id) ?? true))
                     parent[Find(i)] = Find(j);
         return Enumerable.Range(0, items.Count)
             .GroupBy(Find)

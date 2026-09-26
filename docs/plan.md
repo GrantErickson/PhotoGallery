@@ -8,7 +8,9 @@ Done, running against the real library (253k files):
 
 Round 2 (2026-09-25): Phase 6 editing (Win2D, non-destructive, export) and Phase 7 map (WebView2 + Leaflet + markercluster, photos-in-view gallery) are done.
 
-Not yet done (next milestones): Phase 4 Graph tags/people sync, duplicate detection, inline month headers in the grid (the jump list covers navigation for now), drag-to-reorder in albums (the repository supports it; there's no UI yet).
+Duplicate detection is done too: exact copies (size + head/tail hash) and similar re-saves (same capture second, dHash ≤ 5, different size/format/copy name); on the real library 5,774 exact groups (31.4 GB) and ~4.4k similar groups. Extra copies go to the Recycle Bin only after confirmation.
+
+Not yet done (next milestones): Phase 4 Graph tags/people sync, inline month headers in the grid (the jump list covers navigation for now), drag-to-reorder in albums (the repository supports it; there's no UI yet).
 
 How the build differs from the architecture below:
 - **Thumbnails:** no Win2D or FFmpeg. The thumbnail cache (`ThumbnailCache`) first probes the Windows thumbnail cache (IShellItemImageFactory, cache-only), then falls back to a WIC decode for images (using the embedded HEVC preview for HEIC) or a Media Foundation frame for video. HEIC decoding is capped by the codec at ~10–12 files/s, so warming takes a while on first run; tiles on screen get priority.

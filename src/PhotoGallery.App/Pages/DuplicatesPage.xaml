@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.DuplicatesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:pages="using:PhotoGallery.App.Pages">
+
+    <Grid Padding="20,12,20,0" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Text="Duplicates" Style="{StaticResource TitleTextBlockStyle}" />
+            <Button x:Name="ScanButton" Click="OnScan" Style="{StaticResource AccentButtonStyle}" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <SymbolIcon Symbol="Find" />
+                    <TextBlock x:Name="ScanText" Text="Find duplicates" />
+                </StackPanel>
+            </Button>
+            <ComboBox x:Name="KindBox" SelectedIndex="0" VerticalAlignment="Center" SelectionChanged="OnKindChanged" MinWidth="170">
+                <x:String>All groups</x:String>
+                <x:String>Exact copies</x:String>
+                <x:String>Similar photos</x:String>
+            </ComboBox>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Spacing="4">
+            <TextBlock x:Name="SummaryText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="Finds byte-identical copies (same size and content) and similar photos (taken at the same moment and visually near-identical, e.g. re-exports or resized copies). Files are only ever moved to the Recycle Bin, after you confirm." />
+            <ProgressBar x:Name="Progress" Visibility="Collapsed" />
+        </StackPanel>
+
+        <ListView x:Name="Groups" Grid.Row="2" SelectionMode="None" Padding="0,0,0,24">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0,0,0,12" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="pages:GroupItem">
+                    <Border Padding="12" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{x:Bind Header, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="Recycle all but the suggested copy" Click="OnRecycleOthers" Tag="{x:Bind}" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{x:Bind Members}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="12" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:MemberItem">
+                                        <StackPanel Width="200" Spacing="4" Loaded="OnMemberLoaded" Opacity="{x:Bind Opacity, Mode=OneWay}">
+                                            <Grid Height="150" CornerRadius="4" Background="{ThemeResource ControlAltFillColorSecondaryBrush}">
+                                                <Image Source="{x:Bind Thumbnail, Mode=OneWay}" Stretch="UniformToFill" />
+                                                <Border Visibility="{x:Bind KeepVisibility}" Margin="6" Padding="6,2" CornerRadius="3" Background="#CC107C10"
+                                                        HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                    <TextBlock Text="Suggested keep" FontSize="11" Foreground="White" />
+                                                </Border>
+                                                <Border Visibility="{x:Bind RecycledVisibility, Mode=OneWay}" Background="#AA000000">
+                                                    <TextBlock Text="In Recycle Bin" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                            </Grid>
+                                            <TextBlock Text="{x:Bind Member.FileName}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis"
+                                                       ToolTipService.ToolTip="{x:Bind Member.Path}" />
+                                            <TextBlock Text="{x:Bind Folder}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" ToolTipService.ToolTip="{x:Bind Member.Path}" />
+                                            <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                                <Button Click="OnOpenMember" Tag="{x:Bind}" Style="{StaticResource SubtleButtonStyle}" ToolTipService.ToolTip="Open">
+                                                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                                                </Button>
+                                                <Button Click="OnShowMember" Tag="{x:Bind}" Style="{StaticResource SubtleButtonStyle}" ToolTipService.ToolTip="Show in File Explorer">
+                                                    <FontIcon Glyph="&#xED25;" FontSize="14" />
+                                                </Button>
+                                                <Button Click="OnCopyMember" Tag="{x:Bind}" Style="{StaticResource SubtleButtonStyle}" ToolTipService.ToolTip="Copy path">
+                                                    <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                                                </Button>
+                                                <Button Click="OnRecycleMember" Tag="{x:Bind}" Style="{StaticResource SubtleButtonStyle}" ToolTipService.ToolTip="Move to Recycle Bin"
+                                                        IsEnabled="{x:Bind CanRecycle, Mode=OneWay}">
+                                                    <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                                </Button>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</Page>
