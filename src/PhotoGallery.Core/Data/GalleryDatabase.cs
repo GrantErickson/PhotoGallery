@@ -148,6 +148,14 @@ public sealed class GalleryDatabase
             Value TEXT
         );
         """,
+        // v2/v3: OneDrive's 406 refusals were misread as "no motion"; v3 repeats the reset for rows marked
+        // while diagnosing. Refusals are no longer recorded as CloudMissing.
+        """
+        UPDATE Media SET Motion = 3 WHERE Motion = 4;
+        """,
+        """
+        UPDATE Media SET Motion = 3 WHERE Motion = 4;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

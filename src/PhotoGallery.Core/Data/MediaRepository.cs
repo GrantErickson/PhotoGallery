@@ -310,6 +310,12 @@ public sealed class MediaRepository(GalleryDatabase database)
         db.Execute("UPDATE Media SET Rating = @rating WHERE Id IN @ids", new { rating = Math.Clamp(rating, 0, 5), ids });
     }
 
+    public void SetOneDriveItemId(long id, string itemId)
+    {
+        using var db = database.Open();
+        db.Execute("UPDATE Media SET OneDriveItemId = @itemId WHERE Id = @id", new { id, itemId });
+    }
+
     public void SetMotion(long id, MotionSource motion)
     {
         using var db = database.Open();

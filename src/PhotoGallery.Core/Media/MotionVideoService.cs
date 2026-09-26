@@ -8,6 +8,7 @@ public enum MotionResult
     Ready,
     None,
     NeedsSignIn,
+    /// <summary>The video exists but can't be fetched right now (offline, or OneDrive refused).</summary>
     Unavailable,
 }
 
@@ -29,8 +30,9 @@ public sealed class MotionVideoService(MediaRepository media, OneDriveClient one
             case MotionSource.Cloud:
                 var cached = Path.Combine(cacheDirectory, $"{item.Id}.mov");
                 if (File.Exists(cached)) return (MotionResult.Ready, cached);
-                if (settings.ToOneDrivePath(item.Path) is not { } remote) return (MotionResult.Unavailable, null);
-                switch (await oneDrive.DownloadLiveVideoAsync(remote, cached, ct))
+                if (!oneDrive.IsSignedIn && !await oneDrive.TrySignInSilentAsync(ct)) return (MotionResult.NeedsSignIn, null);
+                if (await GetItemIdAsync(item, ct) is not { } itemId) return (MotionResult.Unavailable, null);
+                switch (await oneDrive.DownloadLiveVideoAsync(itemId, cached, ct))
                 {
                     case LiveVideoStatus.Downloaded:
                         return (MotionResult.Ready, cached);
@@ -47,6 +49,16 @@ public sealed class MotionVideoService(MediaRepository media, OneDriveClient one
             default:
                 return (MotionResult.None, null);
         }
+    }
+
+    /// <summary>The OneDrive item id for a local file, looked up once and stored in the database.</summary>
+    public async Task<string?> GetItemIdAsync(MediaItem item, CancellationToken ct = default)
+    {
+        if (item.OneDriveItemId is { } known) return known;
+        if (settings.ToOneDrivePath(item.Path) is not { } remote || await oneDrive.GetItemAsync(remote, ct) is not { } found) return null;
+        media.SetOneDriveItemId(item.Id, found.Id);
+        item.OneDriveItemId = found.Id;
+        return found.Id;
     }
 
     private static async Task ExtractAsync(MediaItem item, string destination, CancellationToken ct)

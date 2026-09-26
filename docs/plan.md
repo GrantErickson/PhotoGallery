@@ -3,7 +3,7 @@
 ## Status (2026-09-25): v1 core built
 Done, running against the real library (253k files):
 - Phases 0–3, plus Phase 5 (ratings, tags, albums): incremental indexing (full index 3m40s, no-change rescan ~1s, watcher + startup rescan), SQLite/FTS5, virtualized timeline with year/month jump list, folders, search, on this day, favorites, screenshot filter.
-- Viewer: zoom, video, Live Photo motion from all three sources (local pair, embedded, OneDrive `format=video`), details, rating, tags, albums, Explorer/OneDrive links.
+- Viewer: zoom, video, Live Photo motion from local pairs and embedded MP4s. Cloud-only iPhone Live Photos: OneDrive stopped serving `format=video` (406), so the LIVE button falls back to opening the photo on OneDrive.com. Details, rating, tags, albums, copy path, Explorer/OneDrive links.
 - Counts after indexing: 226k photos, 10.5k videos, 14.3k screenshots; motion: 2,503 local pairs, 54 embedded, ~32k cloud-only Live Photos.
 
 Not yet done (next milestones): Phase 6 editing, Phase 7 map, Phase 4 Graph tags/people sync, duplicate detection, inline month headers in the grid (the jump list covers navigation for now), drag-to-reorder in albums (the repository supports it; there's no UI yet).
@@ -52,7 +52,8 @@ Local Live Photo pairs (older iPhone exports, mostly `IMG_xxxx.JPG` + `IMG_xxxx.
 - A still with a ContentIdentifier and no local MOV → `IsLivePhoto`, motion in the cloud only (show the OneDrive link). Need to confirm on a few known non-Live iPhone shots that ordinary stills don't carry this tag.
 
 OneDrive/Graph (`spikes/OneDriveLivePhoto`, app registration `5f0b2132-a2b1-45ef-9f3c-2ffc26fe24b5`, personal accounts only, scope `Files.Read`):
-- `GET graph.microsoft.com/{v1.0|beta}/me/drive/items/{id}/content?format=video` → **200, QuickTime MOV** (3.9 MB, 2.37s, `ftypqt`, Apple `content.identifier` = the still's MakerNote ContentIdentifier). This isn't in Graph's documentation, but it works with our own app. It depends on behaviour Microsoft could change without notice, so treat it as best-effort.
+- **UPDATE 2026-09-25 evening: this stopped working.** The same request (same spike binary, same item) now answers `406 UnknownError` for every item, as do `format=mp4/mov`, Accept headers, and the pre-authenticated downloadUrl variants; the item metadata has no Live Photo facet. The path form (`/root:/path:/content?format=video`) always returned 406. The app now treats 406/400 as "service refused" (never as "no motion"), keeps retrying on demand, and opens the photo on OneDrive.com (whose viewer plays the motion) when the download is refused.
+- Original result: `GET graph.microsoft.com/{v1.0|beta}/me/drive/items/{id}/content?format=video` → **200, QuickTime MOV** (3.9 MB, 2.37s, `ftypqt`, Apple `content.identifier` = the still's MakerNote ContentIdentifier). This isn't in Graph's documentation, but it works with our own app. It depends on behaviour Microsoft could change without notice, so treat it as best-effort.
 - `POST` to the same URL → 406. `api.onedrive.com …&ump=1` → 401 with a Graph token (not needed).
 - Plain `/content` returns the 1,766,478-byte HEIC, byte-identical to the local file. The Graph metadata (`file`, `photo`, `image`) has **no Live Photo indicator**, so Live Photo detection has to be local: the still's Apple MakerNote ContentIdentifier.
 - Graph `photo` facet provides takenDateTime, camera, exposure and quickXorHash/sha1/sha256 (sha256 could help duplicate detection later).

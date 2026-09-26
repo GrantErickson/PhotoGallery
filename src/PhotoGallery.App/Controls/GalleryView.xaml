@@ -80,6 +80,7 @@
                         </MenuFlyout>
                     </AppBarButton.Flyout>
                 </AppBarButton>
+                <AppBarButton Icon="Copy" Label="Copy paths" Click="OnCopySelectedPaths" />
                 <AppBarButton Icon="Clear" Label="Clear selection" Click="OnClearSelection" />
             </CommandBar>
 
@@ -116,7 +117,7 @@
             </GridView.ItemsPanel>
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="data:MediaSummary">
-                    <Grid Background="{ThemeResource ControlAltFillColorSecondaryBrush}" CornerRadius="4" DoubleTapped="OnTileDoubleTapped">
+                    <Grid Background="{ThemeResource ControlAltFillColorSecondaryBrush}" CornerRadius="4" DoubleTapped="OnTileDoubleTapped" RightTapped="OnTileRightTapped">
                         <Image Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         <Border Visibility="{x:Bind app:Format.HasMotion(Motion)}" Margin="6" Padding="5,1" CornerRadius="3"
                                 HorizontalAlignment="Left" VerticalAlignment="Top" Background="#99000000">

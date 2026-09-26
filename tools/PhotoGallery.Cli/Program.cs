@@ -14,6 +14,7 @@ using PhotoGallery.Core.Media;
 
 var paths = AppPaths.Default;
 paths.EnsureCreated();
+Log.Initialize(paths.Root);
 var settings = AppSettings.Load(paths);
 var database = new GalleryDatabase(paths.Database);
 database.Migrate();
@@ -76,6 +77,18 @@ switch (args.FirstOrDefault())
         var service = new MotionVideoService(media, oneDrive, settings, paths.MotionCache);
         var (result, file) = await service.GetVideoAsync(item);
         Console.WriteLine($"{item.Path} [{item.Motion}] -> {result} {file}");
+        break;
+    }
+    case "probe":
+    {
+        var oneDrive = new OneDriveClient(settings.ClientId, paths.TokenCache);
+        if (!await oneDrive.TrySignInSilentAsync()) { Console.WriteLine("not signed in"); break; }
+        foreach (var arg in args[1..])
+        {
+            var parts = arg.Split('|', 2);
+            Console.WriteLine($"=== {parts[0]} {(parts.Length > 1 ? "[Accept " + parts[1] + "]" : "")}");
+            Console.WriteLine(await oneDrive.ProbeAsync(parts[0], parts.Length > 1 ? parts[1] : null));
+        }
         break;
     }
     default:

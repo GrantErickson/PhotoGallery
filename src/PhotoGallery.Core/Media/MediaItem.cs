@@ -29,6 +29,7 @@ public sealed class MediaItem
     public long? PairedId { get; set; }
     public bool IsHidden { get; set; }
     public int Rating { get; set; }
+    public string? OneDriveItemId { get; set; }
 
     public DateTime TakenLocal => DateTime.UnixEpoch.AddSeconds(DateTaken);
 }

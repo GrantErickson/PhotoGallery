@@ -38,6 +38,9 @@
                         <ProgressRing x:Name="LiveBusy" Width="14" Height="14" IsActive="False" />
                     </StackPanel>
                 </Button>
+                <Button Click="OnCopyPath" ToolTipService.ToolTip="Copy full path (Ctrl+Shift+C)" Style="{StaticResource SubtleButtonStyle}">
+                    <FontIcon Glyph="&#xE8C8;" FontSize="16" />
+                </Button>
                 <Button Click="OnOpenLocation" ToolTipService.ToolTip="Show in File Explorer" Style="{StaticResource SubtleButtonStyle}">
                     <FontIcon Glyph="&#xED25;" FontSize="16" />
                 </Button>
@@ -64,7 +67,10 @@
                 HorizontalContentAlignment="Center"
                 VerticalContentAlignment="Center"
                 DoubleTapped="OnZoomDoubleTapped">
-                <Image x:Name="Photo" Stretch="Uniform" />
+                <!-- The frame is sized to the stage; the image fits and centres inside it, and zoom scales both. -->
+                <Grid x:Name="PhotoFrame">
+                    <Image x:Name="Photo" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Grid>
             </ScrollViewer>
             <MediaPlayerElement x:Name="Player" Visibility="Collapsed" AreTransportControlsEnabled="True" />
             <ProgressRing x:Name="LoadingRing" IsActive="False" Width="40" Height="40" />

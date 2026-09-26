@@ -253,6 +253,35 @@ public sealed partial class GalleryView : UserControl
         }
     }
 
+    private void OnTileRightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement tile || tile.Tag is not TileState state) return;
+        // Acting on a multi-selection that includes this tile; otherwise just this item.
+        var ids = Grid.SelectedItems.Contains(state.Item) && Grid.SelectedItems.Count > 1 ? SelectedIds() : [state.Item.Id];
+        var menu = new MenuFlyout();
+        if (ids.Count == 1)
+            menu.Items.Add(MenuItem("Open", Symbol.OpenFile, () => Open(state.Item)));
+        menu.Items.Add(MenuItem(ids.Count == 1 ? "Copy path" : $"Copy {ids.Count:N0} paths", Symbol.Copy,
+            () => Clipboard.CopyPaths(ids.Select(S.Media.GetPath).OfType<string>().ToList())));
+        if (ids.Count == 1)
+            menu.Items.Add(MenuItem("Show in File Explorer", Symbol.Folder, () =>
+            {
+                if (S.Media.GetPath(state.Item.Id) is { } path) System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+            }));
+        menu.ShowAt(tile, e.GetPosition(tile));
+        e.Handled = true;
+    }
+
+    private static MenuFlyoutItem MenuItem(string text, Symbol icon, Action action)
+    {
+        var item = new MenuFlyoutItem { Text = text, Icon = new SymbolIcon(icon) };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    private void OnCopySelectedPaths(object sender, RoutedEventArgs e) =>
+        Clipboard.CopyPaths(SelectedIds().Select(S.Media.GetPath).OfType<string>().ToList());
+
     private void OnGridPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == VirtualKey.Enter && Grid.SelectedItem is MediaSummary item)

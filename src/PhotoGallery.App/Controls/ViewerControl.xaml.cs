@@ -144,7 +144,7 @@ public sealed partial class ViewerControl : UserControl
         {
             MotionSource.LocalPair => "Live Photo · video stored next to the photo",
             MotionSource.Embedded => "Motion photo · video embedded in the file",
-            MotionSource.Cloud => S.OneDrive.IsSignedIn ? "Live Photo · video streamed from OneDrive" : "Live Photo · sign in to OneDrive (Settings) to play",
+            MotionSource.Cloud => S.OneDrive.IsSignedIn ? "Live Photo · video stored in OneDrive" : "Live Photo · video stored in OneDrive (sign in under Settings)",
             _ => "",
         };
 
@@ -200,8 +200,13 @@ public sealed partial class ViewerControl : UserControl
                     App.MainWindow.ShowStatus("OneDrive has no motion for this photo.");
                     ShowDetails(item);
                     break;
+                case MotionResult.Unavailable when item.Motion == MotionSource.Cloud:
+                    // OneDrive stopped serving Live Photo video to third-party apps; its web viewer still plays it.
+                    App.MainWindow.ShowStatus("OneDrive won't send the Live Photo video to this app — opening it on OneDrive.com instead.");
+                    await OpenInOneDriveAsync(item);
+                    break;
                 default:
-                    App.MainWindow.ShowStatus("Couldn't download the Live Photo video. Check your connection and try again.");
+                    App.MainWindow.ShowStatus("Couldn't load the motion for this photo.");
                     break;
             }
         }
@@ -259,6 +264,9 @@ public sealed partial class ViewerControl : UserControl
                 InfoToggle.IsChecked = !InfoToggle.IsChecked;
                 OnToggleInfo(InfoToggle, new RoutedEventArgs());
                 break;
+            case VirtualKey.C when IsDown(VirtualKey.Control) && IsDown(VirtualKey.Shift):
+                if (_current is not null) Clipboard.CopyPaths([_current.Path]);
+                break;
             case >= VirtualKey.Number0 and <= VirtualKey.Number5:
                 SetRating(e.Key - VirtualKey.Number0);
                 break;
@@ -268,14 +276,19 @@ public sealed partial class ViewerControl : UserControl
         e.Handled = true;
     }
 
+    private static bool IsDown(VirtualKey key) =>
+        Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
     private void OnStageSizeChanged(object sender, SizeChangedEventArgs e) => FitPhoto();
 
     /// <summary>At zoom 1 the image fills the stage (letterboxed by Stretch=Uniform); the ScrollViewer zooms from there.</summary>
     private void FitPhoto()
     {
         if (Stage.ActualWidth <= 0) return;
-        Photo.Width = Stage.ActualWidth;
-        Photo.Height = Stage.ActualHeight;
+        PhotoFrame.Width = Stage.ActualWidth;
+        PhotoFrame.Height = Stage.ActualHeight;
+        Photo.MaxWidth = Stage.ActualWidth;
+        Photo.MaxHeight = Stage.ActualHeight;
     }
 
     private void OnZoomDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
@@ -286,7 +299,7 @@ public sealed partial class ViewerControl : UserControl
         }
         else
         {
-            var p = e.GetPosition(Photo);
+            var p = e.GetPosition(PhotoFrame);
             const float factor = 3f;
             Zoom.ChangeView(p.X * factor - Zoom.ViewportWidth / 2, p.Y * factor - Zoom.ViewportHeight / 2, factor);
         }
@@ -387,19 +400,28 @@ public sealed partial class ViewerControl : UserControl
 
     private async void OnOpenOneDrive(object sender, RoutedEventArgs e)
     {
-        if (_current is null) return;
-        if (S.Settings.ToOneDrivePath(_current.Path) is not { } remote)
+        if (_current is not null) await OpenInOneDriveAsync(_current);
+    }
+
+    private static async Task OpenInOneDriveAsync(MediaItem item)
+    {
+        if (S.Settings.ToOneDrivePath(item.Path) is not { } remote)
         {
             App.MainWindow.ShowStatus("This file isn't in your OneDrive folder.");
             return;
         }
-        var url = await S.OneDrive.GetWebUrlAsync(remote);
+        var url = (await S.OneDrive.GetItemAsync(remote))?.WebUrl;
         if (url is null)
         {
             App.MainWindow.ShowStatus(S.OneDrive.IsSignedIn ? "OneDrive couldn't find this file." : "Sign in to OneDrive in Settings first.");
             return;
         }
         await Launcher.LaunchUriAsync(new Uri(url));
+    }
+
+    private void OnCopyPath(object sender, RoutedEventArgs e)
+    {
+        if (_current is not null) Clipboard.CopyPaths([_current.Path]);
     }
 
     private async void OnOpenMap(object sender, RoutedEventArgs e)
