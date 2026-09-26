@@ -12,7 +12,9 @@ Duplicate detection is done too: exact copies (size + head/tail hash) and simila
 
 Month headers inside the timeline grid and drag-to-reorder in albums are done.
 
-Not yet done (next milestones): Phase 4 Graph tags/people sync (deferred by decision; tables are in place). Cloud Live Photo motion depends on OneDrive serving `format=video` again (it has refused since 2026-09-25; the app retries with backoff).
+Round 3 (2026-09-26): OneDrive tags and people via the SharePoint list behind the drive (People and Tags pages, person filter, naming/merging, face-crop avatars via Windows' face detector); day markers and a stronger selection highlight in the grid; Ctrl+wheel zoom; On this day with per-year date headers and day stepping; map cluster selection and deeper zoom; editor side handles and explicit Save as copy / Overwrite original / Keep edits in gallery, with derived-copy badges and an exit warning for gallery-only edits; cloud-only (Files On-Demand) placeholders are never read.
+
+Not yet done: naming people is manual (OneDrive's names aren't exposed). Cloud Live Photo motion depends on OneDrive serving `format=video` again (it has refused since 2026-09-25; the app retries with backoff).
 
 How the build differs from the architecture below:
 - **Thumbnails:** no Win2D or FFmpeg. The thumbnail cache (`ThumbnailCache`) first probes the Windows thumbnail cache (IShellItemImageFactory, cache-only), then falls back to a WIC decode for images (using the embedded HEVC preview for HEIC) or a Media Foundation frame for video. HEIC decoding is capped by the codec at ~10–12 files/s, so warming takes a while on first run; tiles on screen get priority.
@@ -64,6 +66,19 @@ OneDrive/Graph (`spikes/OneDriveLivePhoto`, app registration `5f0b2132-a2b1-45ef
 - Plain `/content` returns the 1,766,478-byte HEIC, byte-identical to the local file. The Graph metadata (`file`, `photo`, `image`) has **no Live Photo indicator**, so Live Photo detection has to be local: the still's Apple MakerNote ContentIdentifier.
 - Graph `photo` facet provides takenDateTime, camera, exposure and quickXorHash/sha1/sha256 (sha256 could help duplicate detection later).
 - Still to check: what `format=video` returns for a non-Live photo (expect 4xx). Throttling behaviour if motion is prefetched in bulk. Prefer fetching on demand.
+
+## OneDrive tags and people (spike 2026-09-26)
+Graph's driveItem has no tags/people, but personal OneDrive now runs on SharePoint (`my.microsoftpersonalcontent.com`), and the
+document library's hidden list columns carry the AI metadata. Undocumented but readable with our `Files.Read` token:
+`GET /me/drive/list/items?$expand=fields($select=FileRef,RecognizedEntities,MediaServiceOCR,MediaServiceLocation,TagListTags,UserAddedTags)&$top=999`
+(~3 s per 999 items, pageable via `@odata.nextLink`).
+- `MediaServiceOCR`: `;`-separated AI tags mixed with place parts, e.g. `Dog;Animal;LikelyPleasantMemory;Medical Lake;Spokane Co.;WA;United States;99022`.
+- `MediaServiceLocation`: `United States    WA    Spokane` (used to strip place parts from the tags, and as a place tag).
+- `TagListTags`: category lookups, e.g. `__Nature_32`, `Text_4`, `Screenshot_2`, `Receipt_2`, `Selfie_4`.
+- `RecognizedEntities`: lookups to a people list (GUID per person, stable across photos; one GUID per face in a group shot).
+  The people list itself (`/sites/{id}/lists/{id}`) is blocked for MSA accounts, so names and face crops are unavailable:
+  people start unnamed and the user names them in the app.
+- Sample of 40k items: 11.8k with people, 29.7k with AI tags, 22.8k with categories.
 
 ## Media formats (from the library census)
 | Kind | Extensions (count) | Decode / handling |

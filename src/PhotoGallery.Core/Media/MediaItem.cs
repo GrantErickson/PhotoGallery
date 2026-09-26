@@ -30,6 +30,8 @@ public sealed class MediaItem
     public bool IsHidden { get; set; }
     public int Rating { get; set; }
     public string? OneDriveItemId { get; set; }
+    /// <summary>Indexed while the file was a cloud-only placeholder (name/date only).</summary>
+    public bool OnlineOnly { get; set; }
 
     public DateTime TakenLocal => DateTime.UnixEpoch.AddSeconds(DateTaken);
 }

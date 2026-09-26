@@ -40,6 +40,15 @@ public sealed partial class ViewerControl : UserControl
             if (_playingMotion) StopPlayback();
         });
         Unloaded += (_, _) => StopPlayback();
+        var escape = new KeyboardAccelerator { Key = VirtualKey.Escape };
+        escape.Invoked += (_, args) =>
+        {
+            if (Visibility != Visibility.Visible || App.MainWindow.IsEditorOpen) return;
+            args.Handled = true;
+            Close();
+        };
+        KeyboardAccelerators.Add(escape);
+        KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
     }
 
     /// <summary>Raised when the viewer closes: (index of the item last shown, whether ratings/tags changed).</summary>
@@ -51,7 +60,8 @@ public sealed partial class ViewerControl : UserControl
         _changed = false;
         InfoToggle.IsChecked = InfoColumn.Width.Value > 0;
         _ = ShowIndexAsync(index);
-        Focus(FocusState.Programmatic);
+        // Take focus after the opening click/double-click has finished, or the grid behind keeps it (and its arrow keys).
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Focus(FocusState.Programmatic));
     }
 
     private async Task ShowIndexAsync(int index)
@@ -195,7 +205,20 @@ public sealed partial class ViewerControl : UserControl
         RefreshAlbums();
     }
 
-    private void RefreshTags() => TagList.ItemsSource = _current is null ? null : S.Collections.GetTagsFor(_current.Id);
+    private void RefreshTags()
+    {
+        TagList.ItemsSource = _current is null ? null : S.Collections.GetTagsFor(_current.Id);
+        var people = _current is null ? [] : S.People.GetPeopleIn(_current.Id);
+        PeopleList.ItemsSource = people;
+        PeoplePanel.Visibility = people.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnPersonClick(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is not PersonRow person) return;
+        Close();
+        PhotoGallery.App.Pages.PeoplePage.Open(S.People.Get(person.Id) ?? person);
+    }
 
     private void RefreshAlbums()
     {
@@ -421,11 +444,10 @@ public sealed partial class ViewerControl : UserControl
 
     private void OnTagClick(object sender, RoutedEventArgs e)
     {
-        if (((FrameworkElement)sender).Tag is string name)
-        {
-            Close();
-            App.MainWindow.Search(name);
-        }
+        if (((FrameworkElement)sender).Tag is not TagRow tag) return;
+        Close();
+        var withCount = S.Collections.GetTags().FirstOrDefault(t => t.Id == tag.Id) ?? tag;
+        PhotoGallery.App.Pages.TagsPage.Open(withCount);
     }
 
     private async void OnAlbumMenuOpening(object sender, object e)

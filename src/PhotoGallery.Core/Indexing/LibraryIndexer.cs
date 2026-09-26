@@ -40,7 +40,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
         var existing = media.GetIndexState();
         var rereadAll = media.GetSyncValue(MetadataVersionKey) != MetadataVersion.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var seen = new HashSet<long>();
-        var work = new List<(string Path, string Root, long Size, long Modified, MediaKind Kind, bool IsNew, bool FileChanged)>();
+        var work = new List<(string Path, string Root, long Size, long Modified, MediaKind Kind, bool IsNew, bool FileChanged, bool OnlineOnly)>();
         var found = 0;
 
         var reportClock = Stopwatch.StartNew();
@@ -69,12 +69,14 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
                 {
                     seen.Add(known.Id);
                     var fileChanged = known.FileSize != file.Size || known.FileModified != file.Modified;
-                    if (!rereadAll && !fileChanged) continue;
-                    work.Add((file.Path, root, file.Size, file.Modified, file.Kind, false, fileChanged));
+                    // A placeholder that has since been downloaded gets its real metadata read now.
+                    var nowLocal = known.OnlineOnly && !file.OnlineOnly;
+                    if (!rereadAll && !fileChanged && !nowLocal) continue;
+                    work.Add((file.Path, root, file.Size, file.Modified, file.Kind, false, fileChanged, file.OnlineOnly));
                 }
                 else
                 {
-                    work.Add((file.Path, root, file.Size, file.Modified, file.Kind, true, true));
+                    work.Add((file.Path, root, file.Size, file.Modified, file.Kind, true, true, file.OnlineOnly));
                 }
                 Report(IndexPhase.Scanning, 0, 0, file.Path);
             }
@@ -129,7 +131,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
             await Parallel.ForEachAsync(work, new ParallelOptions { CancellationToken = ct, MaxDegreeOfParallelism = Environment.ProcessorCount },
                 async (file, token) =>
                 {
-                    var item = BuildItem(file.Path, file.Size, file.Modified, file.Kind);
+                    var item = BuildItem(file.Path, file.Size, file.Modified, file.Kind, file.OnlineOnly);
                     await channel.Writer.WriteAsync((item, file.Root, file.IsNew, file.FileChanged), token);
                     var done = Interlocked.Increment(ref processed);
                     Report(IndexPhase.Reading, done, 0, file.Path);
@@ -160,9 +162,25 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
         return result;
     }
 
-    internal static MediaItem BuildItem(string path, long size, long modifiedTicks, MediaKind kind)
+    /// <summary>Indexes one file right away (e.g. a copy just saved by the editor); null if it isn't a media file.</summary>
+    public MediaItem? IndexFile(string path, string root)
     {
-        var md = MediaMetadataReader.Read(path, kind);
+        if (!MediaFormats.TryGetKind(path, out var kind) || !File.Exists(path)) return null;
+        var info = new FileInfo(path);
+        var item = BuildItem(path, info.Length, info.LastWriteTimeUtc.Ticks, kind, CloudFiles.IsOnlineOnly(info.Attributes));
+        using var db = database.Open();
+        using var tx = db.BeginTransaction();
+        var folder = Path.GetDirectoryName(path)!;
+        item.FolderId = media.EnsureFolder(db, tx, media.GetFolderIds(), folder, root);
+        media.Upsert(db, tx, item, folder);
+        tx.Commit();
+        return item;
+    }
+
+    internal static MediaItem BuildItem(string path, long size, long modifiedTicks, MediaKind kind, bool onlineOnly = false)
+    {
+        // Never read a cloud-only placeholder: that would make OneDrive download the whole file.
+        var md = onlineOnly ? MediaMetadataReader.FromNameOnly(path) : MediaMetadataReader.Read(path, kind);
         var taken = md.Taken ?? new DateTime(modifiedTicks, DateTimeKind.Utc).ToLocalTime();
         return new MediaItem
         {
@@ -186,6 +204,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
             MotionOffset = md.MotionOffset,
             MotionLength = md.MotionLength,
             Motion = md.MotionLength > 0 ? MotionSource.Embedded : MotionSource.None,
+            OnlineOnly = onlineOnly,
         };
     }
 
@@ -203,7 +222,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
     private static bool IsUnder(string path, string root) =>
         path.Length > root.Length && path.StartsWith(root, StringComparison.OrdinalIgnoreCase) && path[root.Length] == Path.DirectorySeparatorChar;
 
-    internal readonly record struct FoundFile(string Path, long Size, long Modified, MediaKind Kind);
+    internal readonly record struct FoundFile(string Path, long Size, long Modified, MediaKind Kind, bool OnlineOnly);
 
     internal static IEnumerable<FoundFile> EnumerateMedia(string root)
     {
@@ -219,7 +238,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
                 var name = e.FileName;
                 var dot = name.LastIndexOf('.');
                 if (dot < 0 || !MediaFormats.TryGetKind(name[dot..].ToString(), out var kind)) return null;
-                return new FoundFile(e.ToFullPath(), e.Length, e.LastWriteTimeUtc.UtcTicks, kind);
+                return new FoundFile(e.ToFullPath(), e.Length, e.LastWriteTimeUtc.UtcTicks, kind, CloudFiles.IsOnlineOnly(e.Attributes));
             }, options)
         {
             ShouldIncludePredicate = (ref FileSystemEntry e) => !e.IsDirectory,

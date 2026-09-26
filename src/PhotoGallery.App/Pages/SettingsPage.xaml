@@ -37,7 +37,9 @@
                 <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            Text="Sign in with the personal Microsoft account that owns your OneDrive to play iPhone Live Photos whose video is only stored in the cloud, and to open items on OneDrive.com. Read-only access." />
                 <TextBlock x:Name="AccountText" />
+                <TextBlock x:Name="CloudSyncText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="SyncButton" Content="Read tags and people now" Click="OnSyncNow" />
                     <Button x:Name="SignInButton" Content="Sign in" Click="OnSignIn" Style="{StaticResource AccentButtonStyle}" />
                     <Button x:Name="SignOutButton" Content="Sign out" Click="OnSignOut" />
                 </StackPanel>

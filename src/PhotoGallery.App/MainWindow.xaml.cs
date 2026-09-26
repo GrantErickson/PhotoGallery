@@ -20,11 +20,47 @@ public sealed partial class MainWindow : Window
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
 
         Viewer.Closed += OnViewerClosed;
+        AppWindow.Closing += OnClosing;
         var indexing = App.Services.Indexing;
         indexing.ProgressChanged += p => DispatcherQueue.TryEnqueue(() => OnIndexProgress(p));
         indexing.StatusChanged += s => DispatcherQueue.TryEnqueue(() => ShowStatus(s ?? "", sticky: true));
+        App.Services.CloudSync.StatusChanged += s => DispatcherQueue.TryEnqueue(() => ShowStatus(s, sticky: true));
 
         ContentFrame.Navigate(typeof(GalleryPage), TimelineRequest());
+    }
+
+    private bool _closeConfirmed;
+
+    /// <summary>Photos with edits kept only in the gallery aren't lost on exit, but the user should know no file has them.</summary>
+    private async void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (_closeConfirmed) return;
+        var pending = App.Services.Media.CountEdited();
+        if (pending == 0) return;
+        args.Cancel = true;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = pending == 1 ? "1 photo has unsaved edits" : $"{pending:N0} photos have unsaved edits",
+            Content = "These edits are kept in the gallery (and shown here next time), but they haven't been written to any file. " +
+                      "Open each one and choose Save as copy or Overwrite original to make them part of the photo.",
+            PrimaryButtonText = "Show them",
+            SecondaryButtonText = "Exit anyway",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        switch (await dialog.ShowAsync())
+        {
+            case ContentDialogResult.Primary:
+                Nav.SelectedItem = null;
+                ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest("Unsaved edits", new MediaFilter { EditedOnly = true, IncludeScreenshots = true },
+                    "Edits kept only in the gallery", EmptyMessage: "No photos with unsaved edits."));
+                break;
+            case ContentDialogResult.Secondary:
+                _closeConfirmed = true;
+                Close();
+                break;
+        }
     }
 
     public IntPtr Handle => WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -48,10 +84,7 @@ public sealed partial class MainWindow : Window
                 ContentFrame.Navigate(typeof(GalleryPage), TimelineRequest());
                 break;
             case "onthisday":
-                ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest("On this day",
-                    new MediaFilter { MonthDay = (today.Month, today.Day), To = today },
-                    today.ToString("MMMM d", CultureInfo.CurrentCulture) + " in past years",
-                    EmptyMessage: "Nothing from this day in past years."));
+                ContentFrame.Navigate(typeof(OnThisDayPage));
                 break;
             case "favorites":
                 ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest("Favorites", new MediaFilter { MinRating = 4, IncludeScreenshots = true },
@@ -63,6 +96,12 @@ public sealed partial class MainWindow : Window
                 break;
             case "folders":
                 ContentFrame.Navigate(typeof(FoldersPage));
+                break;
+            case "people":
+                ContentFrame.Navigate(typeof(PeoplePage));
+                break;
+            case "tags":
+                ContentFrame.Navigate(typeof(TagsPage));
                 break;
             case "map":
                 ContentFrame.Navigate(typeof(MapPage));

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.TagsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:data="using:PhotoGallery.Core.Data">
+
+    <Grid Padding="20,12,20,0" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Text="Tags" Style="{StaticResource TitleTextBlockStyle}" />
+            <ComboBox x:Name="KindBox" SelectedIndex="0" VerticalAlignment="Center" MinWidth="170" SelectionChanged="OnKindChanged">
+                <x:String>Things and scenes</x:String>
+                <x:String>Categories</x:String>
+                <x:String>Places</x:String>
+                <x:String>My tags</x:String>
+                <x:String>All tags</x:String>
+            </ComboBox>
+            <AutoSuggestBox x:Name="FilterBox" PlaceholderText="Find a tag" Width="240" VerticalAlignment="Center" QueryIcon="Find" TextChanged="OnFilterChanged" />
+            <CheckBox x:Name="RareBox" Content="Include rare tags" VerticalAlignment="Center" Click="OnRareClick" />
+            <ComboBox x:Name="SortBox" SelectedIndex="0" VerticalAlignment="Center" SelectionChanged="OnKindChanged">
+                <x:String>Most photos</x:String>
+                <x:String>A–Z</x:String>
+            </ComboBox>
+        </StackPanel>
+        <TextBlock x:Name="SubtitleText" Grid.Row="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+
+        <GridView x:Name="Tags" Grid.Row="2" IsItemClickEnabled="True" SelectionMode="None" ItemClick="OnTagClick">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="data:TagRow">
+                    <Grid Width="220" Height="44" Padding="12,0" CornerRadius="6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                          BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{x:Bind Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="1" Text="{x:Bind Count}" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </Grid>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+    </Grid>
+</Page>

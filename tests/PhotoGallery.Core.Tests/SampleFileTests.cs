@@ -64,6 +64,17 @@ public class SampleFileTests
     }
 
     [Fact]
+    public void Online_only_placeholders_are_indexed_from_the_name_without_reading()
+    {
+        // The path doesn't exist: any attempt to read content would fall back differently or throw.
+        var item = LibraryIndexer.BuildItem(Path.Combine("Z:", "nowhere", "20260926_042529000_iOS.MOV"), 625_000_000, 0, MediaKind.Video, onlineOnly: true);
+
+        Assert.True(item.OnlineOnly);
+        Assert.Equal(DateSource.FileName, item.DateSource);
+        Assert.Equal(0, item.DurationMs);
+    }
+
+    [Fact]
     public void Build_item_marks_embedded_motion()
     {
         var path = Sample(@"2024\04\PXL_20240418_181647617.MP.jpg");

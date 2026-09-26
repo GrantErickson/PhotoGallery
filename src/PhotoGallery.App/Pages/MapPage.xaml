@@ -18,7 +18,8 @@
         <StackPanel Orientation="Horizontal" Spacing="12">
             <TextBlock Text="Map" Style="{StaticResource TitleTextBlockStyle}" />
             <TextBlock x:Name="SubtitleText" VerticalAlignment="Bottom" Margin="0,0,0,4" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                       Text="Pan and zoom; the photos taken in the visible area are listed on the right." />
+                       Text="Pan and zoom to list the photos in view, or click a number to list just that group." />
+            <Button x:Name="ShowAllButton" Content="Show all in view" Visibility="Collapsed" VerticalAlignment="Center" Click="OnShowAll" />
         </StackPanel>
 
         <Border Grid.Row="1" CornerRadius="8" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" Margin="0,0,0,12">

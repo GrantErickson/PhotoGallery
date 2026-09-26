@@ -16,6 +16,11 @@ public sealed class TagRow
     public long Id { get; init; }
     public string Name { get; init; } = "";
     public long Count { get; init; }
+    /// <summary>0 = added in this app, 1 = OneDrive.</summary>
+    public int Source { get; init; }
+    public Cloud.TagType TagType { get; init; }
+
+    public bool IsUserTag => Source == 0;
 }
 
 /// <summary>User-curated collections: albums (ordered) and tags.</summary>
@@ -109,14 +114,21 @@ public sealed class CollectionRepository(GalleryDatabase database)
     {
         using var db = database.Open();
         return db.Query<TagRow>(
-            "SELECT t.Id, t.Name, count(mt.MediaId) AS Count FROM Tags t LEFT JOIN MediaTags mt ON mt.TagId = t.Id GROUP BY t.Id ORDER BY t.Name COLLATE NOCASE").AsList();
+            """
+            SELECT t.Id, t.Name, t.Source, t.TagType, count(mt.MediaId) AS Count
+            FROM Tags t LEFT JOIN MediaTags mt ON mt.TagId = t.Id
+            GROUP BY t.Id ORDER BY t.Name COLLATE NOCASE
+            """).AsList();
     }
+
+    /// <summary>Tags added in this app (for suggestions when tagging).</summary>
+    public List<TagRow> GetUserTags() => GetTags().Where(t => t.IsUserTag).ToList();
 
     public List<TagRow> GetTagsFor(long mediaId)
     {
         using var db = database.Open();
         return db.Query<TagRow>(
-            "SELECT t.Id, t.Name, 0 AS Count FROM Tags t JOIN MediaTags mt ON mt.TagId = t.Id WHERE mt.MediaId = @mediaId ORDER BY t.Name COLLATE NOCASE",
+            "SELECT t.Id, t.Name, t.Source, t.TagType, 0 AS Count FROM Tags t JOIN MediaTags mt ON mt.TagId = t.Id WHERE mt.MediaId = @mediaId ORDER BY t.Source, t.TagType, t.Name COLLATE NOCASE",
             new { mediaId }).AsList();
     }
 
@@ -132,7 +144,7 @@ public sealed class CollectionRepository(GalleryDatabase database)
         var ids = mediaIds.ToList();
         foreach (var mediaId in ids)
             db.Execute("INSERT OR IGNORE INTO MediaTags (MediaId, TagId) VALUES (@mediaId, @tagId)", new { mediaId, tagId }, tx);
-        RefreshSearchTags(db, tx, ids);
+        SearchIndex.RefreshTags(db, tx, ids);
         tx.Commit();
     }
 
@@ -142,18 +154,8 @@ public sealed class CollectionRepository(GalleryDatabase database)
         using var tx = db.BeginTransaction();
         var ids = mediaIds.ToList();
         db.Execute("DELETE FROM MediaTags WHERE TagId = @tagId AND MediaId IN @ids", new { tagId, ids }, tx);
-        db.Execute("DELETE FROM Tags WHERE Id = @tagId AND NOT EXISTS (SELECT 1 FROM MediaTags WHERE TagId = @tagId)", new { tagId }, tx);
-        RefreshSearchTags(db, tx, ids);
+        db.Execute("DELETE FROM Tags WHERE Id = @tagId AND Source = 0 AND NOT EXISTS (SELECT 1 FROM MediaTags WHERE TagId = @tagId)", new { tagId }, tx);
+        SearchIndex.RefreshTags(db, tx, ids);
         tx.Commit();
-    }
-
-    private static void RefreshSearchTags(System.Data.IDbConnection db, System.Data.IDbTransaction tx, List<long> ids)
-    {
-        foreach (var chunk in ids.Chunk(500))
-            db.Execute(
-                """
-                UPDATE MediaFts SET Tags = (SELECT group_concat(t.Name, ' ') FROM MediaTags mt JOIN Tags t ON t.Id = mt.TagId WHERE mt.MediaId = MediaFts.rowid)
-                WHERE rowid IN @chunk
-                """, new { chunk }, tx);
     }
 }

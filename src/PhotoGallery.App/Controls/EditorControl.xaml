@@ -9,16 +9,13 @@
     KeyboardAcceleratorPlacementMode="Hidden">
 
     <UserControl.Resources>
-        <Style x:Key="CropHandle" TargetType="primitives:Thumb">
-            <Setter Property="Width" Value="18" />
-            <Setter Property="Height" Value="18" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="primitives:Thumb">
-                        <Border Background="White" BorderBrush="#99000000" BorderThickness="1" CornerRadius="9" />
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <Style x:Key="CropHandle" TargetType="Border">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#99000000" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
         </Style>
     </UserControl.Resources>
 
@@ -47,9 +44,13 @@
                 <TextBlock x:Name="FileText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                <Button Content="Reset" Click="OnResetAll" ToolTipService.ToolTip="Back to the original" />
-                <Button Content="Export copy…" Click="OnExport" ToolTipService.ToolTip="Save an edited JPEG copy; the original is never changed" />
-                <Button Content="Save" Click="OnSave" Style="{StaticResource AccentButtonStyle}" ToolTipService.ToolTip="Save edits (Ctrl+S). Non-destructive: the file itself is not modified" />
+                <Button Content="Reset" Click="OnResetAll" ToolTipService.ToolTip="Undo all changes in this session" />
+                <Button Content="Keep edits in gallery" Click="OnSave"
+                        ToolTipService.ToolTip="Remember these edits in the gallery only. No file is written; the photo shows an orange pencil until you save a copy or overwrite." />
+                <Button x:Name="OverwriteButton" Content="Overwrite original…" Click="OnOverwrite"
+                        ToolTipService.ToolTip="Replace the original file with the edited photo (the original goes to the Recycle Bin)" />
+                <Button Content="Save as copy" Click="OnSaveCopy" Style="{StaticResource AccentButtonStyle}"
+                        ToolTipService.ToolTip="Write a new edited file next to the original (Ctrl+S)" />
             </StackPanel>
         </Grid>
 
@@ -75,10 +76,14 @@
                         <Border Grid.ColumnSpan="3" Grid.Row="1" BorderBrush="#66FFFFFF" BorderThickness="0,1" />
                     </Grid>
                 </Border>
-                <primitives:Thumb x:Name="HandleTopLeft" Tag="TL" Style="{StaticResource CropHandle}" DragDelta="OnHandleDrag" />
-                <primitives:Thumb x:Name="HandleTopRight" Tag="TR" Style="{StaticResource CropHandle}" DragDelta="OnHandleDrag" />
-                <primitives:Thumb x:Name="HandleBottomLeft" Tag="BL" Style="{StaticResource CropHandle}" DragDelta="OnHandleDrag" />
-                <primitives:Thumb x:Name="HandleBottomRight" Tag="BR" Style="{StaticResource CropHandle}" DragDelta="OnHandleDrag" />
+                <Border x:Name="HandleTopLeft" Tag="TL" Style="{StaticResource CropHandle}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased" />
+                <Border x:Name="HandleTopRight" Tag="TR" Style="{StaticResource CropHandle}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased" />
+                <Border x:Name="HandleBottomLeft" Tag="BL" Style="{StaticResource CropHandle}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased" />
+                <Border x:Name="HandleBottomRight" Tag="BR" Style="{StaticResource CropHandle}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased" />
+                <Border x:Name="HandleTop" Tag="T" Style="{StaticResource CropHandle}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased" />
+                <Border x:Name="HandleBottom" Tag="B" Style="{StaticResource CropHandle}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased" />
+                <Border x:Name="HandleLeft" Tag="L" Style="{StaticResource CropHandle}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased" />
+                <Border x:Name="HandleRight" Tag="R" Style="{StaticResource CropHandle}" PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved" PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased" />
             </Canvas>
             <ProgressRing x:Name="Busy" IsActive="True" Width="40" Height="40" />
         </Grid>
@@ -129,8 +134,15 @@
                     <Button Content="Reset light" Click="OnResetLight" />
                 </StackPanel>
 
-                <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Text="Edits are stored by the gallery and applied when viewing. The original file is never modified; use “Export copy…” to create an edited JPEG." />
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Saving" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                        <Run FontWeight="SemiBold">Save as copy</Run> writes a new file next to the original (<Run x:Name="CopyNameRun" />).
+                        <LineBreak /><Run FontWeight="SemiBold">Overwrite original</Run> replaces the file; the old version goes to the Recycle Bin.
+                        <LineBreak /><Run FontWeight="SemiBold">Keep edits in gallery</Run> writes no file: the edits are only remembered here and shown with an orange pencil.
+                    </TextBlock>
+                    <HyperlinkButton Content="Export to another folder…" Padding="0" Click="OnExport" />
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
     </Grid>

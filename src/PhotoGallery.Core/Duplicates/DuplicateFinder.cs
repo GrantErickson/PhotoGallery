@@ -79,7 +79,7 @@ public sealed class DuplicateFinder(GalleryDatabase database, Func<long, string,
 
         var missing = candidates.Where(c => c.QuickHash is null).ToList();
         var hashes = await ComputeAsync(missing, "Comparing file contents", progress, ct, c =>
-            Task.FromResult<object?>(File.Exists(c.Path) ? ContentHashes.QuickHash(c.Path) : null));
+            Task.FromResult<object?>(File.Exists(c.Path) && !CloudFiles.IsOnlineOnly(c.Path) ? ContentHashes.QuickHash(c.Path) : null));
         Store("QuickHash", hashes);
 
         var groups = candidates

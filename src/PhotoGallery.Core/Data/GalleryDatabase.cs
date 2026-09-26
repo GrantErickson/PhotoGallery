@@ -161,6 +161,24 @@ public sealed class GalleryDatabase
         ALTER TABLE Media ADD COLUMN QuickHash TEXT;
         ALTER TABLE Media ADD COLUMN PerceptualHash INTEGER;
         """,
+        // v5: OneDrive people (named here), merges of split people, lookups by person and tag type.
+        """
+        ALTER TABLE People ADD COLUMN Hidden INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE PersonAliases (
+            OneDrivePersonId TEXT PRIMARY KEY,
+            PersonId INTEGER NOT NULL REFERENCES People(Id) ON DELETE CASCADE
+        );
+        CREATE INDEX IX_MediaFaces_Person ON MediaFaces(PersonId);
+        CREATE INDEX IX_Tags_Type ON Tags(TagType, Source);
+        """,
+        // v6: copies saved from the editor remember their original.
+        """
+        ALTER TABLE Media ADD COLUMN DerivedFromId INTEGER REFERENCES Media(Id) ON DELETE SET NULL;
+        """,
+        // v7: cloud-only placeholders are indexed from the name only, and re-read once downloaded.
+        """
+        ALTER TABLE Media ADD COLUMN OnlineOnly INTEGER NOT NULL DEFAULT 0;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

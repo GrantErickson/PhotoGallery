@@ -77,6 +77,8 @@ public sealed class ThumbnailCache : IDisposable
                     (uint)pixels.Width, (uint)pixels.Height, 96, 96, pixels.Bgra), ct);
                 return target;
             }
+            // Decoding a cloud-only placeholder would download it; wait until OneDrive has it locally.
+            if (CloudFiles.IsOnlineOnly(sourcePath)) return null;
 
             await _fallbackGate.WaitAsync(ct);
             try

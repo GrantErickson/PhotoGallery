@@ -5,7 +5,7 @@ using PhotoGallery.Core.Media;
 
 namespace PhotoGallery.Core.Data;
 
-public sealed record IndexedFile(long Id, long FileSize, long FileModified);
+public sealed record IndexedFile(long Id, long FileSize, long FileModified, bool OnlineOnly = false);
 
 public sealed class FolderRow
 {
@@ -27,16 +27,16 @@ public sealed class LibraryStats
 
 public sealed class MediaRepository(GalleryDatabase database)
 {
-    private const string SummaryColumns = "m.Id, m.Kind, m.DateTaken, m.Motion, m.Rating, m.DurationMs, m.IsScreenshot, EXISTS (SELECT 1 FROM Edits e WHERE e.MediaId = m.Id) AS IsEdited";
+    private const string SummaryColumns = "m.Id, m.Kind, m.DateTaken, m.Motion, m.Rating, m.DurationMs, m.IsScreenshot, EXISTS (SELECT 1 FROM Edits e WHERE e.MediaId = m.Id) AS IsEdited, m.DerivedFromId IS NOT NULL AS IsDerived";
 
     // ---------- Indexing ----------
 
     public Dictionary<string, IndexedFile> GetIndexState()
     {
         using var db = database.Open();
-        var rows = db.Query<(string Path, long Id, long FileSize, long FileModified)>("SELECT Path, Id, FileSize, FileModified FROM Media");
+        var rows = db.Query<(string Path, long Id, long FileSize, long FileModified, long OnlineOnly)>("SELECT Path, Id, FileSize, FileModified, OnlineOnly FROM Media");
         var map = new Dictionary<string, IndexedFile>(StringComparer.OrdinalIgnoreCase);
-        foreach (var r in rows) map[r.Path] = new IndexedFile(r.Id, r.FileSize, r.FileModified);
+        foreach (var r in rows) map[r.Path] = new IndexedFile(r.Id, r.FileSize, r.FileModified, r.OnlineOnly != 0);
         return map;
     }
 
@@ -88,10 +88,10 @@ public sealed class MediaRepository(GalleryDatabase database)
             """
             INSERT INTO Media (FolderId, Path, FileName, FileSize, FileModified, Kind, DateTaken, DateSource, Width, Height,
                                Orientation, DurationMs, CameraMake, CameraModel, Latitude, Longitude, IsScreenshot,
-                               ContentId, MotionOffset, MotionLength, Motion)
+                               ContentId, MotionOffset, MotionLength, Motion, OnlineOnly)
             VALUES (@FolderId, @Path, @FileName, @FileSize, @FileModified, @Kind, @DateTaken, @DateSource, @Width, @Height,
                     @Orientation, @DurationMs, @CameraMake, @CameraModel, @Latitude, @Longitude, @IsScreenshot,
-                    @ContentId, @MotionOffset, @MotionLength, @Motion)
+                    @ContentId, @MotionOffset, @MotionLength, @Motion, @OnlineOnly)
             ON CONFLICT(Path) DO UPDATE SET
                 QuickHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.QuickHash END,
                 PerceptualHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.PerceptualHash END,
@@ -101,7 +101,7 @@ public sealed class MediaRepository(GalleryDatabase database)
                 Orientation = excluded.Orientation, DurationMs = excluded.DurationMs, CameraMake = excluded.CameraMake,
                 CameraModel = excluded.CameraModel, Latitude = excluded.Latitude, Longitude = excluded.Longitude,
                 IsScreenshot = excluded.IsScreenshot, ContentId = excluded.ContentId,
-                MotionOffset = excluded.MotionOffset, MotionLength = excluded.MotionLength,
+                MotionOffset = excluded.MotionOffset, MotionLength = excluded.MotionLength, OnlineOnly = excluded.OnlineOnly,
                 -- Pairing/cloud state is owned by RecomputeMotion; only embedded motion comes from the file itself.
                 Motion = CASE WHEN excluded.MotionLength > 0 THEN 2 WHEN Media.Motion = 2 THEN 0 ELSE Media.Motion END
             RETURNING Id
@@ -112,7 +112,8 @@ public sealed class MediaRepository(GalleryDatabase database)
             DELETE FROM MediaFts WHERE rowid = @Id;
             INSERT INTO MediaFts (rowid, Name, Folder, Tags, Camera)
             VALUES (@Id, @FileName, @folderPath,
-                    (SELECT group_concat(t.Name, ' ') FROM MediaTags mt JOIN Tags t ON t.Id = mt.TagId WHERE mt.MediaId = @Id),
+                    trim(coalesce((SELECT group_concat(t.Name, ' ') FROM MediaTags mt JOIN Tags t ON t.Id = mt.TagId WHERE mt.MediaId = @Id), '') || ' ' ||
+                         coalesce((SELECT group_concat(pp.Name, ' ') FROM MediaFaces f JOIN People pp ON pp.Id = f.PersonId WHERE f.MediaId = @Id AND pp.Name IS NOT NULL), '')),
                     trim(coalesce(@CameraMake, '') || ' ' || coalesce(@CameraModel, '')));
             """, new { item.Id, item.FileName, folderPath, item.CameraMake, item.CameraModel }, tx);
     }
@@ -215,6 +216,7 @@ public sealed class MediaRepository(GalleryDatabase database)
         // Screenshots are excluded from the main flow, but always shown when browsing a folder or album explicitly.
         if (!f.IncludeScreenshots && f.FolderId is null && f.AlbumId is null) sql.Append(" AND m.IsScreenshot = 0");
         if (f.MotionOnly) sql.Append(" AND m.Motion IN (1, 2, 3)");
+        if (f.EditedOnly) sql.Append(" AND m.Id IN (SELECT MediaId FROM Edits)");
         if (f.MinRating > 0)
         {
             sql.Append(" AND m.Rating >= @minRating");
@@ -236,6 +238,11 @@ public sealed class MediaRepository(GalleryDatabase database)
             sql.Append(" AND m.Id IN (SELECT MediaId FROM MediaTags WHERE TagId = @tagId)");
             p.Add("tagId", tagId);
         }
+        if (f.PersonId is { } personId)
+        {
+            sql.Append(" AND m.Id IN (SELECT MediaId FROM MediaFaces WHERE PersonId = @personId)");
+            p.Add("personId", personId);
+        }
         if (ToFtsQuery(f.Text) is { } fts)
         {
             sql.Append(" AND m.Id IN (SELECT rowid FROM MediaFts WHERE MediaFts MATCH @fts)");
@@ -255,6 +262,12 @@ public sealed class MediaRepository(GalleryDatabase database)
         {
             sql.Append(" AND strftime('%m-%d', m.DateTaken, 'unixepoch') = @monthDay");
             p.Add("monthDay", $"{monthDay.Month:00}-{monthDay.Day:00}");
+        }
+        if (f.Ids is { } ids)
+        {
+            // json_each avoids SQLite's parameter limit for big clusters.
+            sql.Append(" AND m.Id IN (SELECT value FROM json_each(@idsJson))");
+            p.Add("idsJson", System.Text.Json.JsonSerializer.Serialize(ids));
         }
         if (f.Bounds is { } bounds)
         {
@@ -320,6 +333,12 @@ public sealed class MediaRepository(GalleryDatabase database)
         db.Execute("UPDATE Media SET Rating = @rating WHERE Id IN @ids", new { rating = Math.Clamp(rating, 0, 5), ids });
     }
 
+    public void SetDerivedFrom(long id, long originalId)
+    {
+        using var db = database.Open();
+        db.Execute("UPDATE Media SET DerivedFromId = @originalId WHERE Id = @id", new { id, originalId });
+    }
+
     public void SetOneDriveItemId(long id, string itemId)
     {
         using var db = database.Open();
@@ -330,6 +349,12 @@ public sealed class MediaRepository(GalleryDatabase database)
     {
         using var db = database.Open();
         db.Execute("UPDATE Media SET Motion = @motion WHERE Id = @id", new { id, motion });
+    }
+
+    public long CountEdited()
+    {
+        using var db = database.Open();
+        return db.ExecuteScalar<long>("SELECT count(*) FROM Edits");
     }
 
     public LibraryStats GetStats()

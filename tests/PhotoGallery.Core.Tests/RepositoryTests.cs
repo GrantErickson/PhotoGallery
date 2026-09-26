@@ -161,6 +161,17 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
+    public void Filters_by_explicit_ids()
+    {
+        var a = Add("a.jpg");
+        Add("b.jpg");
+        var c = Add("c.jpg");
+
+        Assert.Equal([a.Id, c.Id], _media.Query(new MediaFilter { Ids = [a.Id, c.Id] }).Select(m => m.Id).Order());
+        Assert.Empty(_media.Query(new MediaFilter { Ids = [] }));
+    }
+
+    [Fact]
     public void Text_search_matches_name_folder_camera_and_tags()
     {
         var wedding = Add(@"Lane Wedding 2023\IMG_9095.HEIC", model: "iPhone 14 Pro");

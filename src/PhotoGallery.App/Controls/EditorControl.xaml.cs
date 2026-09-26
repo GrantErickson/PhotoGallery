@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using PhotoGallery.App.Editing;
 using PhotoGallery.App.Services;
+using PhotoGallery.Core;
 using PhotoGallery.Core.Editing;
 using PhotoGallery.Core.Media;
 using Windows.Foundation;
@@ -37,7 +38,7 @@ public sealed partial class EditorControl : UserControl
         Unloaded += (_, _) => ReleaseSource();
         // Accelerators work wherever focus is (the canvas and crop handles don't take focus).
         AddShortcut(VirtualKey.Escape, VirtualKeyModifiers.None, () => Close(saved: false));
-        AddShortcut(VirtualKey.S, VirtualKeyModifiers.Control, Save);
+        AddShortcut(VirtualKey.S, VirtualKeyModifiers.Control, () => _ = SaveCopyAsync());
         AddShortcut((VirtualKey)219, VirtualKeyModifiers.None, () => Rotate(clockwise: false)); // [
         AddShortcut((VirtualKey)221, VirtualKeyModifiers.None, () => Rotate(clockwise: true));  // ]
     }
@@ -63,6 +64,8 @@ public sealed partial class EditorControl : UserControl
     {
         _item = item;
         FileText.Text = item.FileName;
+        CopyNameRun.Text = Path.GetFileName(NextCopyPath(item.Path));
+        OverwriteButton.IsEnabled = EditRenderer.CanWriteFormat(item.Path);
         _ops = S.Edits.Get(item.Id) ?? EditOperations.None;
         _suppress = true;
         ExposureSlider.Value = _ops.Exposure;
@@ -144,6 +147,10 @@ public sealed partial class EditorControl : UserControl
         PlaceHandle(HandleTopRight, box.Right, box.Top);
         PlaceHandle(HandleBottomLeft, box.Left, box.Bottom);
         PlaceHandle(HandleBottomRight, box.Right, box.Bottom);
+        PlaceHandle(HandleTop, box.Left + box.Width / 2, box.Top);
+        PlaceHandle(HandleBottom, box.Left + box.Width / 2, box.Bottom);
+        PlaceHandle(HandleLeft, box.Left, box.Top + box.Height / 2);
+        PlaceHandle(HandleRight, box.Right, box.Top + box.Height / 2);
 
         // Dim everything outside the crop box (even-odd: image rect minus crop rect).
         var group = new GeometryGroup { FillRule = FillRule.EvenOdd };
@@ -156,9 +163,9 @@ public sealed partial class EditorControl : UserControl
         SizeText.Text = $"{w * scaleToOriginal:N0} × {h * scaleToOriginal:N0} px";
     }
 
-    private IEnumerable<Thumb> Handles => [HandleTopLeft, HandleTopRight, HandleBottomLeft, HandleBottomRight];
+    private IEnumerable<Border> Handles => [HandleTopLeft, HandleTopRight, HandleBottomLeft, HandleBottomRight, HandleTop, HandleBottom, HandleLeft, HandleRight];
 
-    private static void PlaceHandle(Thumb handle, double x, double y)
+    private static void PlaceHandle(Border handle, double x, double y)
     {
         Microsoft.UI.Xaml.Controls.Canvas.SetLeft(handle, x - handle.Width / 2);
         Microsoft.UI.Xaml.Controls.Canvas.SetTop(handle, y - handle.Height / 2);
@@ -177,23 +184,74 @@ public sealed partial class EditorControl : UserControl
     /// <summary>Normalised height for a normalised width at the locked aspect.</summary>
     private double HeightFor(double width, double aspect) => width * _rotatedSize.Width / (aspect * _rotatedSize.Height);
 
-    private void OnHandleDrag(object sender, DragDeltaEventArgs e)
+    // Handles use plain pointer capture (press → move → release), which works the same for mouse, pen and touch.
+    private Point? _dragFrom;
+
+    private void OnHandlePressed(object sender, PointerRoutedEventArgs e)
+    {
+        var element = (UIElement)sender;
+        if (!element.CapturePointer(e.Pointer)) return;
+        _dragFrom = e.GetCurrentPoint(Overlay).Position;
+        e.Handled = true;
+    }
+
+    private void OnHandleMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_dragFrom is not { } from) return;
+        var to = e.GetCurrentPoint(Overlay).Position;
+        _dragFrom = to;
+        DragHandle((string)((FrameworkElement)sender).Tag, to.X - from.X, to.Y - from.Y);
+        e.Handled = true;
+    }
+
+    private void OnHandleReleased(object sender, PointerRoutedEventArgs e)
+    {
+        _dragFrom = null;
+        ((UIElement)sender).ReleasePointerCaptures();
+    }
+
+    private void DragHandle(string handle, double deltaX, double deltaY)
     {
         if (_fit.Width <= 0) return;
-        var corner = (string)((FrameworkElement)sender).Tag;
-        var dx = e.HorizontalChange / _fit.Width;
-        var dy = e.VerticalChange / _fit.Height;
+        var dx = deltaX / _fit.Width;
+        var dy = deltaY / _fit.Height;
         var c = Crop;
         double left = c.X, top = c.Y, right = c.X + c.Width, bottom = c.Y + c.Height;
         const double min = 0.03;
+        bool moveLeft = handle.Contains('L'), moveRight = handle.Contains('R'), moveTop = handle.Contains('T'), moveBottom = handle.Contains('B');
 
-        if (corner.Contains('L')) left = Math.Clamp(left + dx, 0, right - min);
-        else right = Math.Clamp(right + dx, left + min, 1);
-        if (corner.Contains('T')) top = Math.Clamp(top + dy, 0, bottom - min);
-        else bottom = Math.Clamp(bottom + dy, top + min, 1);
+        if (moveLeft) left = Math.Clamp(left + dx, 0, right - min);
+        if (moveRight) right = Math.Clamp(right + dx, left + min, 1);
+        if (moveTop) top = Math.Clamp(top + dy, 0, bottom - min);
+        if (moveBottom) bottom = Math.Clamp(bottom + dy, top + min, 1);
 
-        if (LockedAspect is { } aspect)
+        if (LockedAspect is { } sideAspect && handle.Length == 1)
         {
+            // Side handle with a fixed aspect: the other dimension follows, centred on the box.
+            if (moveLeft || moveRight)
+            {
+                var height = Math.Min(HeightFor(right - left, sideAspect), 1);
+                var width = height * sideAspect * _rotatedSize.Height / _rotatedSize.Width;
+                if (moveLeft) left = right - width;
+                else right = left + width;
+                var centerY = (top + bottom) / 2;
+                top = Math.Clamp(centerY - height / 2, 0, 1 - height);
+                bottom = top + height;
+            }
+            else
+            {
+                var width = Math.Min((bottom - top) * sideAspect * _rotatedSize.Height / _rotatedSize.Width, 1);
+                var height = HeightFor(width, sideAspect);
+                if (moveTop) top = bottom - height;
+                else bottom = top + height;
+                var centerX = (left + right) / 2;
+                left = Math.Clamp(centerX - width / 2, 0, 1 - width);
+                right = left + width;
+            }
+        }
+        else if (LockedAspect is { } aspect)
+        {
+            var corner = handle;
             // Width drives height; the opposite corner stays anchored. Shrink if the height won't fit.
             var width = right - left;
             var height = HeightFor(width, aspect);
@@ -302,13 +360,111 @@ public sealed partial class EditorControl : UserControl
 
     private void OnSave(object sender, RoutedEventArgs e) => Save();
 
+    /// <summary>Keep edits in the gallery only (non-destructive; no file written).</summary>
     private void Save()
     {
         if (_item is null) return;
         S.Edits.Save(_item.Id, _ops);
         S.Thumbnails.Invalidate([_item.Id]);
-        App.MainWindow.ShowStatus(_ops.IsIdentity ? "Edits removed — showing the original." : "Edits saved. The original file is unchanged.");
+        App.MainWindow.ShowStatus(_ops.IsIdentity
+            ? "Edits removed — showing the original."
+            : "Edits kept in the gallery only. No file was changed; use Save as copy or Overwrite to write them to a file.");
         Close(saved: true);
+    }
+
+    private async void OnSaveCopy(object sender, RoutedEventArgs e) => await SaveCopyAsync();
+
+    /// <summary>Writes "&lt;name&gt;_N.jpg" next to the original, indexes it and links it to the original.</summary>
+    private async Task SaveCopyAsync()
+    {
+        if (_item is not { } item) return;
+        if (_ops.IsIdentity)
+        {
+            App.MainWindow.ShowStatus("Nothing to save — make an edit first.");
+            return;
+        }
+        var target = NextCopyPath(item.Path);
+        Busy.IsActive = true;
+        try
+        {
+            await EditRenderer.WriteFileAsync(item.Path, _ops, target, item.TakenLocal, Location(item));
+            var copy = await Task.Run(() => S.Indexing.IndexFileNow(target));
+            if (copy is not null) S.Media.SetDerivedFrom(copy.Id, item.Id);
+            // The copy carries the edits; the original goes back to showing itself.
+            S.Edits.Save(item.Id, EditOperations.None);
+            S.Thumbnails.Invalidate([item.Id]);
+            App.MainWindow.ShowStatus($"Saved {Path.GetFileName(target)} next to the original.");
+            Close(saved: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Saving a copy of {item.Path} failed", ex);
+            App.MainWindow.ShowStatus($"Couldn't save the copy: {ex.Message}");
+        }
+        finally
+        {
+            Busy.IsActive = false;
+        }
+    }
+
+    private static (double, double)? Location(MediaItem item) =>
+        item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : null;
+
+    /// <summary>"D:\x\IMG_0840.HEIC" → "D:\x\IMG_0840_1.jpg" (the next free number).</summary>
+    internal static string NextCopyPath(string original)
+    {
+        var folder = Path.GetDirectoryName(original)!;
+        var name = Path.GetFileNameWithoutExtension(original);
+        for (var n = 1; ; n++)
+        {
+            var candidate = Path.Combine(folder, $"{name}_{n}.jpg");
+            if (!File.Exists(candidate)) return candidate;
+        }
+    }
+
+    private async void OnOverwrite(object sender, RoutedEventArgs e)
+    {
+        if (_item is not { } item) return;
+        if (_ops.IsIdentity)
+        {
+            App.MainWindow.ShowStatus("Nothing to save — make an edit first.");
+            return;
+        }
+        if (!EditRenderer.CanWriteFormat(item.Path))
+        {
+            App.MainWindow.ShowStatus($"{Path.GetExtension(item.Path).ToUpperInvariant()} files can't be overwritten here — save a copy instead.");
+            return;
+        }
+        if (!await Dialogs.ConfirmAsync(XamlRoot, "Overwrite the original?",
+                $"{item.Path}\n\nThe edited photo replaces this file (and the copy in OneDrive). The current version is moved to the Recycle Bin first, so you can restore it.",
+                "Overwrite"))
+            return;
+        Busy.IsActive = true;
+        try
+        {
+            var temp = Path.Combine(Path.GetDirectoryName(item.Path)!, $".{Guid.NewGuid():N}{Path.GetExtension(item.Path)}");
+            await EditRenderer.WriteFileAsync(item.Path, _ops, temp, item.TakenLocal, Location(item));
+            if (!RecycleBin.Recycle(item.Path))
+            {
+                File.Delete(temp);
+                throw new IOException("The original couldn't be moved to the Recycle Bin, so it was left unchanged.");
+            }
+            File.Move(temp, item.Path);
+            S.Edits.Save(item.Id, EditOperations.None);
+            S.Thumbnails.Invalidate([item.Id]);
+            S.Indexing.RequestIndex();
+            App.MainWindow.ShowStatus("Original overwritten. The previous version is in the Recycle Bin.");
+            Close(saved: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Overwriting {item.Path} failed", ex);
+            App.MainWindow.ShowStatus($"Couldn't overwrite: {ex.Message}");
+        }
+        finally
+        {
+            Busy.IsActive = false;
+        }
     }
 
     private async void OnExport(object sender, RoutedEventArgs e)

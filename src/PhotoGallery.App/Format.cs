@@ -11,6 +11,12 @@ public static class Format
     public static Visibility HasMotion(MotionSource motion) =>
         motion is MotionSource.LocalPair or MotionSource.Embedded or MotionSource.Cloud ? Visibility.Visible : Visibility.Collapsed;
 
+    public static string TagSource(int source) => source == 0 ? "Your tag" : "Tag from OneDrive";
+
+    /// <summary>"Thu 25" for the day marker on the first tile of each day.</summary>
+    public static string Day(long unixLocal) =>
+        DateTime.UnixEpoch.AddSeconds(unixLocal).ToString("ddd d", System.Globalization.CultureInfo.CurrentCulture);
+
     public static Visibility Visible(bool value) => value ? Visibility.Visible : Visibility.Collapsed;
 
     public static Visibility HasRating(int rating) => rating > 0 ? Visibility.Visible : Visibility.Collapsed;

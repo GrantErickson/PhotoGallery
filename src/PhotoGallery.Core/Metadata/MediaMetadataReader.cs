@@ -50,6 +50,15 @@ public static class MediaMetadataReader
         return result;
     }
 
+    /// <summary>Metadata for a file whose content must not be read (cloud-only placeholder): the name's date only.</summary>
+    public static MediaMetadata FromNameOnly(string path)
+    {
+        var result = new MediaMetadata();
+        if (FileNameDates.Parse(Path.GetFileName(path)) is { } fromName && IsPlausible(fromName))
+            (result.Taken, result.DateSource) = (fromName, DateSource.FileName);
+        return result;
+    }
+
     private static void ReadVideo(Stream stream, string path, MediaMetadata result)
     {
         if (!MediaFormats.IsQuickTimeFamily(path) || QuickTimeReader.Read(stream) is not { } qt) return;

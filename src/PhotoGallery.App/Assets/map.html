@@ -12,6 +12,8 @@
     body { font-family: "Segoe UI Variable", "Segoe UI", sans-serif; }
     #status { position: absolute; z-index: 1000; left: 50%; top: 12px; transform: translateX(-50%);
               background: rgba(0,0,0,.65); color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 13px; }
+    .marker-cluster.selected div { background-color: rgba(0, 120, 212, .9) !important; color: #fff; }
+    .marker-cluster.selected { background-color: rgba(0, 120, 212, .4) !important; }
     .photo-pin { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
                  background: #ccc center/cover no-repeat; }
   </style>
@@ -26,13 +28,37 @@
     const post = m => window.chrome?.webview?.postMessage(m);
     const statusBox = document.getElementById("status");
     const map = L.map("map", { worldCopyJump: true, preferCanvas: true }).setView([20, 0], 2);
+    // OSM has tiles to level 19; allow two more levels of over-zoom to separate photos taken close together.
+    map.setMaxZoom(21);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
+      maxZoom: 21,
+      maxNativeZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
 
-    const clusters = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 60, showCoverageOnHover: false });
+    const clusters = L.markerClusterGroup({
+      chunkedLoading: true, maxClusterRadius: 60, showCoverageOnHover: false,
+      zoomToBoundsOnClick: false, spiderfyOnMaxZoom: true
+    });
     map.addLayer(clusters);
+
+    // Clicking a cluster lists exactly its photos (instead of zooming); clicking the map goes back to "everything in view".
+    let selected = null;
+    clusters.on("clusterclick", e => {
+      if (selected) selected.getElement()?.classList.remove("selected");
+      selected = e.layer;
+      selected.getElement()?.classList.add("selected");
+      post({ type: "selection", ids: e.layer.getAllChildMarkers().map(m => m.options.photoId) });
+    });
+    function clearSelection() {
+      if (!selected) return;
+      selected.getElement()?.classList.remove("selected");
+      selected = null;
+      post({ type: "clear" });
+      sendBounds();
+    }
+    map.on("click", clearSelection);
+    window.clearSelection = clearSelection;
 
     // Individual photos show their thumbnail once you zoom in far enough to see them unclustered.
     const pin = id => L.divIcon({
@@ -52,7 +78,7 @@
       .then(r => r.json())
       .then(points => {
         const markers = points.map(([id, lat, lon]) => {
-          const m = L.marker([lat, lon], { icon: pin(id) });
+          const m = L.marker([lat, lon], { icon: pin(id), photoId: id });
           m.on("click", () => post({ type: "open", id }));
           return m;
         });

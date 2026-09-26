@@ -171,6 +171,28 @@ public sealed class OneDriveClient
         }
     }
 
+    /// <summary>GET a Graph URL as JSON, retrying throttling (429/503) with the server's Retry-After.</summary>
+    public async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct = default)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            var token = await GetTokenAsync(interactive: false, ct) ?? throw new InvalidOperationException("Not signed in to OneDrive.");
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await _http.SendAsync(request, ct);
+            if (response.IsSuccessStatusCode)
+                return JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            if (attempt < 6 && (int)response.StatusCode is 429 or 503 or 504)
+            {
+                var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(5 * attempt);
+                Log.Info($"Graph throttled ({(int)response.StatusCode}); retrying in {wait.TotalSeconds:F0}s");
+                await Task.Delay(wait, ct);
+                continue;
+            }
+            throw new HttpRequestException($"Graph {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync(ct)}");
+        }
+    }
+
     /// <summary>Diagnostics: sends a signed request and returns status, content type, length and the first bytes.</summary>
     public async Task<string> ProbeAsync(string url, string? accept = null, CancellationToken ct = default)
     {
@@ -182,6 +204,7 @@ public sealed class OneDriveClient
         if (accept is not null) request.Headers.Accept.ParseAdd(accept);
         using var response = await _http.SendAsync(request, ct);
         var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+        if (Environment.GetEnvironmentVariable("PG_PROBE_OUT") is { Length: > 0 } outFile) await File.WriteAllBytesAsync(outFile, bytes, ct);
         var type = response.Content.Headers.ContentType?.MediaType ?? "";
         var preview = type.Contains("json") || type.StartsWith("text") ? System.Text.Encoding.UTF8.GetString(bytes) : Convert.ToHexString(bytes.AsSpan(0, Math.Min(16, bytes.Length)));
         return $"{(int)response.StatusCode} {type} {bytes.Length:N0} bytes{Environment.NewLine}{(preview.Length > 50000 ? preview[..50000] : preview)}";

@@ -20,6 +20,8 @@ public sealed class AppServices
         Media = new MediaRepository(Database);
         Collections = new CollectionRepository(Database);
         Edits = new EditRepository(Database);
+        People = new PeopleRepository(Database);
+        Faces = new Imaging.FaceCropper(Path.Combine(Paths.Root, "faces"));
         Thumbnails = new ThumbnailCache(Paths.Thumbnails);
         Thumbnails.Failed += (path, ex) => Log.Error($"Thumbnail failed for {path}", ex);
         // Edited photos get thumbnails with their edits applied.
@@ -28,6 +30,7 @@ public sealed class AppServices
         OneDrive = new OneDriveClient(Settings.ClientId, Paths.TokenCache);
         Motion = new MotionVideoService(Media, OneDrive, Settings, Paths.MotionCache);
         Indexing = new IndexingService(this);
+        CloudSync = new CloudSyncService(this);
     }
 
     public AppPaths Paths { get; }
@@ -36,6 +39,9 @@ public sealed class AppServices
     public MediaRepository Media { get; }
     public CollectionRepository Collections { get; }
     public EditRepository Edits { get; }
+    public PeopleRepository People { get; }
+    public Imaging.FaceCropper Faces { get; }
+    public CloudSyncService CloudSync { get; }
     public ThumbnailCache Thumbnails { get; }
     public OneDriveClient OneDrive { get; }
     public MotionVideoService Motion { get; }

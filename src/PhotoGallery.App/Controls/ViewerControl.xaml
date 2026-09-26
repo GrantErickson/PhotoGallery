@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:data="using:PhotoGallery.Core.Data"
+    xmlns:app="using:PhotoGallery.App"
     IsTabStop="True"
     PreviewKeyDown="OnPreviewKeyDown">
 
@@ -115,15 +116,29 @@
                     <HyperlinkButton x:Name="LocationLink" Padding="0" Click="OnOpenMap" />
                 </StackPanel>
                 <StackPanel x:Name="EditedPanel" Spacing="2" Visibility="Collapsed">
-                    <TextBlock Text="Edits" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock x:Name="EditedText" VerticalAlignment="Center" />
+                    <TextBlock Text="Unsaved edits" Style="{StaticResource CaptionTextBlockStyle}" Foreground="#C75000" />
+                    <TextBlock x:Name="EditedText" TextWrapping="Wrap" />
+                    <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Shown here, but not written to any file yet." />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <HyperlinkButton Content="Save…" Padding="0" Click="OnEdit" />
                         <HyperlinkButton Content="Revert to original" Padding="0" Click="OnRevertEdits" />
                     </StackPanel>
                 </StackPanel>
                 <StackPanel x:Name="MotionPanel" Spacing="2">
                     <TextBlock Text="Motion" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock x:Name="MotionText" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel x:Name="PeoplePanel" Spacing="4" Visibility="Collapsed">
+                    <TextBlock Text="People" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <ItemsControl x:Name="PeopleList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="data:PersonRow">
+                                <HyperlinkButton Content="{x:Bind DisplayName}" Padding="0" Margin="0,0,0,2" Click="OnPersonClick" Tag="{x:Bind}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
 
                 <StackPanel Spacing="6">
@@ -136,8 +151,10 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <HyperlinkButton Content="{x:Bind Name}" Padding="0" Click="OnTagClick" Tag="{x:Bind Name}" />
+                                    <HyperlinkButton Content="{x:Bind Name}" Padding="0" Click="OnTagClick" Tag="{x:Bind}"
+                                                     ToolTipService.ToolTip="{x:Bind app:Format.TagSource(Source)}" />
                                     <Button Grid.Column="1" Tag="{x:Bind Id}" Click="OnRemoveTag" Style="{StaticResource SubtleButtonStyle}"
+                                            Visibility="{x:Bind app:Format.Visible(IsUserTag)}"
                                             Padding="4" ToolTipService.ToolTip="Remove tag">
                                         <FontIcon Glyph="&#xE711;" FontSize="10" />
                                     </Button>

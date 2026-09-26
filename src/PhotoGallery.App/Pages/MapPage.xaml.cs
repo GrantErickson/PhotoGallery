@@ -16,6 +16,7 @@ namespace PhotoGallery.App.Pages;
 public sealed partial class MapPage : Page
 {
     private bool _initialized;
+    private bool _clusterSelected;
 
     public MapPage()
     {
@@ -72,6 +73,20 @@ public sealed partial class MapPage : Page
         var root = doc.RootElement;
         switch (root.GetProperty("type").GetString())
         {
+            case "selection":
+                var ids = root.GetProperty("ids").EnumerateArray().Select(i => i.GetInt64()).ToList();
+                _clusterSelected = true;
+                ShowAllButton.Visibility = Visibility.Visible;
+                SubtitleText.Text = ids.Count == 1 ? "1 photo in the selected group." : $"{ids.Count:N0} photos in the selected group.";
+                Gallery.BaseFilter = new MediaFilter { Ids = ids };
+                break;
+            case "clear":
+                _clusterSelected = false;
+                ShowAllButton.Visibility = Visibility.Collapsed;
+                SubtitleText.Text = "Pan and zoom to list the photos in view, or click a number to list just that group.";
+                break;
+            case "bounds" when _clusterSelected:
+                break; // keep showing the selected group while panning
             case "bounds":
                 var bounds = (root.GetProperty("south").GetDouble(), root.GetProperty("west").GetDouble(),
                               root.GetProperty("north").GetDouble(), root.GetProperty("east").GetDouble());
@@ -82,6 +97,9 @@ public sealed partial class MapPage : Page
                 break;
         }
     }
+
+    private async void OnShowAll(object sender, RoutedEventArgs e) =>
+        await Map.CoreWebView2.ExecuteScriptAsync("clearSelection()");
 
     /// <summary>Leaflet longitudes run past ±180 when the world wraps; clamp to the valid range.</summary>
     private static (double, double, double, double) Normalize((double South, double West, double North, double East) b) =>

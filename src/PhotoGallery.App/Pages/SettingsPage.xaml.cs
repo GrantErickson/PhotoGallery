@@ -30,6 +30,10 @@ public sealed partial class SettingsPage : Page
     {
         var oneDrive = App.Services.OneDrive;
         AccountText.Text = oneDrive.IsSignedIn ? $"Signed in as {oneDrive.AccountName}" : "Not signed in";
+        var last = App.Services.CloudSync.LastSync;
+        CloudSyncText.Text = "OneDrive's tags (things, places, categories) and recognised people are read in the background once a day. " +
+                             (last is { } when ? $"Last read {when.ToLocalTime():g}." : "Not read yet.");
+        SyncButton.IsEnabled = oneDrive.IsSignedIn;
         SignInButton.Visibility = oneDrive.IsSignedIn ? Visibility.Collapsed : Visibility.Visible;
         SignOutButton.Visibility = oneDrive.IsSignedIn ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -79,6 +83,8 @@ public sealed partial class SettingsPage : Page
         {
             if (!await App.Services.OneDrive.SignInAsync())
                 App.MainWindow.ShowStatus("Sign-in was cancelled or failed.");
+            else
+                App.Services.CloudSync.SyncIfStale();
         }
         finally
         {
@@ -86,6 +92,8 @@ public sealed partial class SettingsPage : Page
             RefreshAccount();
         }
     }
+
+    private void OnSyncNow(object sender, RoutedEventArgs e) => App.Services.CloudSync.Start();
 
     private async void OnSignOut(object sender, RoutedEventArgs e)
     {

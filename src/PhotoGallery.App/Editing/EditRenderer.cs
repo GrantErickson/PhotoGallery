@@ -104,6 +104,98 @@ public static class EditRenderer
         return await RenderAsync(source, ops);
     }
 
+    /// <summary>Formats that can be written back (overwrite): JPEG, HEIC (needs the HEVC extension) and PNG.</summary>
+    public static bool CanWriteFormat(string path) => EncoderFor(path) is not null;
+
+    private static Guid? EncoderFor(string path) => Path.GetExtension(path).ToLowerInvariant() switch
+    {
+        ".jpg" or ".jpeg" => BitmapEncoder.JpegEncoderId,
+        ".heic" or ".heif" => BitmapEncoder.HeifEncoderId,
+        ".png" => BitmapEncoder.PngEncoderId,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Renders the edited photo at full resolution into <paramref name="destination"/>, in the format its extension
+    /// names, copying date taken, camera and GPS from the original. Orientation is baked into the pixels.
+    /// </summary>
+    public static async Task WriteFileAsync(string sourcePath, EditOperations ops, string destination, DateTime? taken,
+        (double Latitude, double Longitude)? location = null)
+    {
+        var encoderId = EncoderFor(destination) ?? throw new NotSupportedException($"Can't write {Path.GetExtension(destination)} files.");
+        var metadata = await ReadMetadataAsync(sourcePath);
+        using var source = await LoadAsync(sourcePath, 0);
+        using var bitmap = await RenderAsync(source, ops);
+        await using (var file = File.Create(destination))
+        {
+            var stream = file.AsRandomAccessStream();
+            var props = encoderId == BitmapEncoder.PngEncoderId
+                ? null
+                : new BitmapPropertySet { ["ImageQuality"] = new BitmapTypedValue(0.92f, Windows.Foundation.PropertyType.Single) };
+            var encoder = props is null ? await BitmapEncoder.CreateAsync(encoderId, stream) : await BitmapEncoder.CreateAsync(encoderId, stream, props);
+            using var opaque = SoftwareBitmap.Convert(bitmap, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore);
+            encoder.SetSoftwareBitmap(opaque);
+            if (taken is { } date) metadata["System.Photo.DateTaken"] = new BitmapTypedValue(TakenForWic(date), Windows.Foundation.PropertyType.DateTime);
+            if (location is { } gps) AddGps(metadata, gps.Latitude, gps.Longitude, encoderId == BitmapEncoder.JpegEncoderId ? "/app1/ifd/gps" : "/ifd/gps");
+            foreach (var (key, value) in metadata)
+            {
+                try
+                {
+                    await encoder.BitmapProperties.SetPropertiesAsync(new BitmapPropertySet { [key] = value });
+                }
+                catch (Exception ex) when (ex is ArgumentException or System.Runtime.InteropServices.COMException or NotSupportedException)
+                {
+                    // Metadata is best-effort; each property is written separately so one failure doesn't drop the rest.
+                }
+            }
+            await encoder.FlushAsync();
+        }
+        File.SetLastWriteTime(destination, DateTime.Now);
+    }
+
+    private static readonly string[] CopiedProperties = ["System.Photo.CameraManufacturer", "System.Photo.CameraModel"];
+
+    /// <summary>
+    /// WIC's System.GPS.* properties don't round-trip, so GPS is written as raw EXIF entries through metadata
+    /// query paths: ref letters plus degrees/minutes/seconds rationals packed as (denominator &lt;&lt; 32 | numerator).
+    /// </summary>
+    private static void AddGps(Dictionary<string, BitmapTypedValue> metadata, double latitude, double longitude, string gpsPath)
+    {
+        metadata[$"{gpsPath}/{{ushort=1}}"] = new BitmapTypedValue(latitude >= 0 ? "N" : "S", Windows.Foundation.PropertyType.String);
+        metadata[$"{gpsPath}/{{ushort=2}}"] = new BitmapTypedValue(Dms(latitude), Windows.Foundation.PropertyType.UInt64Array);
+        metadata[$"{gpsPath}/{{ushort=3}}"] = new BitmapTypedValue(longitude >= 0 ? "E" : "W", Windows.Foundation.PropertyType.String);
+        metadata[$"{gpsPath}/{{ushort=4}}"] = new BitmapTypedValue(Dms(longitude), Windows.Foundation.PropertyType.UInt64Array);
+
+        static ulong[] Dms(double value)
+        {
+            value = Math.Abs(value);
+            var degrees = Math.Floor(value);
+            var minutesExact = (value - degrees) * 60;
+            var minutes = Math.Floor(minutesExact);
+            var seconds = (minutesExact - minutes) * 60;
+            return [Rational((uint)degrees, 1), Rational((uint)minutes, 1), Rational((uint)Math.Round(seconds * 10000), 10000)];
+        }
+
+        static ulong Rational(uint numerator, uint denominator) => ((ulong)denominator << 32) | numerator;
+    }
+
+    private static async Task<Dictionary<string, BitmapTypedValue>> ReadMetadataAsync(string path)
+    {
+        var result = new Dictionary<string, BitmapTypedValue>();
+        try
+        {
+            var file = await StorageFile.GetFileFromPathAsync(path);
+            using var stream = await file.OpenReadAsync();
+            var decoder = await BitmapDecoder.CreateAsync(stream);
+            var found = await decoder.BitmapProperties.GetPropertiesAsync(CopiedProperties);
+            foreach (var (key, value) in found) result[key] = value;
+        }
+        catch (Exception ex) when (ex is ArgumentException or System.Runtime.InteropServices.COMException or NotSupportedException)
+        {
+        }
+        return result;
+    }
+
     /// <summary>Writes a full-resolution edited JPEG, carrying over the date taken.</summary>
     public static async Task ExportAsync(string sourcePath, EditOperations ops, StorageFile destination, DateTime? taken)
     {
@@ -121,7 +213,7 @@ public static class EditRenderer
             {
                 await encoder.BitmapProperties.SetPropertiesAsync(new BitmapPropertySet
                 {
-                    ["System.Photo.DateTaken"] = new BitmapTypedValue(new DateTimeOffset(date), Windows.Foundation.PropertyType.DateTime),
+                    ["System.Photo.DateTaken"] = new BitmapTypedValue(TakenForWic(date), Windows.Foundation.PropertyType.DateTime),
                 });
             }
             catch (Exception ex) when (ex is ArgumentException or System.Runtime.InteropServices.COMException)
@@ -131,6 +223,13 @@ public static class EditRenderer
         }
         await encoder.FlushAsync();
     }
+
+    /// <summary>
+    /// WIC stores System.Photo.DateTaken as UTC and writes EXIF in local time. The photo's wall-clock time is local, so
+    /// hand it over as an explicit UTC instant (offset 0); passing the local value directly shifted copies by the UTC offset.
+    /// </summary>
+    private static DateTimeOffset TakenForWic(DateTime localWallClock) =>
+        new(DateTime.SpecifyKind(localWallClock, DateTimeKind.Local).ToUniversalTime(), TimeSpan.Zero);
 
     /// <summary>A size that fits (w, h) into the box, preserving aspect.</summary>
     public static Rect Fit(Size content, Size box)

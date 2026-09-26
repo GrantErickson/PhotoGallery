@@ -33,6 +33,11 @@ public partial class App : Application
         _window.Activate();
 
         _services.Indexing.Start();
-        _ = _services.OneDrive.TrySignInSilentAsync();
+        _ = SignInAndSyncAsync(_services);
+    }
+
+    private static async Task SignInAndSyncAsync(AppServices services)
+    {
+        if (await services.OneDrive.TrySignInSilentAsync()) services.CloudSync.SyncIfStale();
     }
 }

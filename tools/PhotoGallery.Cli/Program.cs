@@ -79,6 +79,16 @@ switch (args.FirstOrDefault())
         Console.WriteLine($"{item.Path} [{item.Motion}] -> {result} {file}");
         break;
     }
+    case "cloudsync":
+    {
+        var oneDrive = new OneDriveClient(settings.ClientId, paths.TokenCache);
+        if (!await oneDrive.TrySignInSilentAsync()) { Console.WriteLine("not signed in"); break; }
+        var sync = new OneDriveMetadataSync(oneDrive, database, media, settings);
+        var result = await sync.RunAsync(new Progress<MetadataSyncProgress>(p => Console.Write($"\rread {p.ItemsRead:N0}, matched {p.Matched:N0}   ")));
+        Console.WriteLine();
+        Console.WriteLine($"{result.ItemsRead:N0} items, {result.Matched:N0} in library, {result.Tagged:N0} tagged, {result.People:N0} people in {result.Elapsed:mm\\:ss}");
+        break;
+    }
     case "probe":
     {
         var oneDrive = new OneDriveClient(settings.ClientId, paths.TokenCache);

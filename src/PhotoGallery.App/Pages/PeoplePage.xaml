@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.PeoplePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:pages="using:PhotoGallery.App.Pages">
+
+    <Grid Padding="20,12,20,0" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Text="People" Style="{StaticResource TitleTextBlockStyle}" />
+            <AutoSuggestBox x:Name="FilterBox" PlaceholderText="Find a person" Width="240" VerticalAlignment="Center" QueryIcon="Find"
+                            TextChanged="OnFilterChanged" />
+            <CheckBox x:Name="FewBox" Content="Include people in only one photo" VerticalAlignment="Center" Click="OnFilterClick" />
+            <CheckBox x:Name="HiddenBox" Content="Show hidden" VerticalAlignment="Center" Click="OnFilterClick" />
+        </StackPanel>
+        <TextBlock x:Name="SubtitleText" Grid.Row="1" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   Text="People recognised by OneDrive. OneDrive doesn't share the names you gave them, so name each person once here (right-click). Named people are searchable." />
+
+        <GridView x:Name="People" Grid.Row="2" IsItemClickEnabled="True" SelectionMode="None" ItemClick="OnPersonClick">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="pages:PersonTile">
+                    <StackPanel Width="150" Spacing="4" Margin="4" RightTapped="OnPersonRightTapped" Loaded="OnTileLoaded">
+                        <Grid Width="150" Height="150" CornerRadius="75" Background="{ThemeResource ControlAltFillColorSecondaryBrush}">
+                            <Image Source="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                            <FontIcon Glyph="&#xE77B;" FontSize="40" Visibility="{x:Bind NoCover, Mode=OneWay}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        </Grid>
+                        <TextBlock Text="{x:Bind Name, Mode=OneWay}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}" Opacity="{x:Bind NameOpacity, Mode=OneWay}" />
+                        <TextBlock Text="{x:Bind CountText}" HorizontalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+        <TextBlock x:Name="EmptyText" Grid.Row="2" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                   TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   Text="No people yet. Sign in to OneDrive in Settings; people and tags are read from OneDrive in the background." />
+    </Grid>
+</Page>

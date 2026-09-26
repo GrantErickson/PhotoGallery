@@ -3,24 +3,32 @@ using PhotoGallery.Core.Data;
 
 namespace PhotoGallery.App;
 
-/// <summary>A month of the timeline: the group header and its items, for the grouped grid.</summary>
-public sealed class MonthGroup(int year, int month) : List<MediaSummary>
+public enum GroupMode
 {
-    public string Title { get; } = new DateTime(year, month, 1).ToString("MMMM yyyy", CultureInfo.CurrentCulture);
+    Month,
+    /// <summary>One header per day with the full date (On this day: one day per year).</summary>
+    Day,
+}
 
-    /// <summary>Consecutive items (newest first) split wherever the month changes.</summary>
-    public static List<MonthGroup> Split(IReadOnlyList<MediaSummary> items)
+/// <summary>A section of the date-ordered grid: its header and items.</summary>
+public sealed class MonthGroup(string title) : List<MediaSummary>
+{
+    public string Title { get; } = title;
+
+    /// <summary>Consecutive items (newest first) split wherever the month (or day) changes.</summary>
+    public static List<MonthGroup> Split(IReadOnlyList<MediaSummary> items, GroupMode mode = GroupMode.Month)
     {
         var groups = new List<MonthGroup>();
         MonthGroup? current = null;
-        int year = -1, month = -1;
+        var key = DateTime.MinValue;
         foreach (var item in items)
         {
             var taken = item.TakenLocal;
-            if (current is null || taken.Year != year || taken.Month != month)
+            var itemKey = mode == GroupMode.Day ? taken.Date : new DateTime(taken.Year, taken.Month, 1);
+            if (current is null || itemKey != key)
             {
-                (year, month) = (taken.Year, taken.Month);
-                current = new MonthGroup(year, month);
+                key = itemKey;
+                current = new MonthGroup(itemKey.ToString(mode == GroupMode.Day ? "dddd, MMMM d, yyyy" : "MMMM yyyy", CultureInfo.CurrentCulture));
                 groups.Add(current);
             }
             current.Add(item);

@@ -35,6 +35,19 @@ public sealed class IndexingService(AppServices services)
         _watcher.Changed += RequestIndex;
     }
 
+    /// <summary>Indexes a single new file immediately (under whichever library root contains it).</summary>
+    public PhotoGallery.Core.Media.MediaItem? IndexFileNow(string path)
+    {
+        var root = services.Settings.LibraryRoots.FirstOrDefault(r =>
+            path.StartsWith(Path.TrimEndingDirectorySeparator(r) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+        // Copies land in an already-indexed folder, so that folder can stand in for the root (e.g. roots given as 8.3 paths).
+        root ??= Path.GetDirectoryName(path);
+        if (root is null) return null;
+        var item = new LibraryIndexer(services.Database, services.Media).IndexFile(path, root);
+        if (item is not null) LibraryChanged?.Invoke();
+        return item;
+    }
+
     public void RequestIndex()
     {
         lock (_gate)

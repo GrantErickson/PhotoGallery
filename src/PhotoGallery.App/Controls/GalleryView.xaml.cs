@@ -55,6 +55,9 @@ public sealed partial class GalleryView : UserControl
 
     public string EmptyMessage { get; set; } = "Nothing here yet.";
 
+    /// <summary>Section headers per month (timeline) or per day with the full date (On this day).</summary>
+    public GroupMode GroupMode { get; set; } = GroupMode.Month;
+
     /// <summary>The page's query; the grid stays empty until this is set.</summary>
     public MediaFilter? BaseFilter
     {
@@ -82,6 +85,12 @@ public sealed partial class GalleryView : UserControl
         JumpList.Visibility = AlbumId is null ? Visibility.Visible : Visibility.Collapsed;
         S.Indexing.LibraryChanged += OnLibraryChanged;
         _scroller ??= FindDescendant<ScrollViewer>(Grid);
+        if (!_wheelHooked)
+        {
+            // handledEventsToo: the ScrollViewer marks wheel events handled before they bubble to us.
+            Grid.AddHandler(PointerWheelChangedEvent, new PointerEventHandler(OnGridWheel), handledEventsToo: true);
+            _wheelHooked = true;
+        }
         if (_scroller is not null) _scroller.ViewChanged += (_, _) => UpdateCurrentDate();
         ApplyTileSize();
         _ = ReloadAsync();
@@ -116,6 +125,9 @@ public sealed partial class GalleryView : UserControl
         if (version != _loadVersion) return;
 
         _items = items;
+        MarkDayStarts(items, dateOrdered: AlbumId is null && GroupMode == GroupMode.Month);
+        _lastSelection.Clear();
+        _previousSelection.Clear();
         if (AlbumId is not null)
         {
             // Albums keep their own order and can be rearranged by dragging.
@@ -127,7 +139,7 @@ public sealed partial class GalleryView : UserControl
         {
             // Timeline views are grouped by month (headers inside the grid); the jump list navigates between them.
             Grid.CanDragItems = Grid.CanReorderItems = Grid.AllowDrop = false;
-            Grid.ItemsSource = new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = MonthGroup.Split(items) }.View;
+            Grid.ItemsSource = new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = MonthGroup.Split(items, GroupMode) }.View;
         }
         CountText.Text = items.Count == 1 ? "1 item" : $"{items.Count:N0} items";
         EmptyText.Text = EmptyMessage;
@@ -138,6 +150,17 @@ public sealed partial class GalleryView : UserControl
         if (anchor is { } id && items.FindIndex(i => i.Id == id) is var index and >= 0)
             Grid.ScrollIntoView(items[index], ScrollIntoViewAlignment.Leading);
         UpdateCurrentDate();
+    }
+
+    private static void MarkDayStarts(List<MediaSummary> items, bool dateOrdered)
+    {
+        var previous = DateTime.MinValue;
+        foreach (var item in items)
+        {
+            var day = item.TakenLocal.Date;
+            item.StartsDay = dateOrdered && day != previous;
+            previous = day;
+        }
     }
 
     // ---------- Thumbnails ----------
@@ -165,6 +188,7 @@ public sealed partial class GalleryView : UserControl
         {
             (root.Tag as TileState)?.Cancellation.Cancel();
             image.Source = null;
+            SetSelectedVisual(root, args.ItemContainer.IsSelected);
             if (args.Item is MediaSummary item) root.Tag = new TileState(item);
             args.RegisterUpdateCallback(1, OnContainerContentChanging);
         }
@@ -204,6 +228,19 @@ public sealed partial class GalleryView : UserControl
 
     // ---------- Tile size ----------
 
+    private bool _wheelHooked;
+
+    /// <summary>Ctrl + mouse wheel changes the thumbnail size, like Explorer.</summary>
+    private void OnGridWheel(object sender, PointerRoutedEventArgs e)
+    {
+        if (!e.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Control)) return;
+        var delta = e.GetCurrentPoint(Grid).Properties.MouseWheelDelta;
+        var anchor = FirstVisibleItem();
+        SizeSlider.Value = Math.Clamp(SizeSlider.Value + Math.Sign(delta) * SizeSlider.StepFrequency, SizeSlider.Minimum, SizeSlider.Maximum);
+        if (anchor is not null) Grid.ScrollIntoView(anchor, ScrollIntoViewAlignment.Leading);
+        e.Handled = true;
+    }
+
     private void OnTileSizeChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         if (!_initialized) return; // the slider reports its minimum while XAML initializes
@@ -232,7 +269,7 @@ public sealed partial class GalleryView : UserControl
                 lastYear = taken.Year;
                 lastMonth = -1;
             }
-            if (taken.Month != lastMonth)
+            if (taken.Month != lastMonth && GroupMode == GroupMode.Month)
             {
                 entries.Add(new JumpEntry("   " + CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(taken.Month), i, isYear: false));
                 lastMonth = taken.Month;
@@ -261,6 +298,7 @@ public sealed partial class GalleryView : UserControl
     {
         if (((FrameworkElement)sender).Tag is TileState state)
         {
+            RestorePreviousSelection();
             Open(state.Item);
             e.Handled = true;
         }
@@ -329,15 +367,30 @@ public sealed partial class GalleryView : UserControl
         if (index >= 0) App.MainWindow.OpenViewer(_items, index, OnViewerClosed);
     }
 
+    private void RestorePreviousSelection()
+    {
+        if (_previousSelection.Count == 0) return;
+        _restoringSelection = true;
+        try
+        {
+            Grid.SelectedItems.Clear();
+            foreach (var item in _previousSelection) Grid.SelectedItems.Add(item);
+            _lastSelection.Clear();
+            _lastSelection.AddRange(_previousSelection);
+        }
+        finally
+        {
+            _restoringSelection = false;
+        }
+    }
+
     private void OnViewerClosed(int index, bool changed)
     {
+        // Keep the selection as it was; just bring the last viewed photo into view.
         if (changed)
             _ = ReloadAsync(keepPosition: true);
-        if (index >= 0 && index < _items.Count)
-        {
+        else if (index >= 0 && index < _items.Count)
             Grid.ScrollIntoView(_items[index]);
-            Grid.SelectedItem = _items[index];
-        }
         Grid.Focus(FocusState.Programmatic);
     }
 
@@ -348,10 +401,36 @@ public sealed partial class GalleryView : UserControl
         if (_loaded) _ = ReloadAsync();
     }
 
+    /// <summary>The tile's selection overlay (accent border, tint and check) — stronger than the default highlight.</summary>
+    private static void SetSelectedVisual(Grid root, bool selected) =>
+        root.Children[^1].Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+
+    private void UpdateSelectedVisuals(IEnumerable<object> items, bool selected)
+    {
+        foreach (var item in items)
+            if (Grid.ContainerFromItem(item) is SelectorItem { ContentTemplateRoot: Grid root })
+                SetSelectedVisual(root, selected);
+    }
+
     private List<long> SelectedIds() => Grid.SelectedItems.OfType<MediaSummary>().Select(i => i.Id).ToList();
+
+    // Selection before the most recent change: a double-click's first click replaces the selection, and the
+    // double-tap handler puts it back so opening a photo never loses what you had selected.
+    private readonly List<MediaSummary> _lastSelection = [];
+    private readonly List<MediaSummary> _previousSelection = [];
+    private bool _restoringSelection;
 
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        UpdateSelectedVisuals(e.AddedItems, selected: true);
+        UpdateSelectedVisuals(e.RemovedItems, selected: false);
+        if (!_restoringSelection)
+        {
+            _previousSelection.Clear();
+            _previousSelection.AddRange(_lastSelection);
+            _lastSelection.Clear();
+            _lastSelection.AddRange(Grid.SelectedItems.OfType<MediaSummary>());
+        }
         var count = Grid.SelectedItems.Count;
         var multi = count > 1;
         SelectionBar.Visibility = multi ? Visibility.Visible : Visibility.Collapsed;

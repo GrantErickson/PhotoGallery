@@ -49,6 +49,16 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItemSeparator />
+                <NavigationViewItem Content="People" Tag="people">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE716;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Tags" Tag="tags">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8EC;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Folders" Tag="folders">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE8B7;" />
