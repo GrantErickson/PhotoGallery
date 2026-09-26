@@ -60,6 +60,14 @@
     map.on("click", clearSelection);
     window.clearSelection = clearSelection;
 
+    // The map swallows mouse and keyboard input, so pass the app's back/forward gestures through.
+    window.addEventListener("mouseup", e => {
+      if (e.button === 3 || e.button === 4) { e.preventDefault(); post({ type: "history", back: e.button === 3 }); }
+    });
+    window.addEventListener("keydown", e => {
+      if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) { e.preventDefault(); post({ type: "history", back: e.key === "ArrowLeft" }); }
+    });
+
     // Individual photos show their thumbnail once you zoom in far enough to see them unclustered.
     const pin = id => L.divIcon({
       className: "",

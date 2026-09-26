@@ -149,6 +149,8 @@ public sealed partial class GalleryView : UserControl
 
         if (anchor is { } id && items.FindIndex(i => i.Id == id) is var index and >= 0)
             Grid.ScrollIntoView(items[index], ScrollIntoViewAlignment.Leading);
+        if (_restore is not null)
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, ApplyRestore); // after layout
         UpdateCurrentDate();
     }
 
@@ -284,6 +286,44 @@ public sealed partial class GalleryView : UserControl
             Grid.ScrollIntoView(_items[entry.Index], ScrollIntoViewAlignment.Leading);
     }
 
+    /// <summary>The photo at the top of the visible area (to restore the scroll position later).</summary>
+    public long? FirstVisibleId => FirstVisibleItem()?.Id;
+
+    public IReadOnlyList<long> SelectedMediaIds => SelectedIds();
+
+    private (long? AnchorId, IReadOnlyList<long> Selected, long? OpenId)? _restore;
+
+    /// <summary>After the next load: scroll to <paramref name="anchorId"/>, reselect items, optionally re-open the viewer.</summary>
+    public void RestoreOnNextLoad(long? anchorId, IReadOnlyList<long> selectedIds, long? openViewerId) =>
+        _restore = (anchorId, selectedIds, openViewerId);
+
+    private void ApplyRestore()
+    {
+        if (_restore is not { } restore) return;
+        _restore = null;
+        var byId = _items.ToDictionary(i => i.Id);
+        if (restore.Selected.Count > 0)
+        {
+            _restoringSelection = true;
+            try
+            {
+                Grid.SelectedItems.Clear();
+                foreach (var id in restore.Selected)
+                    if (byId.TryGetValue(id, out var item)) Grid.SelectedItems.Add(item);
+                _lastSelection.Clear();
+                _lastSelection.AddRange(Grid.SelectedItems.OfType<MediaSummary>());
+            }
+            finally
+            {
+                _restoringSelection = false;
+            }
+        }
+        if (restore.AnchorId is { } anchor && byId.TryGetValue(anchor, out var top))
+            Grid.ScrollIntoView(top, ScrollIntoViewAlignment.Leading);
+        if (restore.OpenId is { } open && byId.TryGetValue(open, out var viewed))
+            Open(viewed);
+    }
+
     private MediaSummary? FirstVisibleItem() =>
         Grid.ItemsPanelRoot is ItemsWrapGrid { FirstVisibleIndex: >= 0 } panel && panel.FirstVisibleIndex < _items.Count
             ? _items[panel.FirstVisibleIndex]
@@ -358,13 +398,13 @@ public sealed partial class GalleryView : UserControl
             return;
         }
         var single = S.Media.Query(new MediaFilter { IncludeScreenshots = true }).Where(i => i.Id == id).ToList();
-        if (single.Count == 1) App.MainWindow.OpenViewer(single, 0, (_, _) => { });
+        if (single.Count == 1) App.MainWindow.OpenViewer(single, 0, (_, _) => { }, this);
     }
 
     private void Open(MediaSummary item)
     {
         var index = _items.IndexOf(item);
-        if (index >= 0) App.MainWindow.OpenViewer(_items, index, OnViewerClosed);
+        if (index >= 0) App.MainWindow.OpenViewer(_items, index, OnViewerClosed, this);
     }
 
     private void RestorePreviousSelection()

@@ -57,5 +57,5 @@ public sealed partial class TagsPage : Page
 
     public static void Open(TagRow tag) =>
         App.MainWindow.Navigate(typeof(GalleryPage), new GalleryRequest(tag.Name, new MediaFilter { TagId = tag.Id, IncludeScreenshots = true },
-            tag.Count > 0 ? $"{tag.Count:N0} photos" : null));
+            tag.Count > 0 ? $"{tag.Count:N0} photos" : null, Section: "tags"));
 }

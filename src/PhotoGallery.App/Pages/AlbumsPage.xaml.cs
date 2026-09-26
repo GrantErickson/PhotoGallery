@@ -75,7 +75,7 @@ public sealed partial class AlbumsPage : Page
 
     public static void Open(AlbumRow album) =>
         App.MainWindow.Navigate(typeof(GalleryPage), new GalleryRequest(album.Name, new MediaFilter { AlbumId = album.Id, IncludeScreenshots = true },
-            AlbumId: album.Id, EmptyMessage: "This album is empty. Select photos anywhere and choose “Add to album”."));
+            AlbumId: album.Id, EmptyMessage: "This album is empty. Select photos anywhere and choose “Add to album”.", Section: "albums"));
 
     private void OnAlbumRightTapped(object sender, RightTappedRoutedEventArgs e)
     {

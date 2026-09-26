@@ -92,6 +92,10 @@ public sealed partial class MapPage : Page
                               root.GetProperty("north").GetDouble(), root.GetProperty("east").GetDouble());
                 Gallery.BaseFilter = new MediaFilter { Bounds = Normalize(bounds) };
                 break;
+            case "history":
+                if (root.GetProperty("back").GetBoolean()) App.MainWindow.GoBack();
+                else App.MainWindow.GoForward();
+                break;
             case "open":
                 Gallery.OpenItem(root.GetProperty("id").GetInt64());
                 break;

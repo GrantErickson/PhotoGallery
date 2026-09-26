@@ -28,6 +28,7 @@ public sealed partial class EditorControl : UserControl
     private MediaItem? _item;
     private CanvasBitmap? _source;
     private EditOperations _ops = EditOperations.None;
+    private EditOperations _openedWith = EditOperations.None;
     private Rect _fit;                 // where the rotated image is drawn, in DIPs
     private Size _rotatedSize;         // rotated image size in source pixels
     private bool _suppress;
@@ -37,7 +38,7 @@ public sealed partial class EditorControl : UserControl
         InitializeComponent();
         Unloaded += (_, _) => ReleaseSource();
         // Accelerators work wherever focus is (the canvas and crop handles don't take focus).
-        AddShortcut(VirtualKey.Escape, VirtualKeyModifiers.None, () => Close(saved: false));
+        AddShortcut(VirtualKey.Escape, VirtualKeyModifiers.None, () => _ = RequestCloseAsync());
         AddShortcut(VirtualKey.S, VirtualKeyModifiers.Control, () => _ = SaveCopyAsync());
         AddShortcut((VirtualKey)219, VirtualKeyModifiers.None, () => Rotate(clockwise: false)); // [
         AddShortcut((VirtualKey)221, VirtualKeyModifiers.None, () => Rotate(clockwise: true));  // ]
@@ -67,6 +68,7 @@ public sealed partial class EditorControl : UserControl
         CopyNameRun.Text = Path.GetFileName(NextCopyPath(item.Path));
         OverwriteButton.IsEnabled = EditRenderer.CanWriteFormat(item.Path);
         _ops = S.Edits.Get(item.Id) ?? EditOperations.None;
+        _openedWith = _ops;
         _suppress = true;
         ExposureSlider.Value = _ops.Exposure;
         BrightnessSlider.Value = _ops.Brightness;
@@ -501,6 +503,20 @@ public sealed partial class EditorControl : UserControl
     }
 
     private void OnCancel(object sender, RoutedEventArgs e) => Close(saved: false);
+
+    public bool HasUnsavedChanges => _item is not null && _ops != _openedWith;
+
+    /// <summary>Back / Esc: close, asking first if there are changes that would be lost.</summary>
+    public async Task RequestCloseAsync()
+    {
+        if (HasUnsavedChanges &&
+            !await Dialogs.ConfirmAsync(XamlRoot, "Discard your changes?", "Leaving the editor now throws away the changes you haven't saved.", "Discard"))
+            return;
+        Close(saved: false);
+    }
+
+    /// <summary>Leaving the page altogether (e.g. a menu item): close without prompting.</summary>
+    public void CloseWithoutSaving() => Close(saved: false);
 
     private void Close(bool saved)
     {

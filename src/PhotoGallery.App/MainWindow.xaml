@@ -10,7 +10,7 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid>
+    <Grid x:Name="Root" PreviewKeyDown="OnRootPreviewKeyDown">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -19,7 +19,9 @@
         <NavigationView
             x:Name="Nav"
             PaneDisplayMode="Left"
-            IsBackButtonVisible="Collapsed"
+            IsBackButtonVisible="Visible"
+            IsBackEnabled="False"
+            BackRequested="OnNavBackRequested"
             IsSettingsVisible="True"
             OpenPaneLength="220"
             SelectionChanged="OnNavSelectionChanged">
@@ -81,7 +83,7 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
-            <Frame x:Name="ContentFrame" />
+            <Frame x:Name="ContentFrame" Navigated="OnFrameNavigated" Navigating="OnFrameNavigating" />
         </NavigationView>
 
         <!-- Status bar -->

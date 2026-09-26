@@ -62,9 +62,22 @@ public sealed partial class PeoplePage : Page
     public PeoplePage()
     {
         InitializeComponent();
+        NavigationCacheMode = NavigationCacheMode.Required; // keep the scroll position when coming back from a person
     }
 
-    protected override void OnNavigatedTo(NavigationEventArgs e) => _ = LoadAsync();
+    protected override async void OnNavigatedTo(NavigationEventArgs e)
+    {
+        if (_all.Count == 0)
+        {
+            await LoadAsync();
+            return;
+        }
+        // Coming back: refresh names in place (one may have been named on their page) without losing the scroll position.
+        var rows = await Task.Run(() => App.Services.People.GetPeople(HiddenBox.IsChecked == true));
+        var byId = rows.ToDictionary(r => r.Id);
+        foreach (var tile in _all)
+            if (byId.TryGetValue(tile.Row.Id, out var row)) tile.Update(row);
+    }
 
     private async Task LoadAsync()
     {
@@ -108,7 +121,7 @@ public sealed partial class PeoplePage : Page
     public static void Open(PersonRow person) =>
         App.MainWindow.Navigate(typeof(GalleryPage), new GalleryRequest(person.DisplayName,
             new MediaFilter { PersonId = person.Id, IncludeScreenshots = true },
-            person.Count == 1 ? "1 photo" : $"{person.Count:N0} photos", PersonId: person.Id));
+            person.Count == 1 ? "1 photo" : $"{person.Count:N0} photos", PersonId: person.Id, Section: "people"));
 
     private void OnPersonRightTapped(object sender, RightTappedRoutedEventArgs e)
     {

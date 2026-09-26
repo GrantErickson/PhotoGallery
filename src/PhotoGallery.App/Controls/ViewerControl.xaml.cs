@@ -51,6 +51,9 @@ public sealed partial class ViewerControl : UserControl
         KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
     }
 
+    /// <summary>The photo currently shown.</summary>
+    public long? CurrentId => _current?.Id;
+
     /// <summary>Raised when the viewer closes: (index of the item last shown, whether ratings/tags changed).</summary>
     public event Action<int, bool>? Closed;
 
@@ -216,8 +219,7 @@ public sealed partial class ViewerControl : UserControl
     private void OnPersonClick(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).Tag is not PersonRow person) return;
-        Close();
-        PhotoGallery.App.Pages.PeoplePage.Open(S.People.Get(person.Id) ?? person);
+        App.MainWindow.NavigateFromViewer(() => PhotoGallery.App.Pages.PeoplePage.Open(S.People.Get(person.Id) ?? person));
     }
 
     private void RefreshAlbums()
@@ -330,6 +332,7 @@ public sealed partial class ViewerControl : UserControl
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (App.MainWindow.IsEditorOpen || FocusManager.GetFocusedElement(XamlRoot) is TextBox or AutoSuggestBox) return;
+        if (IsDown(VirtualKey.Menu)) return; // Alt+arrows are app back/forward
         switch (e.Key)
         {
             case VirtualKey.Left when _index > 0:
@@ -445,9 +448,8 @@ public sealed partial class ViewerControl : UserControl
     private void OnTagClick(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).Tag is not TagRow tag) return;
-        Close();
         var withCount = S.Collections.GetTags().FirstOrDefault(t => t.Id == tag.Id) ?? tag;
-        PhotoGallery.App.Pages.TagsPage.Open(withCount);
+        App.MainWindow.NavigateFromViewer(() => PhotoGallery.App.Pages.TagsPage.Open(withCount));
     }
 
     private async void OnAlbumMenuOpening(object sender, object e)
