@@ -39,7 +39,7 @@ public sealed class TranscriptTests : IDisposable
             S(2, 3, "Uh, um..."),
             S(3, 4, "[Music]"),
             S(4, 5, "Thanks for watching!"),
-            S(5, 6, "(laughs) That's funny."),
+            S(5, 6, "(laughs) That's *laughs* funny."),
             S(6, 7, "I hoped that..."),
             S(7, 8, "I hoped that..."),
             S(8, 9, "You."),
@@ -92,6 +92,26 @@ public sealed class TranscriptTests : IDisposable
         Assert.Equal(11, stitched.ToOriginal(2 + SpeechStitcher.Gap + 1), 3);
     }
 
+    [Fact]
+    public void Speakers_are_labelled_only_when_two_voices_clearly_take_part()
+    {
+        TranscriptSegment[] talk = [S(0, 5, "Where are we going?"), S(5, 10, "To the lake."), S(10, 15, "Can we swim?"), S(15, 20, "If it's warm.")];
+
+        // Two voices taking turns (diarization numbers them 7 and 3): Speaker 1 and 2 by first appearance.
+        var two = SpeakerAssigner.Assign(talk, [new(0, 5, 7), new(5, 10, 3), new(10, 15, 7), new(15, 20, 3)]);
+        Assert.Equal([1, 2, 1, 2], two.Select(s => s.Speaker));
+
+        // One person split by a change of tone (a small share) isn't two speakers.
+        var monologue = Enumerable.Range(0, 10).Select(i => S(i * 5, i * 5 + 5, $"Line {i}.")).ToList();
+        var split = SpeakerAssigner.Assign(monologue, [new(0, 45, 0), new(45, 50, 1)]);
+        Assert.All(split, s => Assert.Null(s.Speaker));
+
+        // A stray third voice is folded into its neighbour; gaps with no turn take the previous label.
+        var three = SpeakerAssigner.Assign([.. talk, S(20, 21, "Hm."), S(21, 25, "Race you!")],
+            [new(0, 5, 0), new(5, 10, 1), new(10, 15, 0), new(15, 20, 1), new(20, 21, 2)]);
+        Assert.Equal([1, 2, 1, 2, 2, 2], three.Select(s => s.Speaker));
+    }
+
     private long AddVideo(string name, long durationMs = 60_000, long size = 100)
     {
         using var db = _database.Open();
@@ -132,6 +152,19 @@ public sealed class TranscriptTests : IDisposable
         Assert.Empty(_media.Query(new MediaFilter { Text = "birthday" }));
         Assert.Equal([talk], _transcripts.GetBacklog(10).Select(j => j.MediaId));
         Assert.DoesNotContain(blip, _transcripts.GetBacklog(10).Select(j => j.MediaId));
+    }
+
+    [Fact]
+    public void Transcripts_from_an_older_pipeline_are_redone_after_new_videos()
+    {
+        var old = AddVideo("old.mov");
+        var silent = AddVideo("silent.mov");
+        var fresh = AddVideo("fresh.mov");
+        _transcripts.Save(new Transcript(old, TranscriptStatus.Done, [S(0, 1, "Hello.")], Model: "v1"));
+        _transcripts.Save(new Transcript(silent, TranscriptStatus.NoSpeech, [], Model: "v1"));
+
+        Assert.Equal([fresh], _transcripts.GetBacklog(10, "v1").Select(j => j.MediaId));
+        Assert.Equal([fresh, old], _transcripts.GetBacklog(10, "v2").Select(j => j.MediaId)); // nothing to redo without speech
     }
 
     [Fact]

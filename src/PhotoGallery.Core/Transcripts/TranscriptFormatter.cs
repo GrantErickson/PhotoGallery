@@ -22,7 +22,7 @@ public static partial class TranscriptFormatter
         foreach (var segment in segments)
         {
             var text = Whitespace().Replace(segment.Text, " ").Trim();
-            text = SoundLabel().Replace(text, "").Trim();
+            text = Whitespace().Replace(SoundLabel().Replace(text, ""), " ").Trim();
             if (text.Length == 0 || Filler().IsMatch(text) || StockPhrase().IsMatch(text)) continue;
             if (result.Count > 0 && string.Equals(Normalize(result[^1].Text), Normalize(text), StringComparison.OrdinalIgnoreCase))
             {
@@ -80,7 +80,7 @@ public static partial class TranscriptFormatter
     [GeneratedRegex(@"^(?:(?:um+|uh+|hmm+|mm+|mhm|ah+|er+|oh)[\s,.!?…-]*)+$", RegexOptions.IgnoreCase)]
     private static partial Regex Filler();
 
-    [GeneratedRegex(@"\[[^\]]*\]|\((?:music|laugh\w*|applause|inaudible|silence|noise|cough\w*|sigh\w*)\)|♪+", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\[[^\]]*\]|\((?:music|laugh\w*|applause|inaudible|silence|noise|cough\w*|sigh\w*)\)|\*[^*]{1,30}\*|♪+", RegexOptions.IgnoreCase)]
     private static partial Regex SoundLabel();
 
     [GeneratedRegex(@"^(?:thanks? (?:you )?for watching[.!]*|please subscribe[.!]*|subtitles? by .*|transcribed by .*|you[.!]*)$", RegexOptions.IgnoreCase)]

@@ -13,13 +13,22 @@ namespace PhotoGallery.App.Transcription;
 
 /// <summary>
 /// Speech to text for one video at a time, entirely on this PC: the sound track decoded to 16 kHz mono by Media
-/// Foundation, speech found by Silero voice detection, and the joined speech recognised by Whisper large-v3-turbo
-/// (whisper.cpp through Whisper.net; on the GPU through Vulkan when available, otherwise the CPU). The models stay
-/// loaded while there's work and are released (with their GPU memory) by <see cref="Unload"/>.
+/// Foundation, speech found by Silero voice detection, the joined speech recognised by Whisper large-v3-turbo
+/// (whisper.cpp through Whisper.net; on the GPU through Vulkan when available, otherwise the CPU), and voices told
+/// apart by speaker diarization (sherpa-onnx: pyannote segmentation + NeMo TitaNet embeddings, on the CPU). The
+/// models stay loaded while there's work and are released (with their GPU memory) by <see cref="Unload"/>.
 /// </summary>
 public sealed class SpeechTranscriber(string modelsDirectory) : IDisposable
 {
-    public const string ModelName = "whisper-large-v3-turbo";
+    /// <summary>Stored with each transcript; transcripts made by an older pipeline are redone in the background.</summary>
+    public const string ModelName = "whisper-large-v3-turbo+speakers";
+    /// <summary>
+    /// How different two voices must sound to be kept apart (tuned so one person walking, driving or changing tone
+    /// stays one speaker, while clearly different voices separate).
+    /// </summary>
+    private const float SpeakerThreshold = 0.85f;
+    private const string SegmentationUrl = "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx";
+    private const string EmbeddingUrl = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_small.onnx";
     private const int SampleRate = 16000;
     /// <summary>Less speech than this and the video counts as having none.</summary>
     private const double MinSpeechSeconds = 1.0;
@@ -27,10 +36,14 @@ public sealed class SpeechTranscriber(string modelsDirectory) : IDisposable
 
     private readonly string _modelPath = Path.Combine(modelsDirectory, "ggml-large-v3-turbo.bin");
     private readonly string _vadPath = Path.Combine(modelsDirectory, "ggml-silero-vad.bin");
+    private readonly string _segmentationPath = Path.Combine(modelsDirectory, "pyannote-segmentation-3.0.onnx");
+    private readonly string _embeddingPath = Path.Combine(modelsDirectory, "nemo_en_titanet_small.onnx");
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
     private WhisperFactory? _whisper;
     private WhisperVadFactory? _vad;
+    private SherpaOnnx.OfflineSpeakerDiarization? _diarization;
 
-    public bool ModelsReady => File.Exists(_modelPath) && File.Exists(_vadPath);
+    public bool ModelsReady => File.Exists(_modelPath) && File.Exists(_vadPath) && File.Exists(_segmentationPath) && File.Exists(_embeddingPath);
 
     /// <summary>Where recognition runs once a model is loaded ("Vulkan", "Cpu").</summary>
     public string? Runtime => RuntimeOptions.LoadedLibrary?.ToString();
@@ -41,6 +54,10 @@ public sealed class SpeechTranscriber(string modelsDirectory) : IDisposable
         Directory.CreateDirectory(modelsDirectory);
         if (!File.Exists(_vadPath))
             await DownloadAsync(_vadPath, () => WhisperGgmlDownloader.Default.GetGgmlSileroVadModelAsync(SileroVadType.V6_2_0, ct), 0, null, ct);
+        if (!File.Exists(_segmentationPath))
+            await DownloadAsync(_segmentationPath, () => Http.GetStreamAsync(SegmentationUrl, ct), 0, null, ct);
+        if (!File.Exists(_embeddingPath))
+            await DownloadAsync(_embeddingPath, () => Http.GetStreamAsync(EmbeddingUrl, ct), 0, null, ct);
         if (!File.Exists(_modelPath))
             await DownloadAsync(_modelPath, () => WhisperGgmlDownloader.Default.GetGgmlModelAsync(GgmlType.LargeV3Turbo, QuantizationType.NoQuantization, ct),
                 ModelBytes, progress, ct);
@@ -102,9 +119,8 @@ public sealed class SpeechTranscriber(string modelsDirectory) : IDisposable
                     Math.Round(stitched.ToOriginal(s.End.TotalSeconds), 2), s.Text));
             }
             var cleaned = TranscriptFormatter.Clean(segments);
-            return cleaned.Count == 0
-                ? new Transcript(mediaId, TranscriptStatus.NoSpeech, [], language, ModelName)
-                : new Transcript(mediaId, TranscriptStatus.Done, cleaned, language, ModelName);
+            if (cleaned.Count == 0) return new Transcript(mediaId, TranscriptStatus.NoSpeech, [], language, ModelName);
+            return new Transcript(mediaId, TranscriptStatus.Done, LabelSpeakers(cleaned, stitched, path), language, ModelName);
         }
         catch (OperationCanceledException)
         {
@@ -114,6 +130,36 @@ public sealed class SpeechTranscriber(string modelsDirectory) : IDisposable
         {
             Log.Error($"Transcribing {path} failed", ex);
             return new Transcript(mediaId, TranscriptStatus.Failed, [], Model: ModelName, Error: ex.Message);
+        }
+    }
+
+    /// <summary>Who said what, when two or more voices clearly take part; otherwise the segments unlabelled.</summary>
+    private List<TranscriptSegment> LabelSpeakers(List<TranscriptSegment> segments, SpeechStitcher stitched, string path)
+    {
+        try
+        {
+            if (_diarization is null)
+            {
+                var config = new SherpaOnnx.OfflineSpeakerDiarizationConfig();
+                config.Segmentation.Pyannote.Model = _segmentationPath;
+                config.Segmentation.NumThreads = Math.Clamp(Environment.ProcessorCount / 4, 2, 8);
+                config.Embedding.Model = _embeddingPath;
+                config.Embedding.NumThreads = Math.Clamp(Environment.ProcessorCount / 4, 2, 8);
+                config.Clustering.NumClusters = -1; // unknown: decided by the threshold
+                config.Clustering.Threshold = SpeakerThreshold;
+                config.MinDurationOn = 0.3f;
+                config.MinDurationOff = 0.5f;
+                _diarization = new SherpaOnnx.OfflineSpeakerDiarization(config);
+            }
+            var turns = _diarization.Process(stitched.Samples)
+                .Select(t => new SpeakerTurn(stitched.ToOriginal(t.Start), stitched.ToOriginal(t.End), t.Speaker))
+                .ToList();
+            return SpeakerAssigner.Assign(segments, turns);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.Error($"Telling speakers apart in {path} failed; keeping the transcript without them", ex);
+            return segments;
         }
     }
 
@@ -166,6 +212,8 @@ public sealed class SpeechTranscriber(string modelsDirectory) : IDisposable
         _whisper = null;
         _vad?.Dispose();
         _vad = null;
+        _diarization?.Dispose();
+        _diarization = null;
     }
 
     public void Dispose() => Unload();

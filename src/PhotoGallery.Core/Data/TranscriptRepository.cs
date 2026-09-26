@@ -75,9 +75,10 @@ public sealed class TranscriptRepository(GalleryDatabase database)
 
     /// <summary>
     /// Videos with no transcript for their current file, newest first: visible, on disk, not an edited copy, and
-    /// at least <see cref="MinDurationMs"/> long. Failed ones aren't retried here.
+    /// at least <see cref="MinDurationMs"/> long. Failed ones aren't retried here. Transcripts with speech made by
+    /// another pipeline than <paramref name="model"/> come after those, to be redone.
     /// </summary>
-    public List<TranscriptionJob> GetBacklog(int count)
+    public List<TranscriptionJob> GetBacklog(int count, string? model = null)
     {
         using var db = database.Open();
         return db.Query<TranscriptionJob>(
@@ -85,10 +86,11 @@ public sealed class TranscriptRepository(GalleryDatabase database)
             SELECT m.Id AS MediaId, m.Path, m.DurationMs FROM Media m
             LEFT JOIN Transcripts t ON t.MediaId = m.Id
             WHERE m.Kind = 2 AND m.IsHidden = 0 AND m.OnlineOnly = 0 AND m.DerivedFromId IS NULL AND m.DurationMs >= @MinDurationMs
-              AND (t.MediaId IS NULL OR t.FileSize <> m.FileSize OR t.FileModified <> m.FileModified)
-            ORDER BY m.DateTaken DESC
+              AND (t.MediaId IS NULL OR t.FileSize <> m.FileSize OR t.FileModified <> m.FileModified
+                   OR (@model IS NOT NULL AND t.Status = 0 AND t.Text <> '' AND t.Model <> @model))
+            ORDER BY t.MediaId IS NOT NULL, m.DateTaken DESC
             LIMIT @count
-            """, new { MinDurationMs, count }).AsList();
+            """, new { MinDurationMs, count, model }).AsList();
     }
 
     /// <summary>How many of the videos the background work covers have a transcript (with speech or not).</summary>

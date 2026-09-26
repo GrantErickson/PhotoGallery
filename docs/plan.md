@@ -14,6 +14,8 @@ Month headers inside the timeline grid and drag-to-reorder in albums are done.
 
 Round 3 (2026-09-26): OneDrive tags and people via the SharePoint list behind the drive (People and Tags pages, person filter, naming/merging, face-crop avatars via Windows' face detector); day markers and a stronger selection highlight in the grid; Ctrl+wheel zoom; On this day with per-year date headers and day stepping; map cluster selection and deeper zoom; editor side handles and explicit Save as copy / Overwrite original / Keep edits in gallery, with derived-copy badges and an exit warning for gallery-only edits; cloud-only (Files On-Demand) placeholders are never read.
 
+Round 5 (2026-09-26): video transcripts on this PC (Whisper on the GPU, speaker labels), shown beside the video with click-to-seek and follow-along highlighting, and searchable.
+
 Round 4 (2026-09-26): Live Photo motion plays from OneDrive via the web session; save a frame from any video; save a Live Photo's motion as an MP4; a video editor (rotate, trim, remove sound → MP4); smart crop in the photo editor; People from OneDrive's web API with names, merges and face boxes (People avatars cropped to the face, face outline on hover in the viewer).
 
 How the build differs from the architecture below:
@@ -111,6 +113,25 @@ Found by watching onedrive.live.com's Photos › People view in WebView2. Same w
   the same name; unnamed ones are folded into whoever most of five sampled faces belong to now.
 - Result: counts match OneDrive (Megan 33,208 locally vs 31,669; local has some duplicate copies), no duplicate names.
 - Sync: full scan monthly or on request, otherwise the newest 2,000+ photos until a page brings nothing new (eTags).
+
+## Video transcripts (2026-09-26, working)
+Local speech to text, nothing uploaded. Pipeline per video (`SpeechTranscriber`):
+- Media Foundation `MediaTranscoder` → 16 kHz mono PCM in memory (15 min of audio in ~2 s); no sound track → NoAudio.
+- Silero VAD (Whisper.net's `WhisperVadProcessor`, model v6.2.0): speech regions, bridging pauses < 2 s. Under 1 s of
+  speech → NoSpeech (skips the silence where Whisper invents "Thanks for watching").
+- `SpeechStitcher`: regions joined with 1 s gaps into one buffer (Whisper costs a full 30 s window per call however
+  short) and times mapped back. Cutting at every 0.5 s pause gave choppy one-phrase "sentences"; 2 s keeps them whole.
+- Whisper large-v3-turbo (ggml, 1.6 GB) via Whisper.net 1.9.1 on the RTX 4070 Ti through **Vulkan** (only the driver is
+  needed; CUDA would need the toolkit installed and was judged not worth it). ~50–70× real time: 15 min in ~19 s; the
+  library (10.5k videos, 215 h) ≈ 4–5 hours in the background.
+- `TranscriptFormatter`: drops lone fillers, [Music]/(laughs)/*laughs* labels, stock silence phrases and repeated lines;
+  paragraphs at pauses ≥ 1.5 s after a sentence, ≥ 4 s anywhere, speaker changes, or after 30 s.
+- Speakers: sherpa-onnx 1.13.8 offline diarization (pyannote segmentation 3.0 + NeMo TitaNet small, CPU), clustering
+  threshold 0.85. Tuned on voice journals (must stay one speaker; at 0.5–0.7 walking/driving split one voice into 2–7)
+  and journal + a different (TTS) voice interleaved (≈ all covered speech attributed correctly at 0.8–0.9). 3D-Speaker
+  ERes2Net split more. `SpeakerAssigner` folds voices under 15 % / 4 s into neighbours and labels only when ≥ 2 remain.
+- Stored in `Transcripts` (valid for the file's size/date; model name so older pipelines get redone), words in
+  `MediaFts.Speech`. Background queue newest first after videos without transcripts; the viewed video jumps the queue.
 
 ## Media formats (from the library census)
 | Kind | Extensions (count) | Decode / handling |

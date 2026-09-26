@@ -146,7 +146,7 @@ public sealed class TranscriptionService(AppServices services)
             return (new TranscriptionJob(item.Id, item.Path, item.DurationMs), request.Done);
         }
         if (!services.Settings.TranscribeInBackground || _lastError is not null) return (null, null);
-        return (services.Transcripts.GetBacklog(1).FirstOrDefault(), null);
+        return (services.Transcripts.GetBacklog(1, SpeechTranscriber.ModelName).FirstOrDefault(), null);
     }
 
     private async Task<bool> EnsureModelsAsync()
