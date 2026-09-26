@@ -93,6 +93,22 @@ public sealed partial class MainWindow : Window
         Viewer.Show(items, index);
     }
 
+    public bool IsEditorOpen => Editor.Visibility == Visibility.Visible;
+
+    /// <summary>Opens the editor over the viewer; the callback reports whether edits were saved.</summary>
+    public void OpenEditor(PhotoGallery.Core.Media.MediaItem item, Action<bool> closed)
+    {
+        void OnClosed(bool saved)
+        {
+            Editor.Closed -= OnClosed;
+            Editor.Visibility = Visibility.Collapsed;
+            closed(saved);
+        }
+        Editor.Closed += OnClosed;
+        Editor.Visibility = Visibility.Visible;
+        _ = Editor.OpenAsync(item);
+    }
+
     private void OnViewerClosed(int index, bool changed)
     {
         Viewer.Visibility = Visibility.Collapsed;

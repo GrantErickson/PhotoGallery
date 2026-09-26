@@ -27,7 +27,7 @@ public sealed class LibraryStats
 
 public sealed class MediaRepository(GalleryDatabase database)
 {
-    private const string SummaryColumns = "m.Id, m.Kind, m.DateTaken, m.Motion, m.Rating, m.DurationMs, m.IsScreenshot";
+    private const string SummaryColumns = "m.Id, m.Kind, m.DateTaken, m.Motion, m.Rating, m.DurationMs, m.IsScreenshot, EXISTS (SELECT 1 FROM Edits e WHERE e.MediaId = m.Id) AS IsEdited";
 
     // ---------- Indexing ----------
 

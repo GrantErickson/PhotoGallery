@@ -123,6 +123,10 @@
                                 HorizontalAlignment="Left" VerticalAlignment="Top" Background="#99000000">
                             <TextBlock Text="◉ LIVE" FontSize="10" FontWeight="SemiBold" Foreground="White" />
                         </Border>
+                        <Border Visibility="{x:Bind app:Format.Visible(IsEdited)}" Margin="6" Padding="4,2" CornerRadius="3"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Background="#99000000" ToolTipService.ToolTip="Edited">
+                            <FontIcon Glyph="&#xE70F;" FontSize="10" Foreground="White" />
+                        </Border>
                         <Border Visibility="{x:Bind app:Format.IsVideo(Kind)}" Margin="6" Padding="5,1" CornerRadius="3"
                                 HorizontalAlignment="Right" VerticalAlignment="Bottom" Background="#99000000">
                             <StackPanel Orientation="Horizontal" Spacing="4">

@@ -43,6 +43,7 @@ public sealed class MediaSummary
     public int Rating { get; set; }
     public long DurationMs { get; set; }
     public bool IsScreenshot { get; set; }
+    public bool IsEdited { get; set; }
 
     public DateTime TakenLocal => DateTime.UnixEpoch.AddSeconds(DateTaken);
 }

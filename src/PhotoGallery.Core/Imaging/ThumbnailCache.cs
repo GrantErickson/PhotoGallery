@@ -28,6 +28,12 @@ public sealed class ThumbnailCache : IDisposable
         _fallbackGate = new SemaphoreSlim(decodeConcurrency ?? Math.Max(4, Environment.ProcessorCount / 2));
     }
 
+    /// <summary>
+    /// Optional renderer consulted first (media id, source path) — the app uses it to draw edited photos with
+    /// their edits applied. Return null to fall through to the normal sources.
+    /// </summary>
+    public Func<long, string, CancellationToken, Task<SoftwareBitmap?>>? Renderer { get; set; }
+
     /// <summary>Raised when a thumbnail can't be produced (source path, error).</summary>
     public event Action<string, Exception>? Failed;
 
@@ -56,6 +62,14 @@ public sealed class ThumbnailCache : IDisposable
         }
         try
         {
+            if (Renderer is { } renderer && await renderer(id, sourcePath, ct) is { } rendered)
+            {
+                using (rendered)
+                using (var opaque = SoftwareBitmap.Convert(rendered, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore))
+                    await WriteJpegAsync(target, encoder => encoder.SetSoftwareBitmap(opaque), ct);
+                return target;
+            }
+
             var pixels = await _shell.GetAsync(sourcePath, RequestedSize, ct);
             if (pixels is not null)
             {

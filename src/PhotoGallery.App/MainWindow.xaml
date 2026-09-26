@@ -77,5 +77,8 @@
 
         <!-- Viewer overlay -->
         <controls:ViewerControl x:Name="Viewer" Grid.RowSpan="2" Visibility="Collapsed" />
+
+        <!-- Editor overlay (on top of the viewer) -->
+        <controls:EditorControl x:Name="Editor" Grid.RowSpan="2" Visibility="Collapsed" />
     </Grid>
 </Window>

@@ -19,8 +19,12 @@ public sealed class AppServices
         Database.Migrate();
         Media = new MediaRepository(Database);
         Collections = new CollectionRepository(Database);
+        Edits = new EditRepository(Database);
         Thumbnails = new ThumbnailCache(Paths.Thumbnails);
         Thumbnails.Failed += (path, ex) => Log.Error($"Thumbnail failed for {path}", ex);
+        // Edited photos get thumbnails with their edits applied.
+        Thumbnails.Renderer = async (id, path, ct) =>
+            Edits.Get(id) is { } ops ? await Editing.EditRenderer.RenderPreviewAsync(path, ops, ThumbnailCache.RequestedSize) : null;
         OneDrive = new OneDriveClient(Settings.ClientId, Paths.TokenCache);
         Motion = new MotionVideoService(Media, OneDrive, Settings, Paths.MotionCache);
         Indexing = new IndexingService(this);
@@ -31,6 +35,7 @@ public sealed class AppServices
     public GalleryDatabase Database { get; }
     public MediaRepository Media { get; }
     public CollectionRepository Collections { get; }
+    public EditRepository Edits { get; }
     public ThumbnailCache Thumbnails { get; }
     public OneDriveClient OneDrive { get; }
     public MotionVideoService Motion { get; }

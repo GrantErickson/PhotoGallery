@@ -11,6 +11,8 @@ public static class Format
     public static Visibility HasMotion(MotionSource motion) =>
         motion is MotionSource.LocalPair or MotionSource.Embedded or MotionSource.Cloud ? Visibility.Visible : Visibility.Collapsed;
 
+    public static Visibility Visible(bool value) => value ? Visibility.Visible : Visibility.Collapsed;
+
     public static Visibility HasRating(int rating) => rating > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public static string Stars(int rating) => new('★', Math.Clamp(rating, 0, 5));

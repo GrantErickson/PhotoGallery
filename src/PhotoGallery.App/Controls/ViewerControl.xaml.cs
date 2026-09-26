@@ -4,7 +4,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
+using PhotoGallery.App.Editing;
 using PhotoGallery.App.Services;
+using PhotoGallery.Core;
+using PhotoGallery.Core.Editing;
 using PhotoGallery.Core.Data;
 using PhotoGallery.Core.Media;
 using Windows.Media.Core;
@@ -89,6 +92,12 @@ public sealed partial class ViewerControl : UserControl
         FitPhoto();
         LoadingRing.IsActive = true;
         Photo.Source = S.Thumbnails.TryGetCached(item.Id, out var thumb) ? new BitmapImage(new Uri(thumb)) : null;
+
+        if (await Task.Run(() => S.Edits.Get(id), ct) is { } edits)
+        {
+            await ShowEditedAsync(item, edits, ct);
+            return;
+        }
         try
         {
             var full = new BitmapImage();
@@ -114,6 +123,30 @@ public sealed partial class ViewerControl : UserControl
         finally
         {
             if (Photo.Source is null) LoadingRing.IsActive = false;
+        }
+    }
+
+    /// <summary>Renders the photo with its saved edits at screen resolution.</summary>
+    private async Task ShowEditedAsync(MediaItem item, EditOperations edits, CancellationToken ct)
+    {
+        try
+        {
+            var scale = XamlRoot?.RasterizationScale ?? 1.0;
+            var longest = (int)Math.Min(8192, Math.Max(Stage.ActualWidth, Stage.ActualHeight) * scale * 2);
+            using var bitmap = await EditRenderer.RenderPreviewAsync(item.Path, edits, longest);
+            if (ct.IsCancellationRequested) return;
+            var source = new SoftwareBitmapSource();
+            await source.SetBitmapAsync(bitmap);
+            if (!ct.IsCancellationRequested) Photo.Source = source;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Error($"Rendering edits for {item.Path} failed", ex);
+            ShowError("Couldn't apply the saved edits to this photo.");
+        }
+        finally
+        {
+            LoadingRing.IsActive = false;
         }
     }
 
@@ -147,6 +180,11 @@ public sealed partial class ViewerControl : UserControl
             MotionSource.Cloud => S.OneDrive.IsSignedIn ? "Live Photo · video stored in OneDrive" : "Live Photo · video stored in OneDrive (sign in under Settings)",
             _ => "",
         };
+
+        EditButton.Visibility = item.Kind == MediaKind.Video ? Visibility.Collapsed : Visibility.Visible;
+        var edits = S.Edits.Get(item.Id);
+        EditedPanel.Visibility = edits is null ? Visibility.Collapsed : Visibility.Visible;
+        EditedText.Text = edits is null ? "" : DescribeEdits(edits);
 
         _suppressRating = true;
         Rating.Value = item.Rating > 0 ? item.Rating : -1;
@@ -245,7 +283,7 @@ public sealed partial class ViewerControl : UserControl
 
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (FocusManager.GetFocusedElement(XamlRoot) is TextBox or AutoSuggestBox) return;
+        if (App.MainWindow.IsEditorOpen || FocusManager.GetFocusedElement(XamlRoot) is TextBox or AutoSuggestBox) return;
         switch (e.Key)
         {
             case VirtualKey.Left when _index > 0:
@@ -259,6 +297,9 @@ public sealed partial class ViewerControl : UserControl
                 break;
             case VirtualKey.Space when _current?.Kind != MediaKind.Video:
                 _ = PlayMotionAsync();
+                break;
+            case VirtualKey.E:
+                OpenEditor();
                 break;
             case VirtualKey.I:
                 InfoToggle.IsChecked = !InfoToggle.IsChecked;
@@ -417,6 +458,40 @@ public sealed partial class ViewerControl : UserControl
             return;
         }
         await Launcher.LaunchUriAsync(new Uri(url));
+    }
+
+    private static string DescribeEdits(EditOperations e)
+    {
+        var parts = new List<string>();
+        if (e.Rotation != 0) parts.Add("rotated");
+        if (e.FlipHorizontal) parts.Add("flipped");
+        if (e.Crop is { IsFull: false }) parts.Add("cropped");
+        if (e.HasColorAdjustments) parts.Add("light adjusted");
+        var text = string.Join(", ", parts);
+        return text.Length == 0 ? "Edited" : char.ToUpperInvariant(text[0]) + text[1..];
+    }
+
+    private void OnEdit(object sender, RoutedEventArgs e) => OpenEditor();
+
+    private void OpenEditor()
+    {
+        if (_current is not { Kind: not MediaKind.Video } item) return;
+        StopPlayback();
+        App.MainWindow.OpenEditor(item, saved =>
+        {
+            if (saved) _changed = true;
+            _ = ShowIndexAsync(_index);
+            Focus(FocusState.Programmatic);
+        });
+    }
+
+    private void OnRevertEdits(object sender, RoutedEventArgs e)
+    {
+        if (_current is null) return;
+        S.Edits.Save(_current.Id, EditOperations.None);
+        S.Thumbnails.Invalidate([_current.Id]);
+        _changed = true;
+        _ = ShowIndexAsync(_index);
     }
 
     private void OnCopyPath(object sender, RoutedEventArgs e)
