@@ -134,8 +134,9 @@
                             <Border Visibility="{x:Bind app:Format.Visible(StartsDay)}" Padding="6,1" CornerRadius="8" Background="#CC000000">
                                 <TextBlock Text="{x:Bind app:Format.Day(DateTaken)}" FontSize="11" FontWeight="SemiBold" Foreground="White" />
                             </Border>
-                            <Border Visibility="{x:Bind app:Format.HasMotion(Motion)}" Padding="5,1" CornerRadius="3" Background="#99000000">
-                                <TextBlock Text="◉ LIVE" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                            <Border Visibility="{x:Bind app:Format.HasMotion(Motion)}" Width="18" Height="18" CornerRadius="9" Background="#99000000"
+                                    ToolTipService.ToolTip="Live Photo">
+                                <TextBlock Text="◉" FontSize="11" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="4" Margin="6" HorizontalAlignment="Right" VerticalAlignment="Bottom">
