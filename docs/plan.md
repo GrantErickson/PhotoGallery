@@ -67,6 +67,15 @@ OneDrive/Graph (`spikes/OneDriveLivePhoto`, app registration `5f0b2132-a2b1-45ef
 - Graph `photo` facet provides takenDateTime, camera, exposure and quickXorHash/sha1/sha256 (sha256 could help duplicate detection later).
 - Still to check: what `format=video` returns for a non-Live photo (expect 4xx). Throttling behaviour if motion is prefetched in bulk. Prefer fetching on demand.
 
+## Live Photo video via the OneDrive web API (2026-09-26, working)
+`GET https://my.microsoftpersonalcontent.com/_api/v2.1/drives/{driveId}/items/{itemId}/content?format=video` with the
+OneDrive **web session's** Authorization header returns the original iPhone MOV (our MSAL/Graph token gets 401).
+- Item id: Graph `/root:/{path}` returns the same id the web app uses (`{DRIVE}!s{guid}`; legacy files `{DRIVE}!{n}`), stored in Media.OneDriveItemId.
+- Token: captured in-app from the web app's own requests in WebView2 (Settings → Live Photos → Connect; profile in `%LocalAppData%\PhotoGallery\webview`). Memory only, never logged. Refreshed silently by a hidden WebView2: a hidden page skips the `_api` calls but still calls `api.onedrive.com`, whose token also works for the video API.
+- Validation: QuickTime-shaped body (not the still or JSON) and `com.apple.quicktime.content.identifier` matches the photo's Apple ContentIdentifier; otherwise discarded.
+- Non-Live photo (legacy id, 2015 JPG): 400 JSON → Motion = CloudMissing, nothing cached. Test photo 20260926_141010123_iOS.heic → 5,090,295-byte MOV, content ID matches.
+- Cache refused inside OneDrive roots (env vars + `HKCU\Software\Microsoft\OneDrive\Accounts\*\UserFolder`).
+
 ## OneDrive tags and people (spike 2026-09-26)
 Graph's driveItem has no tags/people, but personal OneDrive now runs on SharePoint (`my.microsoftpersonalcontent.com`), and the
 document library's hidden list columns carry the AI metadata. Undocumented but readable with our `Files.Read` token:
