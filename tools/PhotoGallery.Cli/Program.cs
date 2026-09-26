@@ -85,7 +85,10 @@ switch (args.FirstOrDefault())
         var oneDrive = new OneDriveClient(settings.ClientId, paths.TokenCache);
         if (!await oneDrive.TrySignInSilentAsync()) { Console.WriteLine("not signed in"); break; }
         var sync = new OneDriveMetadataSync(oneDrive, database, media, settings);
-        var result = await sync.RunAsync(new Progress<MetadataSyncProgress>(p => Console.Write($"\rread {p.ItemsRead:N0}, matched {p.Matched:N0}   ")));
+        // As in the app: once people come from the web session, this list's pre-merge person ids would only add duplicates.
+        var includePeople = media.GetSyncValue(OneDriveFaceSync.LastSyncKey) is null;
+        var result = await sync.RunAsync(includePeople,
+            new Progress<MetadataSyncProgress>(p => Console.Write($"\rread {p.ItemsRead:N0}, matched {p.Matched:N0}   ")));
         Console.WriteLine();
         Console.WriteLine($"{result.ItemsRead:N0} items, {result.Matched:N0} in library, {result.Tagged:N0} tagged, {result.People:N0} people in {result.Elapsed:mm\\:ss}");
         break;
