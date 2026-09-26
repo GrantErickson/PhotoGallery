@@ -32,7 +32,11 @@ public partial class App : Application
         // Unpackaged apps default WebView2's data folder to the exe directory, which may not be writable.
         Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", Path.Combine(_services.Paths.Root, "webview"));
         _window = new MainWindow();
-        _window.Closed += (_, _) => _services.Thumbnails.Dispose();
+        _window.Closed += (_, _) =>
+        {
+            _services.Transcription.Shutdown();
+            _services.Thumbnails.Dispose();
+        };
         _window.Activate();
 
         _services.Indexing.Start();
@@ -46,5 +50,6 @@ public partial class App : Application
         // window a minute to settle first.
         await Task.Delay(TimeSpan.FromMinutes(1));
         services.CloudSync.SyncIfStale();
+        services.Transcription.Start();
     }
 }

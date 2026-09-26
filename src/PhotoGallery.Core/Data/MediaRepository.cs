@@ -109,13 +109,15 @@ public sealed class MediaRepository(GalleryDatabase database)
 
         db.Execute(
             """
+            DELETE FROM Transcripts WHERE MediaId = @Id AND (FileSize <> @FileSize OR FileModified <> @FileModified);
             DELETE FROM MediaFts WHERE rowid = @Id;
-            INSERT INTO MediaFts (rowid, Name, Folder, Tags, Camera)
+            INSERT INTO MediaFts (rowid, Name, Folder, Tags, Camera, Speech)
             VALUES (@Id, @FileName, @folderPath,
                     trim(coalesce((SELECT group_concat(t.Name, ' ') FROM MediaTags mt JOIN Tags t ON t.Id = mt.TagId WHERE mt.MediaId = @Id), '') || ' ' ||
                          coalesce((SELECT group_concat(pp.Name, ' ') FROM MediaFaces f JOIN People pp ON pp.Id = f.PersonId WHERE f.MediaId = @Id AND pp.Name IS NOT NULL), '')),
-                    trim(coalesce(@CameraMake, '') || ' ' || coalesce(@CameraModel, '')));
-            """, new { item.Id, item.FileName, folderPath, item.CameraMake, item.CameraModel }, tx);
+                    trim(coalesce(@CameraMake, '') || ' ' || coalesce(@CameraModel, '')),
+                    (SELECT Text FROM Transcripts WHERE MediaId = @Id));
+            """, new { item.Id, item.FileName, folderPath, item.CameraMake, item.CameraModel, item.FileSize, item.FileModified }, tx);
     }
 
     public void Delete(SqliteConnection db, SqliteTransaction tx, IEnumerable<long> ids)

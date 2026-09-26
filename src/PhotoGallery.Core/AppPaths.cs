@@ -12,6 +12,8 @@ public sealed class AppPaths(string root)
     public string Thumbnails => Path.Combine(Root, "thumbs");
     public string MotionCache => Path.Combine(Root, "motion");
     public string TokenCache => Path.Combine(Root, "auth");
+    /// <summary>Speech models (downloaded on first use; ~1.6 GB).</summary>
+    public string Models => Path.Combine(Root, "models");
     public string Settings => Path.Combine(Root, "settings.json");
 
     public void EnsureCreated()
@@ -34,6 +36,8 @@ public sealed class AppSettings
     public bool IncludeScreenshots { get; set; }
     /// <summary>The OneDrive web session (for Live Photo videos) has been connected. The token itself is never stored.</summary>
     public bool OneDriveWebConnected { get; set; }
+    /// <summary>Transcribe every video in the background (the one being watched is always done on request).</summary>
+    public bool TranscribeInBackground { get; set; } = true;
     /// <summary>Grid tile edge in DIPs.</summary>
     public double TileSize { get; set; } = 180;
 

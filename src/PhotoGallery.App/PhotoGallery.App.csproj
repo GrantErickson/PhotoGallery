@@ -22,6 +22,10 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.Graphics.Win2D" />
+    <!-- Speech to text: whisper.cpp, on the GPU through Vulkan (needs only the graphics driver), CPU as fallback. -->
+    <PackageReference Include="Whisper.net" />
+    <PackageReference Include="Whisper.net.Runtime" />
+    <PackageReference Include="Whisper.net.Runtime.Vulkan" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PhotoGallery.Core\PhotoGallery.Core.csproj" />

@@ -62,7 +62,7 @@ public sealed class LiveVideoTests : IDisposable
         var server = new Server(Ok(LiveMov(ContentId)));
         var client = new OneDriveLiveVideoClient(new FakeToken(), server);
 
-        var status = await client.DownloadAsync(ItemId, Dest, ContentId);
+        var status = await client.DownloadAsync(ItemId, Dest, ContentId, TestContext.Current.CancellationToken);
 
         Assert.Equal(LiveVideoStatus.Downloaded, status);
         Assert.True(File.Exists(Dest));
@@ -79,7 +79,7 @@ public sealed class LiveVideoTests : IDisposable
     {
         var client = new OneDriveLiveVideoClient(new FakeToken(), new Server(Ok(LiveMov("00000000-0000-0000-0000-000000000000"))));
 
-        Assert.Equal(LiveVideoStatus.Mismatch, await client.DownloadAsync(ItemId, Dest, ContentId));
+        Assert.Equal(LiveVideoStatus.Mismatch, await client.DownloadAsync(ItemId, Dest, ContentId, TestContext.Current.CancellationToken));
         Assert.Empty(Directory.GetFiles(_dir, "video.mov*"));
     }
 
@@ -97,7 +97,7 @@ public sealed class LiveVideoTests : IDisposable
         };
         var client = new OneDriveLiveVideoClient(new FakeToken(), new Server(Ok(body)));
 
-        Assert.Equal(LiveVideoStatus.NotLivePhoto, await client.DownloadAsync(ItemId, Dest, ContentId));
+        Assert.Equal(LiveVideoStatus.NotLivePhoto, await client.DownloadAsync(ItemId, Dest, ContentId, TestContext.Current.CancellationToken));
         Assert.Empty(Directory.GetFiles(_dir, "video.mov*"));
     }
 
@@ -107,7 +107,7 @@ public sealed class LiveVideoTests : IDisposable
         var token = new FakeToken();
         var client = new OneDriveLiveVideoClient(token, new Server(new HttpResponseMessage(HttpStatusCode.Unauthorized)));
 
-        var status = await client.DownloadAsync(ItemId, Dest, ContentId);
+        var status = await client.DownloadAsync(ItemId, Dest, ContentId, TestContext.Current.CancellationToken);
 
         Assert.Equal(LiveVideoStatus.NotConnected, status);
         Assert.Equal(1, token.Refreshes);
@@ -122,7 +122,7 @@ public sealed class LiveVideoTests : IDisposable
         var token = new FakeToken();
         var client = new OneDriveLiveVideoClient(token, new Server(new HttpResponseMessage(HttpStatusCode.Unauthorized), Ok(LiveMov(ContentId))));
 
-        Assert.Equal(LiveVideoStatus.Downloaded, await client.DownloadAsync(ItemId, Dest, ContentId));
+        Assert.Equal(LiveVideoStatus.Downloaded, await client.DownloadAsync(ItemId, Dest, ContentId, TestContext.Current.CancellationToken));
         Assert.Equal(1, token.Refreshes);
     }
 

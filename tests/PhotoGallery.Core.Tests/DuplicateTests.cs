@@ -127,7 +127,7 @@ public sealed class DuplicateTests : IDisposable
         }
         var finder = new DuplicateFinder(database, (_, _, _) => Task.FromResult<string?>(null));
 
-        var groups = await finder.FindAsync();
+        var groups = await finder.FindAsync(ct: TestContext.Current.CancellationToken);
 
         var group = Assert.Single(groups);
         Assert.Equal(DuplicateKind.Exact, group.Kind);

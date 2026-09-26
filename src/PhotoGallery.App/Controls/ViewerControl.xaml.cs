@@ -10,6 +10,7 @@ using PhotoGallery.Core;
 using PhotoGallery.Core.Editing;
 using PhotoGallery.Core.Data;
 using PhotoGallery.Core.Media;
+using PhotoGallery.Core.Transcripts;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.System;
@@ -48,8 +49,29 @@ public sealed partial class ViewerControl : UserControl
         _player.PlaybackSession.PositionChanged += (session, _) =>
         {
             var position = session.Position;
-            DispatcherQueue.TryEnqueue(() => FrameTimeText.Text = FormatPosition(position));
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                FrameTimeText.Text = FormatPosition(position);
+                FollowTranscript(position);
+            });
         };
+        S.Transcription.Progress += (mediaId, fraction) => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_current?.Id != mediaId || TranscriptProgress.Visibility != Visibility.Visible) return;
+            TranscriptProgress.IsIndeterminate = false;
+            TranscriptProgress.Value = fraction;
+            TranscriptStatusText.Text = $"Transcribing… {fraction:P0}";
+        });
+        S.Transcription.StateChanged += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_current is { Kind: MediaKind.Video } && _transcriptLines.Count == 0 && S.Transcription.DownloadProgress is { } d &&
+                TranscriptProgress.Visibility == Visibility.Visible)
+            {
+                TranscriptProgress.IsIndeterminate = false;
+                TranscriptProgress.Value = d;
+                TranscriptStatusText.Text = $"Downloading the speech model (1.6 GB, once)… {d:P0}";
+            }
+        });
         _player.PlaybackSession.PlaybackStateChanged += (session, _) =>
         {
             // Pausing part-way through Live Photo motion means "let me look at this frame".
@@ -109,6 +131,7 @@ public sealed partial class ViewerControl : UserControl
         }
         _current = item;
         ShowDetails(item);
+        ShowTranscript(item, ct);
         PrefetchMotion(item, ct);
 
         if (item.Kind == MediaKind.Video)
@@ -793,5 +816,164 @@ public sealed partial class ViewerControl : UserControl
         if (_current is { Latitude: { } lat, Longitude: { } lon })
             await Launcher.LaunchUriAsync(new Uri(string.Create(CultureInfo.InvariantCulture,
                 $"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=16/{lat}/{lon}")));
+    }
+
+    // ---- Transcript ----
+
+    private List<TranscriptLine> _transcriptLines = [];
+    private Transcript? _transcript;
+    private TranscriptLine? _currentLine;
+    private DateTime _userScrolledAt;
+    /// <summary>Which tab videos open on; remembers the last choice.</summary>
+    private bool _preferDetails;
+
+    /// <summary>For a video: shows its transcript, or asks for it (ahead of the background work) and shows progress.</summary>
+    private async void ShowTranscript(MediaItem item, CancellationToken ct)
+    {
+        var isVideo = item.Kind == MediaKind.Video;
+        SideTabs.Visibility = isVideo ? Visibility.Visible : Visibility.Collapsed;
+        SetTranscriptLines(null);
+        if (!isVideo)
+        {
+            ShowSidePane(details: true);
+            return;
+        }
+        SideTabs.SelectedItem = _preferDetails ? DetailsTab : TranscriptTab;
+        ShowSidePane(details: _preferDetails);
+
+        var transcript = await Task.Run(() => S.Transcripts.Get(item.Id));
+        if (ct.IsCancellationRequested) return;
+        if (transcript is null)
+        {
+            if (item.OnlineOnly)
+            {
+                TranscriptStatusText.Text = "This video is only in OneDrive; it's transcribed once it's downloaded.";
+                return;
+            }
+            TranscriptStatusText.Text = S.Transcription.DownloadProgress is { } d
+                ? $"Downloading the speech model (1.6 GB, once)… {d:P0}"
+                : "Transcribing…";
+            TranscriptProgress.Visibility = Visibility.Visible;
+            TranscriptProgress.IsIndeterminate = true;
+            transcript = await S.Transcription.RequestAsync(item.Id);
+            if (ct.IsCancellationRequested || _current?.Id != item.Id) return;
+        }
+        ShowTranscriptResult(transcript);
+    }
+
+    private void ShowTranscriptResult(Transcript? transcript)
+    {
+        TranscriptProgress.Visibility = Visibility.Collapsed;
+        RetryTranscriptButton.Visibility = transcript?.Status == TranscriptStatus.Failed ? Visibility.Visible : Visibility.Collapsed;
+        _transcript = transcript;
+        switch (transcript)
+        {
+            case null:
+                TranscriptStatusText.Text = "Couldn't transcribe this video.";
+                SetTranscriptLines(null);
+                break;
+            case { Status: TranscriptStatus.NoAudio }:
+                TranscriptStatusText.Text = "This video has no sound.";
+                SetTranscriptLines(null);
+                break;
+            case { Status: TranscriptStatus.Failed }:
+                TranscriptStatusText.Text = $"Couldn't transcribe this video: {transcript.Error}";
+                SetTranscriptLines(null);
+                break;
+            case { HasSpeech: false }:
+                TranscriptStatusText.Text = "No speech in this video.";
+                SetTranscriptLines(null);
+                break;
+            default:
+                var paragraphs = TranscriptFormatter.Paragraphs(transcript.Segments);
+                var speakers = paragraphs.Select(p => p.Speaker).Distinct().Count(s => s is not null);
+                SetTranscriptLines(paragraphs.Select(p => new TranscriptLine(p, speakers > 1)).ToList());
+                TranscriptStatusText.Text = LanguageName(transcript.Language) is { } language ? $"Spoken {language}" : "";
+                break;
+        }
+    }
+
+    private void SetTranscriptLines(List<TranscriptLine>? lines)
+    {
+        _transcriptLines = lines ?? [];
+        _currentLine = null;
+        TranscriptList.ItemsSource = _transcriptLines;
+        CopyTranscriptButton.Visibility = _transcriptLines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (lines is null)
+        {
+            _transcript = null;
+            RetryTranscriptButton.Visibility = Visibility.Collapsed;
+        }
+        TranscriptScroll.ChangeView(null, 0, null, disableAnimation: true);
+    }
+
+    private static string? LanguageName(string? code)
+    {
+        if (string.IsNullOrEmpty(code) || code == "auto") return null;
+        try
+        {
+            return $"in {new System.Globalization.CultureInfo(code).EnglishName}";
+        }
+        catch (System.Globalization.CultureNotFoundException)
+        {
+            return $"in {code}";
+        }
+    }
+
+    private void OnSideTabChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        if (SideTabs.Visibility != Visibility.Visible) return;
+        _preferDetails = ReferenceEquals(sender.SelectedItem, DetailsTab);
+        ShowSidePane(_preferDetails);
+    }
+
+    private void ShowSidePane(bool details)
+    {
+        InfoPane.Visibility = details ? Visibility.Visible : Visibility.Collapsed;
+        TranscriptPane.Visibility = details ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OnTranscriptSeek(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is not TranscriptLine line || _videoPath is null) return;
+        _player.PlaybackSession.Position = TimeSpan.FromSeconds(line.Start);
+        _player.Play();
+        _userScrolledAt = default;
+        FollowTranscript(_player.PlaybackSession.Position);
+    }
+
+    private void OnTranscriptUserScroll(object sender, object e) => _userScrolledAt = DateTime.UtcNow;
+
+    /// <summary>Highlights what's being said now and keeps it in view (unless the reader scrolled away just now).</summary>
+    private void FollowTranscript(TimeSpan position)
+    {
+        if (_transcriptLines.Count == 0 || _playingMotion) return;
+        var t = position.TotalSeconds;
+        var line = _transcriptLines.LastOrDefault(l => l.Start <= t + 0.2);
+        if (line is not null && t > line.End + 3) line = null; // in a long silence after it
+        if (ReferenceEquals(line, _currentLine)) return;
+        if (_currentLine is not null) _currentLine.IsCurrent = false;
+        _currentLine = line;
+        if (line is null) return;
+        line.IsCurrent = true;
+        if (DateTime.UtcNow - _userScrolledAt > TimeSpan.FromSeconds(5) && TranscriptList.ContainerFromItem(line) is UIElement container)
+            container.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.25, AnimationDesired = true });
+    }
+
+    private void OnCopyTranscript(object sender, RoutedEventArgs e)
+    {
+        if (_transcript is null) return;
+        var text = TranscriptFormatter.PlainText(TranscriptFormatter.Paragraphs(_transcript.Segments), s => $"Speaker {s}");
+        var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        package.SetText(text);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        ShowToast("Transcript copied");
+    }
+
+    private void OnRetryTranscript(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { } item) return;
+        S.Transcripts.Delete(item.Id);
+        ShowTranscript(item, _loadCts.Token);
     }
 }

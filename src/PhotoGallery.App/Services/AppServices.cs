@@ -21,6 +21,7 @@ public sealed class AppServices
         Collections = new CollectionRepository(Database);
         Edits = new EditRepository(Database);
         People = new PeopleRepository(Database);
+        Transcripts = new TranscriptRepository(Database);
         Faces = new Imaging.FaceCropper(Path.Combine(Paths.Root, "faces"));
         Thumbnails = new ThumbnailCache(Paths.Thumbnails);
         Thumbnails.Failed += (path, ex) => Log.Error($"Thumbnail failed for {path}", ex);
@@ -34,6 +35,7 @@ public sealed class AppServices
         Motion = new MotionVideoService(Media, OneDrive, LiveVideo, Settings, Paths.MotionCache);
         Indexing = new IndexingService(this);
         CloudSync = new CloudSyncService(this);
+        Transcription = new TranscriptionService(this);
     }
 
     public AppPaths Paths { get; }
@@ -43,6 +45,8 @@ public sealed class AppServices
     public CollectionRepository Collections { get; }
     public EditRepository Edits { get; }
     public PeopleRepository People { get; }
+    public TranscriptRepository Transcripts { get; }
+    public TranscriptionService Transcription { get; }
     public Imaging.FaceCropper Faces { get; }
     public CloudSyncService CloudSync { get; }
     public ThumbnailCache Thumbnails { get; }

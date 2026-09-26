@@ -7,15 +7,23 @@ namespace PhotoGallery.App.Pages;
 
 public sealed partial class SettingsPage : Page
 {
+    private bool _loadingSwitch;
+
     public SettingsPage()
     {
         InitializeComponent();
+        App.Services.Transcription.StateChanged += OnTranscriptionChanged;
+        App.Services.Transcription.Completed += _ => OnTranscriptionChanged();
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         RefreshRoots();
         RefreshAccount();
+        _loadingSwitch = true;
+        TranscribeSwitch.IsOn = App.Services.Settings.TranscribeInBackground;
+        _loadingSwitch = false;
+        await RefreshTranscriptsAsync();
         var services = App.Services;
         PathsText.Text = $"Database: {services.Paths.Database}\nThumbnails: {services.Paths.Thumbnails}";
         var stats = await Task.Run(services.Media.GetStats);
@@ -25,6 +33,32 @@ public sealed partial class SettingsPage : Page
     }
 
     private void RefreshRoots() => RootsList.ItemsSource = App.Services.Settings.LibraryRoots.ToList();
+
+    private DateTime _lastTranscriptRefresh;
+
+    /// <summary>Background updates, at most once a second while this page is showing.</summary>
+    private void OnTranscriptionChanged() => DispatcherQueue.TryEnqueue(async () =>
+    {
+        if (!IsLoaded || DateTime.UtcNow - _lastTranscriptRefresh < TimeSpan.FromSeconds(1)) return;
+        await RefreshTranscriptsAsync();
+    });
+
+    private async Task RefreshTranscriptsAsync()
+    {
+        _lastTranscriptRefresh = DateTime.UtcNow;
+        var service = App.Services.Transcription;
+        var (done, total, withSpeech) = await Task.Run(App.Services.Transcripts.GetProgress);
+        var runtime = service.Runtime is { } r ? $" · running on {(r == "Cpu" ? "the CPU" : $"the GPU ({r})")}" : "";
+        TranscriptStatsText.Text = $"{done:N0} of {total:N0} videos done, {withSpeech:N0} with speech · {service.Status}{runtime}";
+    }
+
+    private void OnTranscribeToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingSwitch) return;
+        App.Services.Settings.TranscribeInBackground = TranscribeSwitch.IsOn;
+        App.Services.SaveSettings();
+        App.Services.Transcription.Nudge();
+    }
 
     private void RefreshAccount()
     {

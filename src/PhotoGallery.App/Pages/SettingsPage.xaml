@@ -57,6 +57,14 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="Video transcripts" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="What's said in each video is turned into text on this PC (Whisper large-v3-turbo on the graphics card; nothing is uploaded) and shown beside the video when you open it. Spoken words are searchable. The video you open is always done first; the rest of the library can be worked through in the background, newest first." />
+                <ToggleSwitch x:Name="TranscribeSwitch" Header="Transcribe all videos in the background" Toggled="OnTranscribeToggled" />
+                <TextBlock x:Name="TranscriptStatsText" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="Library" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock x:Name="StatsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 <TextBlock x:Name="PathsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}"

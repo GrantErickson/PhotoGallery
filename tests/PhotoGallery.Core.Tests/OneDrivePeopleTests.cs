@@ -124,7 +124,7 @@ public sealed class OneDrivePeopleTests : IDisposable
         var client = new OneDrivePeopleClient(new Token(), server);
 
         var people = new List<OneDrivePerson>();
-        await foreach (var p in client.GetPeopleAsync("D")) people.Add(p);
+        await foreach (var p in client.GetPeopleAsync("D", TestContext.Current.CancellationToken)) people.Add(p);
 
         Assert.Equal([("a", "Emily", 9), ("b", (string?)null, 3)], people.Select(p => (p.Id, p.Name, p.PhotoCount)));
         Assert.All(server.Requests, r => Assert.Equal("my.microsoftpersonalcontent.com", r.RequestUri!.Host));
@@ -132,7 +132,7 @@ public sealed class OneDrivePeopleTests : IDisposable
         var evil = new Server(url => Page("https://evil.example/steal", Person("a", "Emily")));
         await Assert.ThrowsAsync<InvalidDataException>(async () =>
         {
-            await foreach (var _ in new OneDrivePeopleClient(new Token(), evil).GetPeopleAsync("D")) { }
+            await foreach (var _ in new OneDrivePeopleClient(new Token(), evil).GetPeopleAsync("D", TestContext.Current.CancellationToken)) { }
         });
         Assert.Single(evil.Requests);
     }
@@ -163,7 +163,7 @@ public sealed class OneDrivePeopleTests : IDisposable
             _ => null,
         });
 
-        var result = await Sync(server).RunAsync(fullScan: true);
+        var result = await Sync(server).RunAsync(fullScan: true, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal((4, 3, 2), (result.PhotosRead, result.PhotosMatched, result.Combined));
         var everyone = _people.GetPeople(includeHidden: true);
@@ -209,13 +209,13 @@ public sealed class OneDrivePeopleTests : IDisposable
             _ => null,
         });
 
-        await Sync(server).RunAsync(fullScan: true);
+        await Sync(server).RunAsync(fullScan: true, ct: TestContext.Current.CancellationToken);
         var megan = _people.GetPeople().Single(p => p.Name == "Megan");
         _people.Rename(megan.Id, "Meg");
         Assert.Equal(2, _people.GetPeople().Count);
 
         merged = true;
-        var result = await Sync(server).RunAsync(fullScan: false);
+        var result = await Sync(server).RunAsync(fullScan: false, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal(1, result.Remapped);
         var only = Assert.Single(_people.GetPeople());

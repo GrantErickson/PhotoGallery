@@ -188,6 +188,26 @@ public sealed class GalleryDatabase
         ALTER TABLE Media ADD COLUMN OneDriveETag TEXT;
         CREATE INDEX IX_Media_OneDriveItem ON Media(OneDriveItemId) WHERE OneDriveItemId IS NOT NULL;
         """,
+        // v9: video transcripts (valid for the file size/date they were made from), and what was said in the search
+        // index. FTS5 tables can't gain columns, so MediaFts is rebuilt with a Speech column.
+        """
+        CREATE TABLE Transcripts (
+            MediaId      INTEGER PRIMARY KEY REFERENCES Media(Id) ON DELETE CASCADE,
+            Status       INTEGER NOT NULL,
+            Language     TEXT,
+            Model        TEXT NOT NULL,
+            FileSize     INTEGER NOT NULL,
+            FileModified INTEGER NOT NULL,
+            CreatedUtc   TEXT NOT NULL,
+            Error        TEXT,
+            Segments     TEXT NOT NULL,
+            Text         TEXT NOT NULL
+        );
+        CREATE VIRTUAL TABLE MediaFtsNew USING fts5(Name, Folder, Tags, Camera, Speech, tokenize = 'unicode61 remove_diacritics 2');
+        INSERT INTO MediaFtsNew (rowid, Name, Folder, Tags, Camera) SELECT rowid, Name, Folder, Tags, Camera FROM MediaFts;
+        DROP TABLE MediaFts;
+        ALTER TABLE MediaFtsNew RENAME TO MediaFts;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>
