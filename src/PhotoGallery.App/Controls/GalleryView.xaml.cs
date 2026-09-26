@@ -22,6 +22,7 @@ public sealed partial class GalleryView : UserControl
 
     private MediaFilter? _baseFilter;
     private List<MediaSummary> _items = [];
+    private System.Collections.ObjectModel.ObservableCollection<MediaSummary>? _albumOrder;
     private int _loadVersion;
     private ScrollViewer? _scroller;
     private bool _loaded;
@@ -115,7 +116,19 @@ public sealed partial class GalleryView : UserControl
         if (version != _loadVersion) return;
 
         _items = items;
-        Grid.ItemsSource = items;
+        if (AlbumId is not null)
+        {
+            // Albums keep their own order and can be rearranged by dragging.
+            _albumOrder = new System.Collections.ObjectModel.ObservableCollection<MediaSummary>(items);
+            Grid.CanDragItems = Grid.CanReorderItems = Grid.AllowDrop = true;
+            Grid.ItemsSource = _albumOrder;
+        }
+        else
+        {
+            // Timeline views are grouped by month (headers inside the grid); the jump list navigates between them.
+            Grid.CanDragItems = Grid.CanReorderItems = Grid.AllowDrop = false;
+            Grid.ItemsSource = new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = MonthGroup.Split(items) }.View;
+        }
         CountText.Text = items.Count == 1 ? "1 item" : $"{items.Count:N0} items";
         EmptyText.Text = EmptyMessage;
         EmptyText.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -277,6 +290,13 @@ public sealed partial class GalleryView : UserControl
         var item = new MenuFlyoutItem { Text = text, Icon = new SymbolIcon(icon) };
         item.Click += (_, _) => action();
         return item;
+    }
+
+    private void OnDragItemsCompleted(ListViewBase sender, DragItemsCompletedEventArgs args)
+    {
+        if (AlbumId is not { } albumId || _albumOrder is null) return;
+        _items = _albumOrder.ToList();
+        S.Collections.SetAlbumOrder(albumId, _items.Select(i => i.Id).ToList());
     }
 
     private void OnCopySelectedPaths(object sender, RoutedEventArgs e) =>

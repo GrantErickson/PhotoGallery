@@ -190,9 +190,12 @@ public sealed class RepositoryTests : IDisposable
         _collections.MoveInAlbum(album, b.Id, 0);
         Assert.Equal([b.Id, a.Id, c.Id], _media.Query(new MediaFilter { AlbumId = album }).Select(m => m.Id));
 
+        _collections.SetAlbumOrder(album, [c.Id, b.Id, a.Id]);
+        Assert.Equal([c.Id, b.Id, a.Id], _media.Query(new MediaFilter { AlbumId = album }).Select(m => m.Id));
+
         var row = Assert.Single(_collections.GetAlbums());
         Assert.Equal(3, row.Count);
-        Assert.Equal(b.Id, row.CoverMediaId);
+        Assert.Equal(c.Id, row.CoverMediaId);
     }
 
     [Fact]

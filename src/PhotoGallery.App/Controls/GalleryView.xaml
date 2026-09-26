@@ -101,7 +101,8 @@
             ShowsScrollingPlaceholders="False"
             ContainerContentChanging="OnContainerContentChanging"
             SelectionChanged="OnSelectionChanged"
-            PreviewKeyDown="OnGridPreviewKeyDown">
+            PreviewKeyDown="OnGridPreviewKeyDown"
+            DragItemsCompleted="OnDragItemsCompleted">
             <GridView.ItemContainerStyle>
                 <Style TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
                     <Setter Property="Margin" Value="2" />
@@ -115,6 +116,15 @@
                     <ItemsWrapGrid Orientation="Horizontal" ItemWidth="184" ItemHeight="184" CacheLength="2" />
                 </ItemsPanelTemplate>
             </GridView.ItemsPanel>
+            <GridView.GroupStyle>
+                <GroupStyle HidesIfEmpty="True">
+                    <GroupStyle.HeaderTemplate>
+                        <DataTemplate x:DataType="app:MonthGroup">
+                            <TextBlock Text="{x:Bind Title}" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,8,0,0" />
+                        </DataTemplate>
+                    </GroupStyle.HeaderTemplate>
+                </GroupStyle>
+            </GridView.GroupStyle>
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="data:MediaSummary">
                     <Grid Background="{ThemeResource ControlAltFillColorSecondaryBrush}" CornerRadius="4" DoubleTapped="OnTileDoubleTapped" RightTapped="OnTileRightTapped">

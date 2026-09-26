@@ -86,6 +86,17 @@ public sealed class CollectionRepository(GalleryDatabase database)
         tx.Commit();
     }
 
+    /// <summary>Rewrites the album's order to match <paramref name="orderedMediaIds"/> (after a drag-and-drop).</summary>
+    public void SetAlbumOrder(long albumId, IReadOnlyList<long> orderedMediaIds)
+    {
+        using var db = database.Open();
+        using var tx = db.BeginTransaction();
+        for (var i = 0; i < orderedMediaIds.Count; i++)
+            db.Execute("UPDATE AlbumMedia SET SortOrder = @order WHERE AlbumId = @albumId AND MediaId = @mediaId",
+                new { order = i + 1, albumId, mediaId = orderedMediaIds[i] }, tx);
+        tx.Commit();
+    }
+
     public List<long> GetAlbumsContaining(long mediaId)
     {
         using var db = database.Open();
