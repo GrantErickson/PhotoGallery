@@ -156,6 +156,11 @@ public sealed class GalleryDatabase
         """
         UPDATE Media SET Motion = 3 WHERE Motion = 4;
         """,
+        // v4: cached hashes for duplicate detection (cleared by Upsert when the file changes).
+        """
+        ALTER TABLE Media ADD COLUMN QuickHash TEXT;
+        ALTER TABLE Media ADD COLUMN PerceptualHash INTEGER;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

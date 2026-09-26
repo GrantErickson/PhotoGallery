@@ -93,6 +93,8 @@ public sealed class MediaRepository(GalleryDatabase database)
                     @Orientation, @DurationMs, @CameraMake, @CameraModel, @Latitude, @Longitude, @IsScreenshot,
                     @ContentId, @MotionOffset, @MotionLength, @Motion)
             ON CONFLICT(Path) DO UPDATE SET
+                QuickHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.QuickHash END,
+                PerceptualHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.PerceptualHash END,
                 FolderId = excluded.FolderId, FileName = excluded.FileName, FileSize = excluded.FileSize,
                 FileModified = excluded.FileModified, Kind = excluded.Kind, DateTaken = excluded.DateTaken,
                 DateSource = excluded.DateSource, Width = excluded.Width, Height = excluded.Height,

@@ -40,7 +40,13 @@ public sealed class OneDriveClient
         _cacheReady = RegisterCacheAsync(tokenCacheDirectory);
     }
 
+    private static readonly TimeSpan RefusalBackoff = TimeSpan.FromMinutes(15);
+    private DateTime _refusedUntil;
+
     public string? AccountName { get; private set; }
+
+    /// <summary>True while we're backing off after OneDrive refused a Live Photo video request.</summary>
+    public bool IsLiveVideoBackingOff => DateTime.UtcNow < _refusedUntil;
     public bool IsSignedIn => AccountName is not null;
 
     private async Task RegisterCacheAsync(string directory)
@@ -121,6 +127,8 @@ public sealed class OneDriveClient
     /// </summary>
     public async Task<LiveVideoStatus> DownloadLiveVideoAsync(string itemId, string destination, CancellationToken ct = default)
     {
+        // Don't hammer the service while it's refusing; retry automatically after the backoff.
+        if (IsLiveVideoBackingOff) return LiveVideoStatus.ServiceRefused;
         var token = await GetTokenAsync(interactive: false, ct);
         if (token is null) return LiveVideoStatus.NotSignedIn;
 
@@ -133,7 +141,12 @@ public sealed class OneDriveClient
             if (response.StatusCode == HttpStatusCode.NotFound) return LiveVideoStatus.NotLivePhoto;
             // format=video returned the MOV on 2026-09-25 morning, then 406 for every item (even ones that had
             // worked). Treat refusals as a service problem, not as "this photo has no motion".
-            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotAcceptable) return LiveVideoStatus.ServiceRefused;
+            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotAcceptable)
+            {
+                _refusedUntil = DateTime.UtcNow + RefusalBackoff;
+                return LiveVideoStatus.ServiceRefused;
+            }
+            _refusedUntil = default;
             if (!response.IsSuccessStatusCode) return LiveVideoStatus.Failed;
 
             var temp = destination + ".part";

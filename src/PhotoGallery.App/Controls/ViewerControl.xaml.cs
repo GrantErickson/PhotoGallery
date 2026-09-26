@@ -78,6 +78,7 @@ public sealed partial class ViewerControl : UserControl
         }
         _current = item;
         ShowDetails(item);
+        PrefetchMotion(item, ct);
 
         if (item.Kind == MediaKind.Video)
         {
@@ -239,9 +240,10 @@ public sealed partial class ViewerControl : UserControl
                     ShowDetails(item);
                     break;
                 case MotionResult.Unavailable when item.Motion == MotionSource.Cloud:
-                    // OneDrive stopped serving Live Photo video to third-party apps; its web viewer still plays it.
-                    App.MainWindow.ShowStatus("OneDrive won't send the Live Photo video to this app — opening it on OneDrive.com instead.");
-                    await OpenInOneDriveAsync(item);
+                    // format=video has been refused (406) since 2026-09-25; the client retries after a backoff.
+                    App.MainWindow.ShowStatus(S.OneDrive.IsLiveVideoBackingOff
+                        ? "OneDrive is refusing Live Photo video requests right now; the app will retry automatically. The cloud button opens it on OneDrive.com."
+                        : "Couldn't download the Live Photo video. Check your connection and try again.");
                     break;
                 default:
                     App.MainWindow.ShowStatus("Couldn't load the motion for this photo.");
@@ -255,6 +257,27 @@ public sealed partial class ViewerControl : UserControl
         {
             LiveBusy.IsActive = false;
         }
+    }
+
+    /// <summary>Downloads a cloud Live Photo's video in the background so LIVE plays instantly.</summary>
+    private static void PrefetchMotion(MediaItem item, CancellationToken ct)
+    {
+        if (item.Motion != MotionSource.Cloud || !S.OneDrive.IsSignedIn || S.OneDrive.IsLiveVideoBackingOff) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(400, ct); // skip items the user is just flicking past
+                await S.Motion.GetVideoAsync(item, ct);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Prefetching Live Photo video for {item.Path} failed", ex);
+            }
+        }, ct);
     }
 
     private void StopPlayback()
