@@ -36,6 +36,11 @@ public sealed partial class SettingsPage : Page
         SyncButton.IsEnabled = oneDrive.IsSignedIn;
         SignInButton.Visibility = oneDrive.IsSignedIn ? Visibility.Collapsed : Visibility.Visible;
         SignOutButton.Visibility = oneDrive.IsSignedIn ? Visibility.Visible : Visibility.Collapsed;
+
+        var web = App.Services.WebSession;
+        LiveStatusText.Text = web.IsConnected ? "Connected — Live Photos stored in OneDrive play in the gallery." : "Not connected.";
+        ConnectWebButton.Content = web.IsConnected ? "Sign in again" : "Connect OneDrive for Live Photos";
+        DisconnectWebButton.Visibility = web.IsConnected ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void OnAddRoot(object sender, RoutedEventArgs e)
@@ -91,6 +96,15 @@ public sealed partial class SettingsPage : Page
             SignInButton.IsEnabled = true;
             RefreshAccount();
         }
+    }
+
+    private void OnConnectWeb(object sender, RoutedEventArgs e) => App.MainWindow.Navigate(typeof(OneDriveConnectPage), null);
+
+    private async void OnDisconnectWeb(object sender, RoutedEventArgs e)
+    {
+        await App.Services.WebSession.DisconnectAsync();
+        RefreshAccount();
+        App.MainWindow.ShowStatus("Disconnected. Live Photos stored in OneDrive won't play until you connect again.");
     }
 
     private void OnSyncNow(object sender, RoutedEventArgs e) => App.Services.CloudSync.Start();

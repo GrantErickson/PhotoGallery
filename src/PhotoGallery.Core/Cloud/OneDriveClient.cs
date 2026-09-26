@@ -6,21 +6,10 @@ using Microsoft.Identity.Client.Extensions.Msal;
 
 namespace PhotoGallery.Core.Cloud;
 
-public enum LiveVideoStatus
-{
-    Downloaded,
-    NotLivePhoto,
-    NotSignedIn,
-    /// <summary>OneDrive refused the video request (406 since 2026-09-25) — says nothing about the photo itself.</summary>
-    ServiceRefused,
-    Failed,
-}
-
 /// <summary>
-/// Microsoft Graph access for the personal OneDrive (MSAL public client, Files.Read).
-/// The Live Photo video comes from the undocumented <c>/items/{id}/content?format=video</c>. It worked in
-/// spikes/OneDriveLivePhoto and then started answering 406 for every item the same day, so callers must
-/// treat it as best-effort and fall back to opening the photo on OneDrive.com.
+/// Microsoft Graph access for the personal OneDrive (MSAL public client, Files.Read): item lookups, web URLs and the
+/// SharePoint list columns that carry OneDrive's tags and people. Live Photo video comes from the web API instead
+/// (<see cref="OneDriveLiveVideoClient"/>): Graph's undocumented format=video has answered 406 since 2026-09-25.
 /// </summary>
 public sealed record OneDriveItem(string Id, string? WebUrl);
 
@@ -40,13 +29,9 @@ public sealed class OneDriveClient
         _cacheReady = RegisterCacheAsync(tokenCacheDirectory);
     }
 
-    private static readonly TimeSpan RefusalBackoff = TimeSpan.FromMinutes(15);
-    private DateTime _refusedUntil;
 
     public string? AccountName { get; private set; }
 
-    /// <summary>True while we're backing off after OneDrive refused a Live Photo video request.</summary>
-    public bool IsLiveVideoBackingOff => DateTime.UtcNow < _refusedUntil;
     public bool IsSignedIn => AccountName is not null;
 
     private async Task RegisterCacheAsync(string directory)
@@ -121,56 +106,6 @@ public sealed class OneDriveClient
         }
     }
 
-    /// <summary>
-    /// Downloads the Live Photo video of an item. Must be addressed by item id: the path form
-    /// (/root:/path:/content?format=video) answers 406 even for real Live Photos.
-    /// </summary>
-    public async Task<LiveVideoStatus> DownloadLiveVideoAsync(string itemId, string destination, CancellationToken ct = default)
-    {
-        // Don't hammer the service while it's refusing; retry automatically after the backoff.
-        if (IsLiveVideoBackingOff) return LiveVideoStatus.ServiceRefused;
-        var token = await GetTokenAsync(interactive: false, ct);
-        if (token is null) return LiveVideoStatus.NotSignedIn;
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"https://graph.microsoft.com/v1.0/me/drive/items/{itemId}/content?format=video");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        try
-        {
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            Log.Info($"Live video {itemId}: {(int)response.StatusCode} {response.Content.Headers.ContentType} {response.Content.Headers.ContentLength} bytes");
-            if (response.StatusCode == HttpStatusCode.NotFound) return LiveVideoStatus.NotLivePhoto;
-            // format=video returned the MOV on 2026-09-25 morning, then 406 for every item (even ones that had
-            // worked). Treat refusals as a service problem, not as "this photo has no motion".
-            if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotAcceptable)
-            {
-                _refusedUntil = DateTime.UtcNow + RefusalBackoff;
-                return LiveVideoStatus.ServiceRefused;
-            }
-            _refusedUntil = default;
-            if (!response.IsSuccessStatusCode) return LiveVideoStatus.Failed;
-
-            var temp = destination + ".part";
-            await using (var source = await response.Content.ReadAsStreamAsync(ct))
-            await using (var file = File.Create(temp))
-                await source.CopyToAsync(file, ct);
-
-            if (!IsVideo(temp))
-            {
-                // Some items answer with the still itself; that means there is no motion to play.
-                Log.Info($"Live video {itemId}: response is not a video ({new FileInfo(temp).Length} bytes)");
-                File.Delete(temp);
-                return LiveVideoStatus.NotLivePhoto;
-            }
-            File.Move(temp, destination, overwrite: true);
-            return LiveVideoStatus.Downloaded;
-        }
-        catch (HttpRequestException ex)
-        {
-            Log.Error($"Live video {itemId} failed", ex);
-            return LiveVideoStatus.Failed;
-        }
-    }
-
     /// <summary>GET a Graph URL as JSON, retrying throttling (429/503) with the server's Retry-After.</summary>
     public async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct = default)
     {
@@ -212,14 +147,4 @@ public sealed class OneDriveClient
 
     private static string PathUrl(string oneDrivePath) =>
         "https://graph.microsoft.com/v1.0/me/drive/root:/" + string.Join('/', oneDrivePath.Split('/').Select(Uri.EscapeDataString));
-
-    private static bool IsVideo(string path)
-    {
-        Span<byte> head = stackalloc byte[12];
-        using var f = File.OpenRead(path);
-        if (f.ReadAtLeast(head, 12, throwOnEndOfStream: false) < 12) return false;
-        if (!head.Slice(4, 4).SequenceEqual("ftyp"u8)) return head.Slice(4, 4).SequenceEqual("moov"u8) || head.Slice(4, 4).SequenceEqual("wide"u8);
-        var brand = head.Slice(8, 4);
-        return !(brand.SequenceEqual("heic"u8) || brand.SequenceEqual("mif1"u8) || brand.SequenceEqual("heix"u8));
-    }
 }

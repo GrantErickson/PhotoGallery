@@ -74,7 +74,8 @@ switch (args.FirstOrDefault())
         var item = media.Get(long.Parse(args[1])) ?? throw new ArgumentException("No such media id");
         var oneDrive = new OneDriveClient(settings.ClientId, paths.TokenCache);
         if (!await oneDrive.TrySignInSilentAsync()) await oneDrive.SignInAsync();
-        var service = new MotionVideoService(media, oneDrive, settings, paths.MotionCache);
+        // The OneDrive web session lives in the app (WebView2); the CLI can only resolve local and embedded motion.
+        var service = new MotionVideoService(media, oneDrive, new OneDriveLiveVideoClient(new NoWebSession()), settings, paths.MotionCache);
         var (result, file) = await service.GetVideoAsync(item);
         Console.WriteLine($"{item.Path} [{item.Motion}] -> {result} {file}");
         break;
@@ -111,4 +112,11 @@ void PrintStats()
     var s = media.GetStats();
     Console.WriteLine($"Photos {s.Photos:N0}, videos {s.Videos:N0}, screenshots {s.Screenshots:N0}");
     Console.WriteLine($"Motion: local pairs {s.LocalPairs:N0}, embedded {s.Embedded:N0}, cloud Live Photos {s.Cloud:N0}");
+}
+
+sealed class NoWebSession : IOneDriveWebToken
+{
+    public bool IsConnected => false;
+
+    public Task<string?> GetAsync(bool forceRefresh, CancellationToken ct) => Task.FromResult<string?>(null);
 }

@@ -46,6 +46,17 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="Live Photos" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Newer iPhone Live Photos keep their video only in OneDrive, which only hands it to the OneDrive website. Connect once (sign in to OneDrive inside the gallery) and Live Photos play here. The sign-in stays on this PC; the gallery uses it only to download Live Photo videos when you play them." />
+                <TextBlock x:Name="LiveStatusText" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="ConnectWebButton" Content="Connect OneDrive for Live Photos" Click="OnConnectWeb" Style="{StaticResource AccentButtonStyle}" />
+                    <Button x:Name="DisconnectWebButton" Content="Disconnect" Click="OnDisconnectWeb" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="Library" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock x:Name="StatsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 <TextBlock x:Name="PathsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}"

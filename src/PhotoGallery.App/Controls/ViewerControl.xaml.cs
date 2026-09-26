@@ -191,7 +191,7 @@ public sealed partial class ViewerControl : UserControl
         {
             MotionSource.LocalPair => "Live Photo · video stored next to the photo",
             MotionSource.Embedded => "Motion photo · video embedded in the file",
-            MotionSource.Cloud => S.OneDrive.IsSignedIn ? "Live Photo · video stored in OneDrive" : "Live Photo · video stored in OneDrive (sign in under Settings)",
+            MotionSource.Cloud => S.LiveVideo.IsConnected ? "Live Photo · video stored in OneDrive" : "Live Photo · video stored in OneDrive (connect OneDrive to play)",
             _ => "",
         };
 
@@ -258,17 +258,19 @@ public sealed partial class ViewerControl : UserControl
                     _player.Source = MediaSource.CreateFromUri(new Uri(path));
                     break;
                 case MotionResult.NeedsSignIn:
-                    App.MainWindow.ShowStatus("Sign in to OneDrive in Settings to play Live Photos stored in the cloud.");
+                    if (await Dialogs.ConfirmAsync(XamlRoot, "Connect OneDrive to play Live Photos",
+                            S.LiveVideo.IsConnected
+                                ? "Your OneDrive sign-in has expired. Sign in again to keep playing Live Photos stored in the cloud."
+                                : "This Live Photo's video is only stored in OneDrive. Sign in to OneDrive once and the gallery can play it (and every other Live Photo).",
+                            "Connect"))
+                        App.MainWindow.NavigateFromViewer(() => App.MainWindow.Navigate(typeof(PhotoGallery.App.Pages.OneDriveConnectPage), null));
                     break;
                 case MotionResult.None:
                     App.MainWindow.ShowStatus("OneDrive has no motion for this photo.");
                     ShowDetails(item);
                     break;
                 case MotionResult.Unavailable when item.Motion == MotionSource.Cloud:
-                    // format=video has been refused (406) since 2026-09-25; the client retries after a backoff.
-                    App.MainWindow.ShowStatus(S.OneDrive.IsLiveVideoBackingOff
-                        ? "OneDrive is refusing Live Photo video requests right now; the app will retry automatically. The cloud button opens it on OneDrive.com."
-                        : "Couldn't download the Live Photo video. Check your connection and try again.");
+                    App.MainWindow.ShowStatus("Couldn't download the Live Photo video. Check your connection and try again.");
                     break;
                 default:
                     App.MainWindow.ShowStatus("Couldn't load the motion for this photo.");
@@ -287,7 +289,7 @@ public sealed partial class ViewerControl : UserControl
     /// <summary>Downloads a cloud Live Photo's video in the background so LIVE plays instantly.</summary>
     private static void PrefetchMotion(MediaItem item, CancellationToken ct)
     {
-        if (item.Motion != MotionSource.Cloud || !S.OneDrive.IsSignedIn || S.OneDrive.IsLiveVideoBackingOff) return;
+        if (item.Motion != MotionSource.Cloud || !S.LiveVideo.IsConnected) return;
         _ = Task.Run(async () =>
         {
             try

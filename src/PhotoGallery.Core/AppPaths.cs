@@ -32,6 +32,8 @@ public sealed class AppSettings
     public string? OneDriveRoot { get; set; }
     public string ClientId { get; set; } = DefaultClientId;
     public bool IncludeScreenshots { get; set; }
+    /// <summary>The OneDrive web session (for Live Photo videos) has been connected. The token itself is never stored.</summary>
+    public bool OneDriveWebConnected { get; set; }
     /// <summary>Grid tile edge in DIPs.</summary>
     public double TileSize { get; set; } = 180;
 

@@ -28,7 +28,9 @@ public sealed class AppServices
         Thumbnails.Renderer = async (id, path, ct) =>
             Edits.Get(id) is { } ops ? await Editing.EditRenderer.RenderPreviewAsync(path, ops, ThumbnailCache.RequestedSize) : null;
         OneDrive = new OneDriveClient(Settings.ClientId, Paths.TokenCache);
-        Motion = new MotionVideoService(Media, OneDrive, Settings, Paths.MotionCache);
+        WebSession = new OneDriveWebSession(this);
+        LiveVideo = new OneDriveLiveVideoClient(WebSession);
+        Motion = new MotionVideoService(Media, OneDrive, LiveVideo, Settings, Paths.MotionCache);
         Indexing = new IndexingService(this);
         CloudSync = new CloudSyncService(this);
     }
@@ -45,6 +47,8 @@ public sealed class AppServices
     public ThumbnailCache Thumbnails { get; }
     public OneDriveClient OneDrive { get; }
     public MotionVideoService Motion { get; }
+    public OneDriveWebSession WebSession { get; }
+    public OneDriveLiveVideoClient LiveVideo { get; }
     public IndexingService Indexing { get; }
 
     public void SaveSettings() => Settings.Save(Paths);

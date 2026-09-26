@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.OneDriveConnectPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Padding="20,12,20,12" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Spacing="6">
+            <TextBlock Text="Connect OneDrive for Live Photos" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="iPhone Live Photo videos are only stored in OneDrive, and OneDrive only hands them to its own website. Sign in below once with the personal Microsoft account that owns your OneDrive. The gallery uses this sign-in only to download Live Photo videos when you play them; it's kept on this PC and you can disconnect in Settings." />
+            <InfoBar x:Name="StatusBar" IsOpen="True" IsClosable="False" Severity="Informational" Title="Waiting for OneDrive…"
+                     Message="Sign in if OneDrive asks. This page detects the connection automatically.">
+                <InfoBar.ActionButton>
+                    <Button x:Name="DoneButton" Content="Done" Click="OnDone" Visibility="Collapsed" Style="{StaticResource AccentButtonStyle}" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+        </StackPanel>
+        <Border Grid.Row="1" CornerRadius="8" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+            <WebView2 x:Name="Browser" />
+        </Border>
+    </Grid>
+</Page>
