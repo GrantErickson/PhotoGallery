@@ -49,8 +49,9 @@ public sealed partial class OneDriveConnectPage : Page
         _done = true;
         StatusBar.Severity = InfoBarSeverity.Success;
         StatusBar.Title = "Connected";
-        StatusBar.Message = "Live Photos stored in OneDrive will now play in the gallery.";
+        StatusBar.Message = "Live Photos stored in OneDrive will now play in the gallery. People and their names are being read from OneDrive.";
         DoneButton.Visibility = Visibility.Visible;
+        App.Services.CloudSync.SyncIfStale();
     }
 
     private void OnDone(object sender, RoutedEventArgs e) => App.MainWindow.GoBack();

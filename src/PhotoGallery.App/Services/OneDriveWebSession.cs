@@ -6,7 +6,7 @@ using PhotoGallery.Core.Cloud;
 namespace PhotoGallery.App.Services;
 
 /// <summary>
-/// The user's OneDrive web session, used only to download Live Photo videos. The web app's own requests carry an
+/// The user's OneDrive web session, used only to download Live Photo videos and read people and face positions. The web app's own requests carry an
 /// Authorization header; we read it from a WebView2 (the Connect page, or a hidden one that reloads onedrive.live.com
 /// with the saved sign-in cookies when the header expires, ~1 hour). A hidden page (visibilityState "hidden") skips the
 /// my.microsoftpersonalcontent.com/_api calls but still calls api.onedrive.com, whose token works for the video API too.
@@ -91,7 +91,9 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
     {
         var before = _capturedAt;
         CoreWebView2Controller? controller = null;
-        var captured = new TaskCompletionSource();
+        // Completed from inside WebView2's request callback: the code after the await must not run (and close the
+        // WebView) inside that callback.
+        var captured = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnCaptured() => captured.TrySetResult();
         Captured += OnCaptured;
         try
@@ -113,7 +115,16 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
         finally
         {
             Captured -= OnCaptured;
-            controller?.Close();
+            if (controller is not null)
+            {
+                // Let WebView2 finish dispatching its events before the view goes away.
+                var closing = controller;
+                App.MainWindow.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+                {
+                    try { closing.Close(); }
+                    catch (Exception ex) { Log.Error($"Closing the hidden OneDrive view failed: {ex.GetType().Name}"); }
+                });
+            }
         }
 
         if (_capturedAt > before) return _authorization;

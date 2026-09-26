@@ -2,6 +2,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.Graphics.Canvas;
 using PhotoGallery.App.Editing;
 using PhotoGallery.Core;
+using PhotoGallery.Core.Cloud;
 using Windows.Foundation;
 using Windows.Graphics.Imaging;
 using Windows.Media.FaceAnalysis;
@@ -9,9 +10,9 @@ using Windows.Media.FaceAnalysis;
 namespace PhotoGallery.App.Imaging;
 
 /// <summary>
-/// Makes an avatar for a person: looks at a few of their photos with Windows' on-device face detector (detection
-/// only, no recognition), keeps the one with the largest face and crops to it. OneDrive doesn't share its own face
-/// crops. Results (and "no usable face") are cached on disk per person.
+/// Makes an avatar for a person: crops their photo to the face box OneDrive found for them. Photos without a box
+/// fall back to Windows' on-device face detector (detection only, no recognition): the largest face among a few of
+/// the person's photos. Results (and "no usable face") are cached on disk per person.
 /// </summary>
 public sealed class FaceCropper(string cacheDirectory)
 {
@@ -25,8 +26,23 @@ public sealed class FaceCropper(string cacheDirectory)
     private readonly SemaphoreSlim _gate = new(2);
     private FaceDetector? _detector;
 
-    /// <summary>Path of a square face crop for the person, or null if none of the candidates has a usable face.</summary>
-    public async Task<string?> GetOrCreateAsync(long personId, IEnumerable<string> candidatePhotos)
+    /// <summary>Forgets every avatar (after people or face boxes change); they're re-cropped when next shown.</summary>
+    public void Clear()
+    {
+        if (!Directory.Exists(cacheDirectory)) return;
+        foreach (var file in Directory.EnumerateFiles(cacheDirectory))
+        {
+            try { File.Delete(file); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>
+    /// Path of a square face crop for the person, or null if none of the candidates has a usable face. Candidates
+    /// with a face box (fractions of the upright photo) are cropped to it directly.
+    /// </summary>
+    public async Task<string?> GetOrCreateAsync(long personId, IEnumerable<(string Path, FaceBox? Box)> candidates)
     {
         var target = Path.Combine(cacheDirectory, $"{personId}.jpg");
         var miss = target + ".none";
@@ -41,8 +57,15 @@ public sealed class FaceCropper(string cacheDirectory)
             Directory.CreateDirectory(cacheDirectory);
 
             (CanvasBitmap Bitmap, BitmapBounds Face, double Fraction)? best = null;
-            foreach (var path in candidatePhotos)
+            foreach (var (path, box) in candidates)
             {
+                if (box is { } known)
+                {
+                    if (await KnownFaceAsync(path, known) is not { } face) continue;
+                    best?.Bitmap.Dispose();
+                    best = face;
+                    break;
+                }
                 var found = await LargestFaceAsync(path);
                 if (found is null) continue;
                 if (best is null || found.Value.Fraction > best.Value.Fraction)
@@ -74,6 +97,32 @@ public sealed class FaceCropper(string cacheDirectory)
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>The photo with OneDrive's box for this person's face, if the face is big enough for an avatar.</summary>
+    private static async Task<(CanvasBitmap Bitmap, BitmapBounds Face, double Fraction)?> KnownFaceAsync(string path, FaceBox box)
+    {
+        try
+        {
+            var source = await EditRenderer.LoadAsync(path, DetectSize);
+            double width = source.SizeInPixels.Width, height = source.SizeInPixels.Height;
+            var (x, y, w, h) = box.In(width, height);
+            var face = new BitmapBounds
+            {
+                X = (uint)Math.Clamp(Math.Round(x), 0, width - 1), Y = (uint)Math.Clamp(Math.Round(y), 0, height - 1),
+                Width = (uint)Math.Max(1, Math.Round(w)), Height = (uint)Math.Max(1, Math.Round(h)),
+            };
+            if (face.Height < 48)
+            {
+                source.Dispose();
+                return null;
+            }
+            return (source, face, face.Height / Math.Min(width, height));
+        }
+        catch (Exception ex) when (ex is ArgumentException or System.Runtime.InteropServices.COMException or FileNotFoundException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 
@@ -116,8 +165,10 @@ public sealed class FaceCropper(string cacheDirectory)
         var x = Math.Clamp(face.X + face.Width / 2.0 - side / 2, 0, width - side);
         var y = Math.Clamp(face.Y + face.Height / 2.0 - side / 2, 0, height - side);
         using var crop = new CanvasRenderTarget(EditRenderer.Device, OutputSize, OutputSize, 96);
+        // Source rectangles are in DIPs, which differ from pixels unless the photo says 96 DPI (JPEGs often say 72).
+        var dips = source.Size.Width / width;
         using (var session = crop.CreateDrawingSession())
-            session.DrawImage(source, new Rect(0, 0, OutputSize, OutputSize), new Rect(x, y, side, side));
+            session.DrawImage(source, new Rect(0, 0, OutputSize, OutputSize), new Rect(x * dips, y * dips, side * dips, side * dips));
         await crop.SaveAsync(target, CanvasBitmapFileFormat.Jpeg, 0.9f);
     }
 }

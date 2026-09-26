@@ -12,6 +12,8 @@ public sealed record MetadataSyncResult(int ItemsRead, int Matched, int Tagged, 
 /// Pulls OneDrive's AI tags, categories, places and recognised people for every file, from the SharePoint list
 /// behind the personal drive (see docs/plan.md "OneDrive tags and people"), and stores them locally:
 /// Tags/MediaTags with Source = 1 and People/MediaFaces. Undocumented, so any failure leaves existing data intact.
+/// People come from here only until <see cref="OneDriveFaceSync"/> has run: this list's person ids are the groups as
+/// first detected (before any merge made in OneDrive), so they split merged people into duplicates.
 /// </summary>
 public sealed class OneDriveMetadataSync(OneDriveClient client, GalleryDatabase database, MediaRepository media, AppSettings settings)
 {
@@ -22,7 +24,7 @@ public sealed class OneDriveMetadataSync(OneDriveClient client, GalleryDatabase 
         "https://graph.microsoft.com/v1.0/me/drive/list/items?$select=id&$top=999" +
         "&$expand=fields($select=FileRef,FSObjType,RecognizedEntities,MediaServiceOCR,MediaServiceLocation,TagListTags,UserAddedTags)";
 
-    public async Task<MetadataSyncResult> RunAsync(IProgress<MetadataSyncProgress>? progress = null, CancellationToken ct = default)
+    public async Task<MetadataSyncResult> RunAsync(bool includePeople = true, IProgress<MetadataSyncProgress>? progress = null, CancellationToken ct = default)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();
         if (string.IsNullOrEmpty(settings.OneDriveRoot)) throw new InvalidOperationException("The OneDrive folder isn't known.");
@@ -50,13 +52,13 @@ public sealed class OneDriveMetadataSync(OneDriveClient client, GalleryDatabase 
                     Lookups(fields, "TagListTags"), Str(fields, "UserAddedTags"));
                 if (tags.Count > 0) tagsByMedia[mediaId] = tags;
                 var people = Lookups(fields, "RecognizedEntities").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-                if (people.Count > 0) peopleByMedia[mediaId] = people;
+                if (people.Count > 0 && includePeople) peopleByMedia[mediaId] = people;
             }
             progress?.Report(new MetadataSyncProgress(read, matched));
             url = body.TryGetProperty("@odata.nextLink", out var next) ? next.GetString() : null;
         }
 
-        var peopleCount = Store(tagsByMedia, peopleByMedia);
+        var peopleCount = Store(tagsByMedia, includePeople ? peopleByMedia : null);
         media.SetSyncValue(LastSyncKey, DateTime.UtcNow.ToString("O"));
         return new MetadataSyncResult(read, matched, tagsByMedia.Count, peopleCount, clock.Elapsed);
     }
@@ -82,14 +84,14 @@ public sealed class OneDriveMetadataSync(OneDriveClient client, GalleryDatabase 
                 yield return s;
     }
 
-    /// <summary>Replaces all OneDrive-sourced tags and face links in one transaction; returns the number of people.</summary>
-    private int Store(Dictionary<long, List<CloudTag>> tagsByMedia, Dictionary<long, List<string>> peopleByMedia)
+    /// <summary>Replaces all OneDrive-sourced tags (and face links, if given) in one transaction; returns the number of people.</summary>
+    private int Store(Dictionary<long, List<CloudTag>> tagsByMedia, Dictionary<long, List<string>>? peopleByMedia)
     {
         using var db = database.Open();
         using var tx = db.BeginTransaction();
 
         db.Execute("DELETE FROM MediaTags WHERE TagId IN (SELECT Id FROM Tags WHERE Source = @OneDriveSource)", new { OneDriveSource }, tx);
-        db.Execute("DELETE FROM MediaFaces", transaction: tx);
+        if (peopleByMedia is not null) db.Execute("DELETE FROM MediaFaces", transaction: tx);
 
         var tagIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         foreach (var tag in tagsByMedia.Values.SelectMany(t => t).DistinctBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
@@ -101,6 +103,14 @@ public sealed class OneDriveMetadataSync(OneDriveClient client, GalleryDatabase 
         foreach (var (mediaId, tags) in tagsByMedia)
             foreach (var tag in tags)
                 db.Execute("INSERT OR IGNORE INTO MediaTags (MediaId, TagId) VALUES (@mediaId, @tagId)", new { mediaId, tagId = tagIds[tag.Name] }, tx);
+
+        if (peopleByMedia is null)
+        {
+            db.Execute("DELETE FROM Tags WHERE Source = @OneDriveSource AND Id NOT IN (SELECT TagId FROM MediaTags)", new { OneDriveSource }, tx);
+            SearchIndex.RefreshTags(db, tx);
+            tx.Commit();
+            return 0;
+        }
 
         // Merged people: their OneDrive ids map onto the surviving person.
         var aliases = db.Query<(string Guid, long PersonId)>("SELECT OneDrivePersonId, PersonId FROM PersonAliases", transaction: tx)

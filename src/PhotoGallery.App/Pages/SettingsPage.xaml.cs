@@ -30,16 +30,18 @@ public sealed partial class SettingsPage : Page
     {
         var oneDrive = App.Services.OneDrive;
         AccountText.Text = oneDrive.IsSignedIn ? $"Signed in as {oneDrive.AccountName}" : "Not signed in";
-        var last = App.Services.CloudSync.LastSync;
-        CloudSyncText.Text = "OneDrive's tags (things, places, categories) and recognised people are read in the background once a day. " +
+        var sync = App.Services.CloudSync;
+        var last = new[] { sync.LastSync, sync.LastFaceSync }.Max();
+        CloudSyncText.Text = "OneDrive's tags (things, places, categories) are read in the background once a day; people and their faces " +
+                             "too once OneDrive is connected below (every photo once a month, new ones daily). " +
                              (last is { } when ? $"Last read {when.ToLocalTime():g}." : "Not read yet.");
-        SyncButton.IsEnabled = oneDrive.IsSignedIn;
+        SyncButton.IsEnabled = oneDrive.IsSignedIn || App.Services.WebSession.IsConnected;
         SignInButton.Visibility = oneDrive.IsSignedIn ? Visibility.Collapsed : Visibility.Visible;
         SignOutButton.Visibility = oneDrive.IsSignedIn ? Visibility.Visible : Visibility.Collapsed;
 
         var web = App.Services.WebSession;
-        LiveStatusText.Text = web.IsConnected ? "Connected — Live Photos stored in OneDrive play in the gallery." : "Not connected.";
-        ConnectWebButton.Content = web.IsConnected ? "Sign in again" : "Connect OneDrive for Live Photos";
+        LiveStatusText.Text = web.IsConnected ? "Connected — Live Photos stored in OneDrive play in the gallery, and people come from OneDrive." : "Not connected.";
+        ConnectWebButton.Content = web.IsConnected ? "Sign in again" : "Connect OneDrive";
         DisconnectWebButton.Visibility = web.IsConnected ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -107,7 +109,8 @@ public sealed partial class SettingsPage : Page
         App.MainWindow.ShowStatus("Disconnected. Live Photos stored in OneDrive won't play until you connect again.");
     }
 
-    private void OnSyncNow(object sender, RoutedEventArgs e) => App.Services.CloudSync.Start();
+    /// <summary>Reads everything again, including every photo's faces (a few minutes for a large library).</summary>
+    private void OnSyncNow(object sender, RoutedEventArgs e) => App.Services.CloudSync.Start(fullFaceScan: true);
 
     private async void OnSignOut(object sender, RoutedEventArgs e)
     {

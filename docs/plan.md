@@ -14,7 +14,7 @@ Month headers inside the timeline grid and drag-to-reorder in albums are done.
 
 Round 3 (2026-09-26): OneDrive tags and people via the SharePoint list behind the drive (People and Tags pages, person filter, naming/merging, face-crop avatars via Windows' face detector); day markers and a stronger selection highlight in the grid; Ctrl+wheel zoom; On this day with per-year date headers and day stepping; map cluster selection and deeper zoom; editor side handles and explicit Save as copy / Overwrite original / Keep edits in gallery, with derived-copy badges and an exit warning for gallery-only edits; cloud-only (Files On-Demand) placeholders are never read.
 
-Not yet done: naming people is manual (OneDrive's names aren't exposed). Cloud Live Photo motion depends on OneDrive serving `format=video` again (it has refused since 2026-09-25; the app retries with backoff).
+Round 4 (2026-09-26): Live Photo motion plays from OneDrive via the web session; save a frame from any video; save a Live Photo's motion as an MP4; a video editor (rotate, trim, remove sound → MP4); smart crop in the photo editor; People from OneDrive's web API with names, merges and face boxes (People avatars cropped to the face, face outline on hover in the viewer).
 
 How the build differs from the architecture below:
 - **Thumbnails:** no Win2D or FFmpeg. The thumbnail cache (`ThumbnailCache`) first probes the Windows thumbnail cache (IShellItemImageFactory, cache-only), then falls back to a WIC decode for images (using the embedded HEVC preview for HEIC) or a Media Foundation frame for video. HEIC decoding is capped by the codec at ~10–12 files/s, so warming takes a while on first run; tiles on screen get priority.
@@ -85,9 +85,32 @@ document library's hidden list columns carry the AI metadata. Undocumented but r
 - `MediaServiceLocation`: `United States    WA    Spokane` (used to strip place parts from the tags, and as a place tag).
 - `TagListTags`: category lookups, e.g. `__Nature_32`, `Text_4`, `Screenshot_2`, `Receipt_2`, `Selfie_4`.
 - `RecognizedEntities`: lookups to a people list (GUID per person, stable across photos; one GUID per face in a group shot).
-  The people list itself (`/sites/{id}/lists/{id}`) is blocked for MSA accounts, so names and face crops are unavailable:
-  people start unnamed and the user names them in the app.
+  The people list itself (`/sites/{id}/lists/{id}`) is blocked for MSA accounts, so names and face crops are unavailable
+  here. These GUIDs are the groups as first detected: people merged in OneDrive stay split (Megan: 145 photos here vs
+  31,669 in OneDrive), so once the web API below has run, people come from there and this sync only reads tags.
 - Sample of 40k items: 11.8k with people, 29.7k with AI tags, 22.8k with categories.
+
+## OneDrive people, names and face boxes via the web API (2026-09-26, working)
+Found by watching onedrive.live.com's Photos › People view in WebView2. Same web-session token as the Live Photo video
+(`my.microsoftpersonalcontent.com/_api/v2.1`; the website itself uses cookies on `onedrive.live.com/personal/{cid}/_api/v2.1`).
+- People: `GET /drives/{driveId}/recognizedEntities?top=100` (100 per page max, `@odata.nextLink`): `id`, `photoCount`,
+  `isHidden`, `representativeItemId`, `identity.user.displayName` (the name given in OneDrive). 3,066 people, 112 named.
+- Faces: the photo listing with `expand=detectedEntities(expand=recognizedEntity)` gives each face's id
+  (`{itemGuid}_{nn}`), box (`boundingBoxLeft/Top/Width/Height`, pixels) and person id:
+  `GET /drives/{id}/items/root/items?$filter=photo ne null and photo/takenDateTime ge 1900-01-01T00:00:00.000Z&orderby=photo/takenDateTime desc&select=id,name,parentReference,image,photo,cTag,lastModifiedDateTime,fileSystemInfo,createdDateTime,size&top=1000&expand=...`
+  The `select` must include `cTag`/`lastModifiedDateTime`/`fileSystemInfo`-type fields or it returns 400. 1,000 per page
+  (~2.7 s); the whole library (257k photos) takes ~14 minutes. Filtering by person (`detectedEntity/recognizedEntity/id eq '…'`)
+  works but caps at 200 per page.
+- Boxes: pixels of the upright picture, in a frame whose **long side** equals the long side of `image.width/height`, but
+  `image.width/height` itself is unreliable: sometimes before EXIF rotation, sometimes the full 4:3 grid of an iPhone HEIC
+  that displays cropped to 16:9, sometimes a downscaled size. So boxes are stored as fractions of the long side and
+  scaled by the long side of the picture as displayed.
+- Merges: the listing sometimes still names a face's person as first grouped; the single-item call has the current one.
+  Groups merged away are missing from the people list but still answer `GET /recognizedEntities/{id}`, often with the
+  person's name ("Mark" appears on three ids). The sync gives unlisted groups their name and then combines people with
+  the same name; unnamed ones are folded into whoever most of five sampled faces belong to now.
+- Result: counts match OneDrive (Megan 33,208 locally vs 31,669; local has some duplicate copies), no duplicate names.
+- Sync: full scan monthly or on request, otherwise the newest 2,000+ photos until a page brings nothing new (eTags).
 
 ## Media formats (from the library census)
 | Kind | Extensions (count) | Decode / handling |

@@ -30,6 +30,7 @@ public sealed class AppServices
         OneDrive = new OneDriveClient(Settings.ClientId, Paths.TokenCache);
         WebSession = new OneDriveWebSession(this);
         LiveVideo = new OneDriveLiveVideoClient(WebSession);
+        PeopleOnline = new OneDrivePeopleClient(WebSession);
         Motion = new MotionVideoService(Media, OneDrive, LiveVideo, Settings, Paths.MotionCache);
         Indexing = new IndexingService(this);
         CloudSync = new CloudSyncService(this);
@@ -49,6 +50,7 @@ public sealed class AppServices
     public MotionVideoService Motion { get; }
     public OneDriveWebSession WebSession { get; }
     public OneDriveLiveVideoClient LiveVideo { get; }
+    public OneDrivePeopleClient PeopleOnline { get; }
     public IndexingService Indexing { get; }
 
     public void SaveSettings() => Settings.Save(Paths);

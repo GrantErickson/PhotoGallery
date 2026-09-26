@@ -11,6 +11,9 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        // Exceptions on background threads end the process; at least leave a trace of why.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            PhotoGallery.Core.Log.Error("Fatal background exception", e.ExceptionObject as Exception);
         UnhandledException += (_, e) =>
         {
             PhotoGallery.Core.Log.Error("Unhandled exception", e.Exception);
@@ -38,6 +41,10 @@ public partial class App : Application
 
     private static async Task SignInAndSyncAsync(AppServices services)
     {
-        if (await services.OneDrive.TrySignInSilentAsync()) services.CloudSync.SyncIfStale();
+        await services.OneDrive.TrySignInSilentAsync();
+        // Tags need the Graph sign-in, people the web session (which loads OneDrive in a hidden view): give the
+        // window a minute to settle first.
+        await Task.Delay(TimeSpan.FromMinutes(1));
+        services.CloudSync.SyncIfStale();
     }
 }

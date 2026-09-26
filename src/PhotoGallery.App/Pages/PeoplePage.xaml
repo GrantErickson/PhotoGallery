@@ -19,7 +19,7 @@
             <CheckBox x:Name="HiddenBox" Content="Show hidden" VerticalAlignment="Center" Click="OnFilterClick" />
         </StackPanel>
         <TextBlock x:Name="SubtitleText" Grid.Row="1" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                   Text="People recognised by OneDrive. OneDrive doesn't share the names you gave them, so name each person once here (right-click). Named people are searchable." />
+                   Text="People recognised by OneDrive, with the names you gave them there. Right-click to rename, merge or hide. Named people are searchable." />
 
         <GridView x:Name="People" Grid.Row="2" IsItemClickEnabled="True" SelectionMode="None" ItemClick="OnPersonClick">
             <GridView.ItemTemplate>

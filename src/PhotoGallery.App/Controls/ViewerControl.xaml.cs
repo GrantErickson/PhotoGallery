@@ -228,15 +228,85 @@ public sealed partial class ViewerControl : UserControl
     private void RefreshTags()
     {
         TagList.ItemsSource = _current is null ? null : S.Collections.GetTagsFor(_current.Id);
-        var people = _current is null ? [] : S.People.GetPeopleIn(_current.Id);
-        PeopleList.ItemsSource = people;
-        PeoplePanel.Visibility = people.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var faces = _current is null ? [] : S.People.GetFacesIn(_current.Id);
+        PeopleList.ItemsSource = faces;
+        PeoplePanel.Visibility = faces.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // Boxes are fractions of the photo as shot: they only line up when the picture shown isn't rotated or cropped.
+        var edits = _current is null ? null : S.Edits.Get(_current.Id);
+        _faces = _current is { Kind: not MediaKind.Video } && edits is null or { Rotation: 0, FlipHorizontal: false, Crop: null }
+            ? faces.Where(f => f.Box is not null).ToList()
+            : [];
+        ShowFace(null);
     }
 
     private void OnPersonClick(object sender, RoutedEventArgs e)
     {
-        if (((FrameworkElement)sender).Tag is not PersonRow person) return;
-        App.MainWindow.NavigateFromViewer(() => PhotoGallery.App.Pages.PeoplePage.Open(S.People.Get(person.Id) ?? person));
+        if (((FrameworkElement)sender).Tag is not FaceRow face || S.People.Get(face.PersonId) is not { } person) return;
+        App.MainWindow.NavigateFromViewer(() => PhotoGallery.App.Pages.PeoplePage.Open(person));
+    }
+
+    /// <summary>Faces in the photo on screen that have a box.</summary>
+    private List<FaceRow> _faces = [];
+    private FaceRow? _pointedName;
+
+    private void OnPersonPointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        _pointedName = ((FrameworkElement)sender).Tag as FaceRow;
+        ShowFace(_faces.FirstOrDefault(f => f.PersonId == _pointedName?.PersonId));
+    }
+
+    private void OnPersonPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        _pointedName = null;
+        ShowFace(null);
+    }
+
+    /// <summary>Pointing at someone in the photo outlines their face and names them.</summary>
+    private void OnPhotoPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_faces.Count == 0 || _pointedName is not null || PhotoLayer.ActualWidth <= 0) return;
+        var p = e.GetCurrentPoint(PhotoLayer).Position;
+        double w = PhotoLayer.ActualWidth, h = PhotoLayer.ActualHeight;
+        // Generous target: the face plus some room around it; the smallest (nearest) face wins when they overlap.
+        var hit = _faces.Where(f =>
+            {
+                var (x, y, bw, bh) = f.Box!.Value.In(w, h);
+                return p.X >= x - bw * 0.3 && p.X <= x + bw * 1.3 && p.Y >= y - bh * 0.3 && p.Y <= y + bh * 1.6;
+            })
+            .MinBy(f => f.Box!.Value.Area);
+        ShowFace(hit);
+    }
+
+    private void OnPhotoPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (_pointedName is null) ShowFace(null);
+    }
+
+    private void ShowFace(FaceRow? face)
+    {
+        if (face?.Box is not { } box || Photo.Source is null || PhotoLayer.ActualWidth <= 0)
+        {
+            FaceBoxOuter.Visibility = Visibility.Collapsed;
+            FaceLabel.Visibility = Visibility.Collapsed;
+            return;
+        }
+        double w = PhotoLayer.ActualWidth, h = PhotoLayer.ActualHeight;
+        var (bx, by, bw, bh) = box.In(w, h);
+        // A little larger than OneDrive's box, which hugs the features.
+        double left = bx - bw * 0.08, top = by - bh * 0.08, width = bw * 1.16, height = bh * 1.16;
+        Canvas.SetLeft(FaceBoxOuter, left);
+        Canvas.SetTop(FaceBoxOuter, top);
+        FaceBoxOuter.Width = Math.Max(8, width);
+        FaceBoxOuter.Height = Math.Max(8, height);
+        FaceBoxOuter.Visibility = Visibility.Visible;
+
+        FaceLabelText.Text = face.DisplayName;
+        FaceLabel.Visibility = Visibility.Visible;
+        FaceLabel.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var labelWidth = FaceLabel.DesiredSize.Width;
+        var below = top + height + 6;
+        Canvas.SetLeft(FaceLabel, Math.Clamp(left + width / 2 - labelWidth / 2, 0, Math.Max(0, w - labelWidth)));
+        Canvas.SetTop(FaceLabel, below + FaceLabel.DesiredSize.Height <= h ? below : Math.Max(0, top - FaceLabel.DesiredSize.Height - 6));
     }
 
     private void RefreshAlbums()

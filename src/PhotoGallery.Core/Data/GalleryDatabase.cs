@@ -179,6 +179,15 @@ public sealed class GalleryDatabase
         """
         ALTER TABLE Media ADD COLUMN OnlineOnly INTEGER NOT NULL DEFAULT 0;
         """,
+        // v8: people and face boxes from OneDrive's web API: names given in OneDrive (until renamed here), the photo
+        // OneDrive uses for each person, each face's OneDrive id, and the item's eTag to spot changes.
+        """
+        ALTER TABLE People ADD COLUMN NameFromOneDrive INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE People ADD COLUMN OneDriveCoverItemId TEXT;
+        ALTER TABLE MediaFaces ADD COLUMN OneDriveFaceId TEXT;
+        ALTER TABLE Media ADD COLUMN OneDriveETag TEXT;
+        CREATE INDEX IX_Media_OneDriveItem ON Media(OneDriveItemId) WHERE OneDriveItemId IS NOT NULL;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

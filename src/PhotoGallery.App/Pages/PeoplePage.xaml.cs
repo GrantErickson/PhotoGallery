@@ -45,8 +45,11 @@ public sealed class PersonTile(PersonRow row) : Observable
         var personId = Row.Id;
         var path = await Task.Run(async () =>
         {
-            // The clearest face among the person's best few photos; otherwise the cover photo's thumbnail.
-            var candidates = App.Services.People.GetCoverCandidates(personId, 8).Select(App.Services.Media.GetPath).OfType<string>();
+            // Their face as OneDrive found it (or the clearest face among a few photos); otherwise the cover photo's thumbnail.
+            var candidates = App.Services.People.GetCoverCandidates(personId, 8)
+                .Select(c => (Path: App.Services.Media.GetPath(c.MediaId), c.Box))
+                .Where(c => c.Path is not null)
+                .Select(c => (c.Path!, c.Box));
             if (await App.Services.Faces.GetOrCreateAsync(personId, candidates) is { } face) return face;
             return App.Services.Media.GetPath(id) is { } source ? await App.Services.Thumbnails.GetOrCreateAsync(id, source) : null;
         });
@@ -59,16 +62,25 @@ public sealed partial class PeoplePage : Page
 {
     private List<PersonTile> _all = [];
 
+    private bool _stale;
+
     public PeoplePage()
     {
         InitializeComponent();
         NavigationCacheMode = NavigationCacheMode.Required; // keep the scroll position when coming back from a person
+        // New people, names or face boxes from OneDrive: rebuild the tiles (and their avatars) now or when next shown.
+        App.Services.CloudSync.Completed += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (IsLoaded) _ = LoadAsync();
+            else _stale = true;
+        });
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
-        if (_all.Count == 0)
+        if (_all.Count == 0 || _stale)
         {
+            _stale = false;
             await LoadAsync();
             return;
         }
@@ -98,7 +110,7 @@ public sealed partial class PeoplePage : Page
         EmptyText.Visibility = _all.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         SubtitleText.Text = _all.Count == 0
             ? ""
-            : $"{visible.Count:N0} of {_all.Count:N0} people recognised by OneDrive. OneDrive doesn't share the names you gave them, so name each person once here (right-click). Named people are searchable.";
+            : $"{visible.Count:N0} of {_all.Count:N0} people recognised by OneDrive, with the names you gave them there. Right-click to rename, merge or hide. Named people are searchable.";
     }
 
     private void OnFilterChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args) => ApplyFilter();

@@ -73,7 +73,19 @@
                 DoubleTapped="OnZoomDoubleTapped">
                 <!-- The frame is sized to the stage; the image fits and centres inside it, and zoom scales both. -->
                 <Grid x:Name="PhotoFrame">
-                    <Image x:Name="Photo" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <!-- Sized to the fitted picture, so face boxes (fractions of the photo) line up at any zoom. -->
+                    <Grid x:Name="PhotoLayer" HorizontalAlignment="Center" VerticalAlignment="Center"
+                          PointerMoved="OnPhotoPointerMoved" PointerExited="OnPhotoPointerExited">
+                        <Image x:Name="Photo" Stretch="Uniform" />
+                        <Canvas x:Name="FaceLayer" IsHitTestVisible="False">
+                            <Border x:Name="FaceBoxOuter" Visibility="Collapsed" BorderBrush="#99000000" BorderThickness="1" CornerRadius="6">
+                                <Border BorderBrush="White" BorderThickness="2" CornerRadius="5" />
+                            </Border>
+                            <Border x:Name="FaceLabel" Visibility="Collapsed" Padding="8,3" CornerRadius="4" Background="#CC000000">
+                                <TextBlock x:Name="FaceLabelText" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
+                            </Border>
+                        </Canvas>
+                    </Grid>
                 </Grid>
             </ScrollViewer>
             <MediaPlayerElement x:Name="Player" Visibility="Collapsed" AreTransportControlsEnabled="True" />
@@ -178,8 +190,9 @@
                     <TextBlock Text="People" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ItemsControl x:Name="PeopleList">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="data:PersonRow">
-                                <HyperlinkButton Content="{x:Bind DisplayName}" Padding="0" Margin="0,0,0,2" Click="OnPersonClick" Tag="{x:Bind}" />
+                            <DataTemplate x:DataType="data:FaceRow">
+                                <HyperlinkButton Content="{x:Bind DisplayName}" Padding="0" Margin="0,0,0,2" Click="OnPersonClick" Tag="{x:Bind}"
+                                                 PointerEntered="OnPersonPointerEntered" PointerExited="OnPersonPointerExited" />
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
