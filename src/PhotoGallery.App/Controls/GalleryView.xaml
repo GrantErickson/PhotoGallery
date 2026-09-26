@@ -131,8 +131,10 @@
                     <Grid Background="{ThemeResource ControlAltFillColorSecondaryBrush}" CornerRadius="4" DoubleTapped="OnTileDoubleTapped" RightTapped="OnTileRightTapped">
                         <Image Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" Spacing="4" Margin="6" HorizontalAlignment="Left" VerticalAlignment="Top">
-                            <Border Visibility="{x:Bind app:Format.Visible(StartsDay)}" Padding="6,1" CornerRadius="8" Background="#CC000000">
-                                <TextBlock Text="{x:Bind app:Format.Day(DateTaken)}" FontSize="11" FontWeight="SemiBold" Foreground="White" />
+                            <Border Visibility="{x:Bind app:Format.Visible(StartsDay)}" Padding="8,2" CornerRadius="10"
+                                    Background="{ThemeResource AccentFillColorDefaultBrush}" BorderBrush="#E6FFFFFF" BorderThickness="1">
+                                <TextBlock Text="{x:Bind app:Format.Day(DateTaken)}" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
                             </Border>
                             <Border Visibility="{x:Bind app:Format.HasMotion(Motion)}" Width="18" Height="18" CornerRadius="9" Background="#99000000"
                                     ToolTipService.ToolTip="Live Photo">
