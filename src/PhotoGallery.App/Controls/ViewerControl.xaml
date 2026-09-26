@@ -33,7 +33,7 @@
                 <TextBlock x:Name="SubtitleText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
-                <Button x:Name="LiveButton" Click="OnPlayMotion" Visibility="Collapsed" ToolTipService.ToolTip="Play Live Photo (Space)">
+                <Button x:Name="LiveButton" Click="OnPlayMotion" Visibility="Collapsed" ToolTipService.ToolTip="Play Live Photo (Space) — then step frames and save one">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="◉ LIVE" FontWeight="SemiBold" />
                         <ProgressRing x:Name="LiveBusy" Width="14" Height="14" IsActive="False" />
@@ -77,6 +77,37 @@
                 </Grid>
             </ScrollViewer>
             <MediaPlayerElement x:Name="Player" Visibility="Collapsed" AreTransportControlsEnabled="True" />
+
+            <!-- Frame tools: shown whenever a video (or Live Photo motion) is on screen -->
+            <Border x:Name="FrameBar" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,12,0,0"
+                    Padding="6" CornerRadius="8" Background="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Button Click="OnPreviousFrame" ToolTipService.ToolTip="Previous frame ( , )" Style="{StaticResource SubtleButtonStyle}">
+                        <FontIcon Glyph="&#xE892;" FontSize="14" />
+                    </Button>
+                    <TextBlock x:Name="FrameTimeText" MinWidth="84" TextAlignment="Center" VerticalAlignment="Center"
+                               FontFamily="Cascadia Mono, Consolas" Text="0:00.000" />
+                    <Button Click="OnNextFrame" ToolTipService.ToolTip="Next frame ( . )" Style="{StaticResource SubtleButtonStyle}">
+                        <FontIcon Glyph="&#xE893;" FontSize="14" />
+                    </Button>
+                    <Button x:Name="SaveFrameButton" Click="OnSaveFrame" Style="{StaticResource AccentButtonStyle}"
+                            ToolTipService.ToolTip="Save this frame as a photo in the same folder (S)">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE722;" FontSize="14" />
+                            <TextBlock Text="Save frame" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="ShowPhotoButton" Content="Show photo" Click="OnShowPhoto" Visibility="Collapsed"
+                            ToolTipService.ToolTip="Back to the Live Photo's still" />
+                </StackPanel>
+            </Border>
+
+            <!-- Messages while the viewer covers the status bar -->
+            <Border x:Name="Toast" Visibility="Collapsed" IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                    Margin="0,0,0,110" Padding="14,8" CornerRadius="8" Background="#E6202020">
+                <TextBlock x:Name="ToastText" Foreground="White" TextWrapping="Wrap" MaxWidth="640" />
+            </Border>
             <ProgressRing x:Name="LoadingRing" IsActive="False" Width="40" Height="40" />
             <TextBlock x:Name="ErrorText" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="24" />

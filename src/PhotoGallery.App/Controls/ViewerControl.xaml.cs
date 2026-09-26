@@ -28,6 +28,12 @@ public sealed partial class ViewerControl : UserControl
     private bool _changed;
     private bool _suppressRating;
     private bool _playingMotion;
+    /// <summary>The user stepped, paused or saved during Live Photo motion: stay on the video instead of returning to the still.</summary>
+    private bool _motionPinned;
+    /// <summary>The file the player is showing (the video itself, or the Live Photo's motion clip).</summary>
+    private string? _videoPath;
+    private bool _savingFrame;
+    private DispatcherTimer? _toastTimer;
 
     private readonly MediaPlayer _player = new() { AutoPlay = true };
 
@@ -37,8 +43,20 @@ public sealed partial class ViewerControl : UserControl
         Player.SetMediaPlayer(_player);
         _player.MediaEnded += (_, _) => DispatcherQueue.TryEnqueue(() =>
         {
-            if (_playingMotion) StopPlayback();
+            if (_playingMotion && !_motionPinned) StopPlayback();
         });
+        _player.PlaybackSession.PositionChanged += (session, _) =>
+        {
+            var position = session.Position;
+            DispatcherQueue.TryEnqueue(() => FrameTimeText.Text = FormatPosition(position));
+        };
+        _player.PlaybackSession.PlaybackStateChanged += (session, _) =>
+        {
+            // Pausing part-way through Live Photo motion means "let me look at this frame".
+            if (_playingMotion && session.PlaybackState == MediaPlaybackState.Paused &&
+                session.Position < session.NaturalDuration - TimeSpan.FromMilliseconds(150))
+                _motionPinned = true;
+        };
         Unloaded += (_, _) => StopPlayback();
         var escape = new KeyboardAccelerator { Key = VirtualKey.Escape };
         escape.Invoked += (_, args) =>
@@ -96,9 +114,7 @@ public sealed partial class ViewerControl : UserControl
         if (item.Kind == MediaKind.Video)
         {
             Photo.Source = null;
-            Player.Visibility = Visibility.Visible;
-            Player.AreTransportControlsEnabled = true;
-            _player.Source = MediaSource.CreateFromUri(new Uri(item.Path));
+            ShowVideo(item.Path, isMotion: false);
             return;
         }
 
@@ -252,10 +268,7 @@ public sealed partial class ViewerControl : UserControl
             switch (result)
             {
                 case MotionResult.Ready when path is not null:
-                    _playingMotion = true;
-                    Player.AreTransportControlsEnabled = false;
-                    Player.Visibility = Visibility.Visible;
-                    _player.Source = MediaSource.CreateFromUri(new Uri(path));
+                    ShowVideo(path, isMotion: true);
                     break;
                 case MotionResult.NeedsSignIn:
                     if (await Dialogs.ConfirmAsync(XamlRoot, "Connect OneDrive to play Live Photos",
@@ -307,12 +320,98 @@ public sealed partial class ViewerControl : UserControl
         }, ct);
     }
 
+    /// <summary>Plays a video file with the frame tools; <paramref name="isMotion"/> for a Live Photo's clip over its still.</summary>
+    private void ShowVideo(string path, bool isMotion)
+    {
+        _playingMotion = isMotion;
+        _motionPinned = false;
+        _videoPath = path;
+        Player.AreTransportControlsEnabled = true; // seek bar for scrubbing
+        Player.Visibility = Visibility.Visible;
+        FrameBar.Visibility = Visibility.Visible;
+        ShowPhotoButton.Visibility = isMotion ? Visibility.Visible : Visibility.Collapsed;
+        FrameTimeText.Text = FormatPosition(TimeSpan.Zero);
+        _player.Source = MediaSource.CreateFromUri(new Uri(path));
+    }
+
     private void StopPlayback()
     {
         _playingMotion = false;
+        _motionPinned = false;
+        _videoPath = null;
         _player.Pause();
         _player.Source = null;
         Player.Visibility = Visibility.Collapsed;
+        FrameBar.Visibility = Visibility.Collapsed;
+    }
+
+    private static string FormatPosition(TimeSpan t) => $"{(int)t.TotalMinutes}:{t.Seconds:00}.{t.Milliseconds:000}";
+
+    private void OnPreviousFrame(object sender, RoutedEventArgs e) => StepFrame(forward: false);
+
+    private void OnNextFrame(object sender, RoutedEventArgs e) => StepFrame(forward: true);
+
+    private void StepFrame(bool forward)
+    {
+        if (_videoPath is null) return;
+        _motionPinned = true;
+        if (forward) _player.StepForwardOneFrame();
+        else _player.StepBackwardOneFrame();
+    }
+
+    private void OnShowPhoto(object sender, RoutedEventArgs e) => StopPlayback();
+
+    private void TogglePlayPause()
+    {
+        if (_player.PlaybackSession.PlaybackState == MediaPlaybackState.Playing) _player.Pause();
+        else _player.Play();
+    }
+
+    private async void OnSaveFrame(object sender, RoutedEventArgs e) => await SaveFrameAsync();
+
+    /// <summary>Saves the frame on screen as a photo next to the video (or the Live Photo), and adds it to the library.</summary>
+    private async Task SaveFrameAsync()
+    {
+        if (_current is not { } item || _videoPath is not { } video || _savingFrame) return;
+        _savingFrame = true;
+        _motionPinned = true;
+        SaveFrameButton.IsEnabled = false;
+        _player.Pause();
+        var position = _player.PlaybackSession.Position;
+        var isLivePhoto = item.Kind != MediaKind.Video;
+        try
+        {
+            var saved = await VideoFrames.SaveSnapshotAsync(item, video, position, isLivePhoto);
+            var indexed = await Task.Run(() => S.Indexing.IndexFileNow(saved));
+            if (indexed is not null) S.Media.SetDerivedFrom(indexed.Id, item.Id);
+            _changed = true; // the gallery reloads to show the new photo
+            ShowToast($"Saved {Path.GetFileName(saved)} in {Path.GetFileName(Path.GetDirectoryName(saved))}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Saving a frame of {video} at {position} failed", ex);
+            ShowToast($"Couldn't save the frame: {ex.Message}");
+        }
+        finally
+        {
+            _savingFrame = false;
+            SaveFrameButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>A short message over the viewer (it covers the window's status bar).</summary>
+    public void ShowToast(string message)
+    {
+        ToastText.Text = message;
+        Toast.Visibility = Visibility.Visible;
+        _toastTimer?.Stop();
+        _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _toastTimer.Tick += (_, _) =>
+        {
+            _toastTimer?.Stop();
+            Toast.Visibility = Visibility.Collapsed;
+        };
+        _toastTimer.Start();
     }
 
     // ---------- Navigation ----------
@@ -346,8 +445,20 @@ public sealed partial class ViewerControl : UserControl
             case VirtualKey.Escape:
                 Close();
                 break;
+            case VirtualKey.Space when _videoPath is not null:
+                TogglePlayPause();
+                break;
             case VirtualKey.Space when _current?.Kind != MediaKind.Video:
                 _ = PlayMotionAsync();
+                break;
+            case (VirtualKey)188 when _videoPath is not null: // ,
+                StepFrame(forward: false);
+                break;
+            case (VirtualKey)190 when _videoPath is not null: // .
+                StepFrame(forward: true);
+                break;
+            case VirtualKey.S when _videoPath is not null && !IsDown(VirtualKey.Control):
+                _ = SaveFrameAsync();
                 break;
             case VirtualKey.E:
                 OpenEditor();

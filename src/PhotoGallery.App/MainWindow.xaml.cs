@@ -368,6 +368,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Shows a message in the status bar; non-sticky messages clear after a few seconds.</summary>
     public void ShowStatus(string message, bool sticky = false)
     {
+        if (Viewer.Visibility == Visibility.Visible && !sticky) Viewer.ShowToast(message);
         StatusText.Text = message;
         _statusTimer?.Stop();
         if (sticky) return;

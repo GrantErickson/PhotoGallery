@@ -122,10 +122,21 @@ public static class EditRenderer
     public static async Task WriteFileAsync(string sourcePath, EditOperations ops, string destination, DateTime? taken,
         (double Latitude, double Longitude)? location = null)
     {
-        var encoderId = EncoderFor(destination) ?? throw new NotSupportedException($"Can't write {Path.GetExtension(destination)} files.");
         var metadata = await ReadMetadataAsync(sourcePath);
         using var source = await LoadAsync(sourcePath, 0);
         using var bitmap = await RenderAsync(source, ops);
+        await SaveBitmapAsync(bitmap, destination, taken, location, metadata);
+    }
+
+    /// <summary>
+    /// Encodes a bitmap into <paramref name="destination"/> (format from its extension) with date taken, GPS and any
+    /// extra metadata (e.g. camera make/model).
+    /// </summary>
+    public static async Task SaveBitmapAsync(SoftwareBitmap bitmap, string destination, DateTime? taken,
+        (double Latitude, double Longitude)? location, Dictionary<string, BitmapTypedValue>? metadata = null)
+    {
+        var encoderId = EncoderFor(destination) ?? throw new NotSupportedException($"Can't write {Path.GetExtension(destination)} files.");
+        metadata ??= [];
         await using (var file = File.Create(destination))
         {
             var stream = file.AsRandomAccessStream();
@@ -154,6 +165,15 @@ public static class EditRenderer
     }
 
     private static readonly string[] CopiedProperties = ["System.Photo.CameraManufacturer", "System.Photo.CameraModel"];
+
+    /// <summary>Camera make/model as metadata for <see cref="SaveBitmapAsync"/>.</summary>
+    public static Dictionary<string, BitmapTypedValue> CameraMetadata(string? make, string? model)
+    {
+        var result = new Dictionary<string, BitmapTypedValue>();
+        if (!string.IsNullOrWhiteSpace(make)) result["System.Photo.CameraManufacturer"] = new BitmapTypedValue(make, Windows.Foundation.PropertyType.String);
+        if (!string.IsNullOrWhiteSpace(model)) result["System.Photo.CameraModel"] = new BitmapTypedValue(model, Windows.Foundation.PropertyType.String);
+        return result;
+    }
 
     /// <summary>
     /// WIC's System.GPS.* properties don't round-trip, so GPS is written as raw EXIF entries through metadata
