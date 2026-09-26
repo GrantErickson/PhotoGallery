@@ -43,7 +43,11 @@ public sealed partial class MainWindow : Window
 
     public async void GoBack()
     {
-        if (IsEditorOpen)
+        if (VideoEditor.Visibility == Visibility.Visible)
+        {
+            await VideoEditor.RequestCloseAsync();
+        }
+        else if (Editor.Visibility == Visibility.Visible)
         {
             await Editor.RequestCloseAsync();
         }
@@ -148,7 +152,8 @@ public sealed partial class MainWindow : Window
     private void OnFrameNavigating(object sender, Microsoft.UI.Xaml.Navigation.NavigatingCancelEventArgs e)
     {
         // Leaving the page closes any overlay (pages save their viewer history in OnNavigatingFrom first).
-        if (IsEditorOpen) Editor.CloseWithoutSaving();
+        if (VideoEditor.Visibility == Visibility.Visible) VideoEditor.CloseWithoutSaving();
+        if (Editor.Visibility == Visibility.Visible) Editor.CloseWithoutSaving();
         if (Viewer.Visibility == Visibility.Visible)
         {
             var forward = _forwardViewer;
@@ -307,7 +312,23 @@ public sealed partial class MainWindow : Window
         UpdateBackButton();
     }
 
-    public bool IsEditorOpen => Editor.Visibility == Visibility.Visible;
+    public bool IsEditorOpen => Editor.Visibility == Visibility.Visible || VideoEditor.Visibility == Visibility.Visible;
+
+    /// <summary>Opens the video editor over the viewer; the callback reports whether a video was saved.</summary>
+    public void OpenVideoEditor(PhotoGallery.Core.Media.MediaItem item, string videoPath, bool livePhoto, TimeSpan startAt, Action<bool> closed)
+    {
+        void OnClosed(bool saved)
+        {
+            VideoEditor.Closed -= OnClosed;
+            VideoEditor.Visibility = Visibility.Collapsed;
+            closed(saved);
+            UpdateBackButton();
+        }
+        VideoEditor.Closed += OnClosed;
+        VideoEditor.Visibility = Visibility.Visible;
+        VideoEditor.Open(item, videoPath, livePhoto, startAt);
+        UpdateBackButton();
+    }
 
     /// <summary>Opens the editor over the viewer; the callback reports whether edits were saved.</summary>
     public void OpenEditor(PhotoGallery.Core.Media.MediaItem item, Action<bool> closed)

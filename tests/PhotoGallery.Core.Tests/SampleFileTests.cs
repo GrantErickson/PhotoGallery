@@ -75,6 +75,32 @@ public class SampleFileTests
     }
 
     [Fact]
+    public void Short_8dot3_roots_are_expanded_to_long_paths()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "PhotoGallery long name test")).FullName;
+        try
+        {
+            var shortPath = ShortPath(dir);
+            Assert.SkipWhen(shortPath is null || !shortPath.Contains('~'), "8.3 names are disabled on this volume");
+            Assert.Equal(LibraryIndexer.LongPath(dir), LibraryIndexer.LongPath(shortPath!), ignoreCase: true);
+            Assert.DoesNotContain("~", Path.GetFileName(LibraryIndexer.LongPath(shortPath!)));
+        }
+        finally
+        {
+            Directory.Delete(dir);
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint GetShortPathName(string longPath, System.Text.StringBuilder shortPath, uint bufferLength);
+
+    private static string? ShortPath(string path)
+    {
+        var buffer = new System.Text.StringBuilder(1024);
+        return GetShortPathName(path, buffer, 1024) > 0 ? buffer.ToString() : null;
+    }
+
+    [Fact]
     public void Build_item_marks_embedded_motion()
     {
         var path = Sample(@"2024\04\PXL_20240418_181647617.MP.jpg");

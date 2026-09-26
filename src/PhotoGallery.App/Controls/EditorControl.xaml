@@ -122,6 +122,15 @@
                         <x:String>16:9</x:String>
                         <x:String>9:16</x:String>
                     </ComboBox>
+                    <Button x:Name="SmartCropButton" Click="OnSmartCrop" HorizontalAlignment="Stretch"
+                            ToolTipService.ToolTip="Crop around faces and the main subject, in the shape chosen above (Free fits the subject)">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE7A8;" FontSize="14" />
+                            <TextBlock Text="Smart crop" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock x:Name="SmartCropText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="Collapsed" />
                     <Button Content="Reset crop" Click="OnResetCrop" />
                     <TextBlock x:Name="SizeText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>

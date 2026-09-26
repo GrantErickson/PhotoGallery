@@ -33,5 +33,6 @@ public sealed class MediaItem
     /// <summary>Indexed while the file was a cloud-only placeholder (name/date only).</summary>
     public bool OnlineOnly { get; set; }
 
-    public DateTime TakenLocal => DateTime.UnixEpoch.AddSeconds(DateTaken);
+    /// <summary>Wall-clock time taken (Kind = Unspecified, so ToUniversalTime() converts it as local time).</summary>
+    public DateTime TakenLocal => DateTime.SpecifyKind(DateTime.UnixEpoch.AddSeconds(DateTaken), DateTimeKind.Unspecified);
 }

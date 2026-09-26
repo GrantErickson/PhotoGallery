@@ -211,7 +211,8 @@ public sealed partial class ViewerControl : UserControl
             _ => "",
         };
 
-        EditButton.Visibility = item.Kind == MediaKind.Video ? Visibility.Collapsed : Visibility.Visible;
+        EditButton.Visibility = Visibility.Visible;
+        ToolTipService.SetToolTip(EditButton, item.Kind == MediaKind.Video ? "Edit video: rotate, trim, remove sound (E)" : "Edit (E)");
         var edits = S.Edits.Get(item.Id);
         EditedPanel.Visibility = edits is null ? Visibility.Collapsed : Visibility.Visible;
         EditedText.Text = edits is null ? "" : DescribeEdits(edits);
@@ -330,6 +331,7 @@ public sealed partial class ViewerControl : UserControl
         Player.Visibility = Visibility.Visible;
         FrameBar.Visibility = Visibility.Visible;
         ShowPhotoButton.Visibility = isMotion ? Visibility.Visible : Visibility.Collapsed;
+        SaveVideoButton.Visibility = isMotion ? Visibility.Visible : Visibility.Collapsed;
         FrameTimeText.Text = FormatPosition(TimeSpan.Zero);
         _player.Source = MediaSource.CreateFromUri(new Uri(path));
     }
@@ -360,6 +362,57 @@ public sealed partial class ViewerControl : UserControl
     }
 
     private void OnShowPhoto(object sender, RoutedEventArgs e) => StopPlayback();
+
+    private void OnEditVideo(object sender, RoutedEventArgs e) => OpenVideoEditor();
+
+    private void OpenVideoEditor()
+    {
+        if (_current is not { } item) return;
+        var path = _videoPath ?? (item.Kind == MediaKind.Video ? item.Path : null);
+        if (path is null) return;
+        var livePhoto = item.Kind != MediaKind.Video;
+        var position = _player.PlaybackSession.Position;
+        _motionPinned = true;
+        _player.Pause();
+        App.MainWindow.OpenVideoEditor(item, path, livePhoto, position, saved =>
+        {
+            if (saved) _changed = true;
+            Focus(FocusState.Programmatic);
+        });
+    }
+
+    private bool _savingVideo;
+
+    /// <summary>Saves the Live Photo's motion (as it is) as an MP4 next to the photo.</summary>
+    private async void OnSaveLiveVideo(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { } item || _videoPath is not { } source || _savingVideo) return;
+        _savingVideo = true;
+        _motionPinned = true;
+        SaveVideoButton.IsEnabled = false;
+        var target = VideoExport.NextPath(item.Path, livePhoto: true);
+        try
+        {
+            var progress = new Progress<double>(p => SaveVideoText.Text = $"Saving… {p:P0}");
+            var location = item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : ((double, double)?)null;
+            await VideoExport.ExportAsync(source, Core.Editing.VideoEdits.None, target, item.TakenLocal, location, progress, CancellationToken.None);
+            var indexed = await Task.Run(() => S.Indexing.IndexFileNow(target));
+            if (indexed is not null) S.Media.SetDerivedFrom(indexed.Id, item.Id);
+            _changed = true;
+            ShowToast($"Saved {Path.GetFileName(target)} next to the photo");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Saving the Live Photo video of {item.Path} failed", ex);
+            ShowToast($"Couldn't save the video: {ex.Message}");
+        }
+        finally
+        {
+            _savingVideo = false;
+            SaveVideoButton.IsEnabled = true;
+            SaveVideoText.Text = "Save video";
+        }
+    }
 
     private void TogglePlayPause()
     {
@@ -635,7 +688,13 @@ public sealed partial class ViewerControl : UserControl
 
     private void OpenEditor()
     {
-        if (_current is not { Kind: not MediaKind.Video } item) return;
+        // While a video or Live Photo motion is on screen, E edits the video.
+        if (_videoPath is not null || _current?.Kind == MediaKind.Video)
+        {
+            OpenVideoEditor();
+            return;
+        }
+        if (_current is not { } item) return;
         StopPlayback();
         App.MainWindow.OpenEditor(item, saved =>
         {

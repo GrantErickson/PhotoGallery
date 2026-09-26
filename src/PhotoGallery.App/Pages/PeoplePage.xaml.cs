@@ -73,7 +73,8 @@ public sealed partial class PeoplePage : Page
             return;
         }
         // Coming back: refresh names in place (one may have been named on their page) without losing the scroll position.
-        var rows = await Task.Run(() => App.Services.People.GetPeople(HiddenBox.IsChecked == true));
+        var includeHidden = HiddenBox.IsChecked == true; // read on the UI thread
+        var rows = await Task.Run(() => App.Services.People.GetPeople(includeHidden));
         var byId = rows.ToDictionary(r => r.Id);
         foreach (var tile in _all)
             if (byId.TryGetValue(tile.Row.Id, out var row)) tile.Update(row);

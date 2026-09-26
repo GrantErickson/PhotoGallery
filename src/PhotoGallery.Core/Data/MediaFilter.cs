@@ -55,5 +55,5 @@ public sealed class MediaSummary
     /// <summary>First item of a new day in the current (date-ordered) list; set by the view.</summary>
     public bool StartsDay { get; set; }
 
-    public DateTime TakenLocal => DateTime.UnixEpoch.AddSeconds(DateTaken);
+    public DateTime TakenLocal => DateTime.SpecifyKind(DateTime.UnixEpoch.AddSeconds(DateTaken), DateTimeKind.Unspecified);
 }

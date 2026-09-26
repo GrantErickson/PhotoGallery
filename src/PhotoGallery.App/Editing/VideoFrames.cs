@@ -30,7 +30,7 @@ public static class VideoFrames
     }
 
     /// <summary>Display width × height (rotation applied) from a QuickTime/MP4 header; null for other containers.</summary>
-    private static (int, int)? DisplaySize(string videoPath)
+    internal static (int, int)? DisplaySize(string videoPath)
     {
         if (!MediaFormats.IsQuickTimeFamily(videoPath)) return null;
         try

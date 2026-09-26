@@ -69,6 +69,7 @@ public sealed partial class EditorControl : UserControl
         OverwriteButton.IsEnabled = EditRenderer.CanWriteFormat(item.Path);
         _ops = S.Edits.Get(item.Id) ?? EditOperations.None;
         _openedWith = _ops;
+        SmartCropText.Visibility = Visibility.Collapsed;
         _suppress = true;
         ExposureSlider.Value = _ops.Exposure;
         BrightnessSlider.Value = _ops.Brightness;
@@ -302,6 +303,38 @@ public sealed partial class EditorControl : UserControl
             w = aspect * _rotatedSize.Height / _rotatedSize.Width;
         }
         SetCrop(new CropRect((1 - w) / 2, (1 - h) / 2, w, h));
+    }
+
+    /// <summary>Crops around faces and the most interesting part, in the chosen shape.</summary>
+    private async void OnSmartCrop(object sender, RoutedEventArgs e)
+    {
+        if (_source is null || _rotatedSize.Width <= 0) return;
+        SmartCropButton.IsEnabled = false;
+        Busy.IsActive = true;
+        try
+        {
+            var (crop, faces) = await SmartCropAnalyzer.FindAsync(_source, _ops, LockedAspect);
+            SetCrop(crop);
+            SmartCropText.Text = crop.IsFull
+                ? "The subject already fills the photo — pick a shape above to crop to it."
+                : faces switch
+                {
+                    0 => "Cropped to the main subject.",
+                    1 => "Cropped around 1 face.",
+                    _ => $"Cropped around {faces} faces.",
+                } + " Adjust the box if needed.";
+            SmartCropText.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Smart crop failed for {_item?.Path}", ex);
+            App.MainWindow.ShowStatus($"Smart crop failed: {ex.Message}");
+        }
+        finally
+        {
+            SmartCropButton.IsEnabled = true;
+            Busy.IsActive = false;
+        }
     }
 
     private void OnResetCrop(object sender, RoutedEventArgs e)

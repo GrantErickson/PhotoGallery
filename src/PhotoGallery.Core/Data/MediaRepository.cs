@@ -130,6 +130,7 @@ public sealed class MediaRepository(GalleryDatabase database)
     /// <summary>Forgets everything under a library root that was removed from settings (files are untouched).</summary>
     public void RemoveRoot(string root)
     {
+        root = Indexing.LibraryIndexer.LongPath(root); // paths are stored in long form
         var prefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
         using (var db = database.Open())
         using (var tx = db.BeginTransaction())
@@ -162,7 +163,7 @@ public sealed class MediaRepository(GalleryDatabase database)
             INSERT INTO Pairs (StillId, VideoId)
             SELECT s.Id,
                    (SELECT v.Id FROM Media v
-                     WHERE v.ContentId = s.ContentId AND v.Kind = 2 AND v.DurationMs <= 10000
+                     WHERE v.ContentId = s.ContentId AND v.Kind = 2 AND v.DurationMs <= 10000 AND v.DerivedFromId IS NULL
                      ORDER BY (v.FolderId = s.FolderId) DESC, v.Id LIMIT 1)
             FROM Media s
             WHERE s.Kind IN (1, 3) AND s.ContentId IS NOT NULL;

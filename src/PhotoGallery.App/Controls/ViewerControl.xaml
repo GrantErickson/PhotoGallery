@@ -98,6 +98,19 @@
                             <TextBlock Text="Save frame" />
                         </StackPanel>
                     </Button>
+                    <Button x:Name="SaveVideoButton" Click="OnSaveLiveVideo" Visibility="Collapsed"
+                            ToolTipService.ToolTip="Save the Live Photo's motion as an MP4 video next to the photo">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE714;" FontSize="14" />
+                            <TextBlock x:Name="SaveVideoText" Text="Save video" />
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnEditVideo" ToolTipService.ToolTip="Rotate, trim or remove sound, and save as MP4 (E)">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE70F;" FontSize="14" />
+                            <TextBlock Text="Edit video" />
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="ShowPhotoButton" Content="Show photo" Click="OnShowPhoto" Visibility="Collapsed"
                             ToolTipService.ToolTip="Back to the Live Photo's still" />
                 </StackPanel>

@@ -57,7 +57,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
         }
 
         var scannedRoots = new List<string>();
-        foreach (var root in roots)
+        foreach (var root in roots.Select(LongPath))
         {
             if (!Directory.Exists(root)) continue; // an unavailable drive must not delete its index
             scannedRoots.Add(Path.TrimEndingDirectorySeparator(root));
@@ -218,6 +218,21 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
         // Phone screenshots are PNGs without any camera EXIF.
         return Path.GetExtension(path).Equals(".png", StringComparison.OrdinalIgnoreCase) && md.Make is null && md.Model is null;
     }
+
+    /// <summary>
+    /// Expands an 8.3 path ("C:\Users\GRANTE~1\x" → "C:\Users\GrantErickson\x"). Indexed paths are stored in long form,
+    /// so a root given in 8.3 form must be expanded or files deleted under it would never be recognised as gone.
+    /// </summary>
+    internal static string LongPath(string path)
+    {
+        if (!path.Contains('~')) return path;
+        var buffer = new System.Text.StringBuilder(1024);
+        var length = GetLongPathName(path, buffer, (uint)buffer.Capacity);
+        return length > 0 && length < buffer.Capacity ? buffer.ToString() : path;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint GetLongPathName(string shortPath, System.Text.StringBuilder longPath, uint bufferLength);
 
     private static bool IsUnder(string path, string root) =>
         path.Length > root.Length && path.StartsWith(root, StringComparison.OrdinalIgnoreCase) && path[root.Length] == Path.DirectorySeparatorChar;

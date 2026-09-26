@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PhotoGallery.App.Controls.VideoEditorControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="True"
+    KeyboardAcceleratorPlacementMode="Hidden">
+
+    <Grid Background="{ThemeResource SolidBackgroundFillColorBaseBrush}">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="300" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Top bar -->
+        <Grid Grid.ColumnSpan="2" Padding="8,6" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Click="OnCancel" ToolTipService.ToolTip="Close (Esc)" Style="{StaticResource SubtleButtonStyle}">
+                <SymbolIcon Symbol="Cancel" />
+            </Button>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock x:Name="TitleText" Text="Edit video" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock x:Name="FileText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Button Content="Reset" Click="OnReset" />
+                <Button x:Name="SaveButton" Click="OnSave" Style="{StaticResource AccentButtonStyle}"
+                        ToolTipService.ToolTip="Write an MP4 next to the original (Ctrl+S). The original is never changed.">
+                    <TextBlock x:Name="SaveText" Text="Save as MP4" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Preview (rotated with a render transform; the Canvas doesn't clip the turned player) -->
+        <Canvas x:Name="Stage" Grid.Row="1" Margin="24" SizeChanged="OnStageSizeChanged">
+            <MediaPlayerElement x:Name="Player" AreTransportControlsEnabled="False" Stretch="Uniform" RenderTransformOrigin="0.5,0.5">
+                <MediaPlayerElement.RenderTransform>
+                    <RotateTransform x:Name="PreviewRotation" />
+                </MediaPlayerElement.RenderTransform>
+            </MediaPlayerElement>
+        </Canvas>
+
+        <!-- Timeline and trim -->
+        <StackPanel Grid.Row="2" Padding="24,0,24,16" Spacing="6">
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="PlayButton" Click="OnPlayPause" ToolTipService.ToolTip="Play / pause (Space)">
+                    <FontIcon x:Name="PlayIcon" Glyph="&#xE768;" FontSize="14" />
+                </Button>
+                <Button Grid.Column="1" Click="OnPreviousFrame" ToolTipService.ToolTip="Previous frame ( , )" Style="{StaticResource SubtleButtonStyle}">
+                    <FontIcon Glyph="&#xE892;" FontSize="14" />
+                </Button>
+                <Button Grid.Column="2" Click="OnNextFrame" ToolTipService.ToolTip="Next frame ( . )" Style="{StaticResource SubtleButtonStyle}">
+                    <FontIcon Glyph="&#xE893;" FontSize="14" />
+                </Button>
+                <Grid Grid.Column="3" VerticalAlignment="Center">
+                    <!-- Kept range highlighted under the scrubber -->
+                    <Canvas x:Name="TrimTrack" Height="18" VerticalAlignment="Center" SizeChanged="OnTrimTrackSizeChanged">
+                        <Rectangle x:Name="TrimRange" Height="18" RadiusX="4" RadiusY="4" Fill="{ThemeResource AccentFillColorDefaultBrush}" Opacity="0.3" />
+                    </Canvas>
+                    <Slider x:Name="Scrubber" StepFrequency="0.001" IsThumbToolTipEnabled="False" ValueChanged="OnScrub" />
+                </Grid>
+                <TextBlock x:Name="TimeText" Grid.Column="4" VerticalAlignment="Center" FontFamily="Cascadia Mono, Consolas" Text="0:00.000 / 0:00.000" />
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="Keep" VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock x:Name="StartText" VerticalAlignment="Center" FontFamily="Cascadia Mono, Consolas" />
+                <Button Content="Start here" Click="OnSetStart" ToolTipService.ToolTip="Trim everything before the playhead (I)" />
+                <TextBlock Text="to" VerticalAlignment="Center" />
+                <TextBlock x:Name="EndText" VerticalAlignment="Center" FontFamily="Cascadia Mono, Consolas" />
+                <Button Content="End here" Click="OnSetEnd" ToolTipService.ToolTip="Trim everything after the playhead (O)" />
+                <HyperlinkButton Content="Keep all" Click="OnResetTrim" />
+                <TextBlock x:Name="KeptText" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Tools -->
+        <ScrollViewer Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" Padding="16,8,16,16"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,0,0,0">
+            <StackPanel Spacing="20">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Rotate" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Click="OnRotateLeft" ToolTipService.ToolTip="Rotate left ([)">
+                            <FontIcon Glyph="&#xE7AD;" />
+                        </Button>
+                        <Button Click="OnRotateRight" ToolTipService.ToolTip="Rotate right (])">
+                            <FontIcon Glyph="&#xE7AD;" RenderTransformOrigin="0.5,0.5">
+                                <FontIcon.RenderTransform>
+                                    <ScaleTransform ScaleX="-1" />
+                                </FontIcon.RenderTransform>
+                            </FontIcon>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Sound" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <CheckBox x:Name="MuteBox" Content="Remove sound" Click="OnMuteClick" />
+                </StackPanel>
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Saving" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                        Saves a new MP4 (H.264) next to the original: <Run x:Name="TargetRun" />. It keeps the date, place and camera and shows up in the timeline as an edited copy. The original is never changed.
+                    </TextBlock>
+                    <ProgressBar x:Name="ExportProgress" Visibility="Collapsed" Maximum="1" />
+                    <Button x:Name="CancelExportButton" Content="Stop saving" Visibility="Collapsed" Click="OnCancelExport" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
