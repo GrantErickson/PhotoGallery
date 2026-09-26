@@ -304,6 +304,14 @@ public sealed class MediaRepository(GalleryDatabase database)
         return db.Query<FolderRow>("SELECT Id, ParentId, Path, Name FROM Folders ORDER BY Path").AsList();
     }
 
+    /// <summary>Every located photo/video (screenshots excluded) for the map: id, latitude, longitude.</summary>
+    public List<(long Id, double Latitude, double Longitude)> GetGeoPoints()
+    {
+        using var db = database.Open();
+        return db.Query<(long, double, double)>(
+            "SELECT Id, Latitude, Longitude FROM Media WHERE Latitude IS NOT NULL AND Longitude IS NOT NULL AND IsHidden = 0 AND IsScreenshot = 0").AsList();
+    }
+
     public void SetRating(IEnumerable<long> ids, int rating)
     {
         using var db = database.Open();

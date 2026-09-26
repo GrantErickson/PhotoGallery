@@ -64,6 +64,9 @@ public sealed partial class MainWindow : Window
             case "folders":
                 ContentFrame.Navigate(typeof(FoldersPage));
                 break;
+            case "map":
+                ContentFrame.Navigate(typeof(MapPage));
+                break;
             case "albums":
                 ContentFrame.Navigate(typeof(AlbumsPage));
                 break;

@@ -6,7 +6,9 @@ Done, running against the real library (253k files):
 - Viewer: zoom, video, Live Photo motion from local pairs and embedded MP4s. Cloud-only iPhone Live Photos: OneDrive stopped serving `format=video` (406), so the LIVE button falls back to opening the photo on OneDrive.com. Details, rating, tags, albums, copy path, Explorer/OneDrive links.
 - Counts after indexing: 226k photos, 10.5k videos, 14.3k screenshots; motion: 2,503 local pairs, 54 embedded, ~32k cloud-only Live Photos.
 
-Not yet done (next milestones): Phase 6 editing, Phase 7 map, Phase 4 Graph tags/people sync, duplicate detection, inline month headers in the grid (the jump list covers navigation for now), drag-to-reorder in albums (the repository supports it; there's no UI yet).
+Round 2 (2026-09-25): Phase 6 editing (Win2D, non-destructive, export) and Phase 7 map (WebView2 + Leaflet + markercluster, photos-in-view gallery) are done.
+
+Not yet done (next milestones): Phase 4 Graph tags/people sync, duplicate detection, inline month headers in the grid (the jump list covers navigation for now), drag-to-reorder in albums (the repository supports it; there's no UI yet).
 
 How the build differs from the architecture below:
 - **Thumbnails:** no Win2D or FFmpeg. The thumbnail cache (`ThumbnailCache`) first probes the Windows thumbnail cache (IShellItemImageFactory, cache-only), then falls back to a WIC decode for images (using the embedded HEVC preview for HEIC) or a Media Foundation frame for video. HEIC decoding is capped by the codec at ~10–12 files/s, so warming takes a while on first run; tiles on screen get priority.

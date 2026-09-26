@@ -26,6 +26,8 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         _services = new AppServices();
+        // Unpackaged apps default WebView2's data folder to the exe directory, which may not be writable.
+        Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", Path.Combine(_services.Paths.Root, "webview"));
         _window = new MainWindow();
         _window.Closed += (_, _) => _services.Thumbnails.Dispose();
         _window.Activate();

@@ -291,6 +291,18 @@ public sealed partial class GalleryView : UserControl
         }
     }
 
+    /// <summary>Opens the viewer on an item by id (the map's markers); falls back to showing just that item.</summary>
+    public void OpenItem(long id)
+    {
+        if (_items.FirstOrDefault(i => i.Id == id) is { } item)
+        {
+            Open(item);
+            return;
+        }
+        var single = S.Media.Query(new MediaFilter { IncludeScreenshots = true }).Where(i => i.Id == id).ToList();
+        if (single.Count == 1) App.MainWindow.OpenViewer(single, 0, (_, _) => { });
+    }
+
     private void Open(MediaSummary item)
     {
         var index = _items.IndexOf(item);

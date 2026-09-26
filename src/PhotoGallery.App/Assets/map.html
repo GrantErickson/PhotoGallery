@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    body { font-family: "Segoe UI Variable", "Segoe UI", sans-serif; }
+    #status { position: absolute; z-index: 1000; left: 50%; top: 12px; transform: translateX(-50%);
+              background: rgba(0,0,0,.65); color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 13px; }
+    .photo-pin { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
+                 background: #ccc center/cover no-repeat; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="status">Loading photo locations…</div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script>
+    // Messages to the app: {type:"bounds", south, west, north, east} and {type:"open", id}.
+    const post = m => window.chrome?.webview?.postMessage(m);
+    const statusBox = document.getElementById("status");
+    const map = L.map("map", { worldCopyJump: true, preferCanvas: true }).setView([20, 0], 2);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    const clusters = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 60, showCoverageOnHover: false });
+    map.addLayer(clusters);
+
+    // Individual photos show their thumbnail once you zoom in far enough to see them unclustered.
+    const pin = id => L.divIcon({
+      className: "",
+      html: `<div class="photo-pin" style="background-image:url('https://gallery.local/thumbs/${(id & 255).toString(16).padStart(2, "0")}/${id}.jpg')"></div>`,
+      iconSize: [44, 44], iconAnchor: [22, 22]
+    });
+
+    function sendBounds() {
+      const b = map.getBounds();
+      post({ type: "bounds", south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() });
+    }
+    let timer;
+    map.on("moveend", () => { clearTimeout(timer); timer = setTimeout(sendBounds, 250); });
+
+    fetch("https://gallery.local/map/points.json")
+      .then(r => r.json())
+      .then(points => {
+        const markers = points.map(([id, lat, lon]) => {
+          const m = L.marker([lat, lon], { icon: pin(id) });
+          m.on("click", () => post({ type: "open", id }));
+          return m;
+        });
+        clusters.addLayers(markers);
+        statusBox.textContent = `${points.length.toLocaleString()} photos with a location`;
+        setTimeout(() => statusBox.style.display = "none", 4000);
+        // Fit to the points themselves: the cluster layer's bounds are empty while chunked loading runs.
+        if (points.length) {
+          try { map.fitBounds(L.latLngBounds(points.map(p => [p[1], p[2]])), { maxZoom: 12 }); } catch (e) { console.warn(e); }
+        }
+        sendBounds();
+      })
+      .catch(e => statusBox.textContent = "Couldn't load photo locations: " + e);
+  </script>
+</body>
+</html>
