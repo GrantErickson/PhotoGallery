@@ -79,11 +79,12 @@
                           PointerMoved="OnPhotoPointerMoved" PointerExited="OnPhotoPointerExited" SizeChanged="OnPhotoLayerSizeChanged">
                         <Image x:Name="Photo" Stretch="Uniform" />
                         <Canvas x:Name="TextMarkLayer" IsHitTestVisible="False" />
-                        <Canvas x:Name="FaceLayer" IsHitTestVisible="False">
-                            <Border x:Name="FaceBoxOuter" Visibility="Collapsed" BorderBrush="#99000000" BorderThickness="1" CornerRadius="6">
+                        <Canvas x:Name="FaceLayer">
+                            <Border x:Name="FaceBoxOuter" Visibility="Collapsed" IsHitTestVisible="False" BorderBrush="#99000000" BorderThickness="1" CornerRadius="6">
                                 <Border BorderBrush="White" BorderThickness="2" CornerRadius="5" />
                             </Border>
-                            <Border x:Name="FaceLabel" Visibility="Collapsed" Padding="8,3" CornerRadius="4" Background="#CC000000">
+                            <Border x:Name="FaceLabel" Visibility="Collapsed" Padding="8,3" CornerRadius="4" Background="#CC000000"
+                                    PointerEntered="OnFaceLabelPointerEntered" PointerExited="OnFaceLabelPointerExited" Tapped="OnFaceLabelTapped">
                                 <TextBlock x:Name="FaceLabelText" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
                             </Border>
                         </Canvas>
@@ -191,15 +192,14 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBox x:Name="TranscriptFind" PlaceholderText="Find in transcript (Ctrl+F)" TextChanged="OnTranscriptFindChanged"
-                             KeyDown="OnTranscriptFindKeyDown" />
+                    <TextBox x:Name="TranscriptFind" PlaceholderText="Find in transcript (Ctrl+F)" />
                     <TextBlock x:Name="TranscriptFindCount" Grid.Column="1" Margin="6,0,2,0" VerticalAlignment="Center"
                                Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <Button x:Name="FindPreviousButton" Grid.Column="2" Click="OnFindPrevious" IsEnabled="False" Style="{StaticResource SubtleButtonStyle}"
+                    <Button x:Name="FindPreviousButton" Grid.Column="2" IsEnabled="False" Style="{StaticResource SubtleButtonStyle}"
                             ToolTipService.ToolTip="Previous (Shift+Enter)">
                         <FontIcon Glyph="&#xE70E;" FontSize="12" />
                     </Button>
-                    <Button x:Name="FindNextButton" Grid.Column="3" Click="OnFindNext" IsEnabled="False" Style="{StaticResource SubtleButtonStyle}"
+                    <Button x:Name="FindNextButton" Grid.Column="3" IsEnabled="False" Style="{StaticResource SubtleButtonStyle}"
                             ToolTipService.ToolTip="Next (Enter)">
                         <FontIcon Glyph="&#xE70D;" FontSize="12" />
                     </Button>
@@ -226,7 +226,12 @@
                 </ScrollViewer>
             </Grid>
 
-        <ScrollViewer x:Name="InfoPane" Grid.Row="1" Padding="16,8,16,16">
+        <Grid x:Name="InfoPane" Grid.Row="1" SizeChanged="OnInfoPaneSizeChanged">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+        <ScrollViewer x:Name="DetailsScroll" Padding="16,8,16,16">
             <StackPanel Spacing="14">
                 <RatingControl x:Name="Rating" HorizontalAlignment="Left" IsClearEnabled="True" ValueChanged="OnRatingChanged" />
 
@@ -275,19 +280,6 @@
                     </ItemsControl>
                 </StackPanel>
 
-                <StackPanel x:Name="PhotoTextPanel" Spacing="4" Visibility="Collapsed">
-                    <Grid>
-                        <TextBlock Text="Text in photo" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <Button HorizontalAlignment="Right" Padding="6,2" Click="OnCopyPhotoText" Style="{StaticResource SubtleButtonStyle}"
-                                ToolTipService.ToolTip="Copy the text">
-                            <FontIcon Glyph="&#xE8C8;" FontSize="12" />
-                        </Button>
-                    </Grid>
-                    <TextBlock x:Name="PhotoTextBlock" TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxLines="12" />
-                    <HyperlinkButton x:Name="PhotoTextMore" Padding="0" Click="OnPhotoTextMore" Visibility="Collapsed" />
-                </StackPanel>
-
                 <StackPanel Spacing="6">
                     <TextBlock Text="Tags" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ItemsControl x:Name="TagList">
@@ -327,6 +319,54 @@
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>
+
+            <!-- Text read from the photo: fills the space below the details and scrolls on its own. -->
+            <Grid x:Name="PhotoTextPanel" Grid.Row="1" Visibility="Collapsed" Padding="16,10,4,8" RowSpacing="6"
+                  BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Margin="0,0,12,0">
+                    <TextBlock x:Name="PhotoTextTitle" Text="Text in photo" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <Button HorizontalAlignment="Right" Padding="6,2" Click="OnCopyPhotoText" Style="{StaticResource SubtleButtonStyle}"
+                            ToolTipService.ToolTip="Copy the text">
+                        <FontIcon Glyph="&#xE8C8;" FontSize="12" />
+                    </Button>
+                </Grid>
+                <Grid x:Name="PhotoTextFindBar" Grid.Row="1" ColumnSpacing="2" Margin="0,0,12,0" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PhotoTextFind" PlaceholderText="Find in the text (Ctrl+F)" />
+                    <TextBlock x:Name="PhotoTextFindCount" Grid.Column="1" Margin="6,0,2,0" VerticalAlignment="Center"
+                               Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <Button x:Name="PhotoTextPrevious" Grid.Column="2" IsEnabled="False" Style="{StaticResource SubtleButtonStyle}"
+                            ToolTipService.ToolTip="Previous (Shift+Enter)">
+                        <FontIcon Glyph="&#xE70E;" FontSize="12" />
+                    </Button>
+                    <Button x:Name="PhotoTextNext" Grid.Column="3" IsEnabled="False" Style="{StaticResource SubtleButtonStyle}"
+                            ToolTipService.ToolTip="Next (Enter)">
+                        <FontIcon Glyph="&#xE70D;" FontSize="12" />
+                    </Button>
+                </Grid>
+                <ScrollViewer x:Name="PhotoTextScroll" Grid.Row="2" Padding="0,0,12,0">
+                    <ItemsControl x:Name="PhotoTextList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="controls:PhotoTextLine">
+                                <TextBlock TextWrapping="Wrap" IsTextSelectionEnabled="True" Margin="0,0,0,2"
+                                           DataContextChanged="OnPhotoTextLineDataContextChanged" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
         </Grid>
     </Grid>
 </UserControl>

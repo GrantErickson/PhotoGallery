@@ -9,7 +9,7 @@ namespace PhotoGallery.App.Controls;
 /// A transcript paragraph in the viewer: its start time (click to play from there), whether it's being said now, and
 /// where the searched-for words are in it.
 /// </summary>
-public sealed class TranscriptLine(TranscriptParagraph paragraph, bool showSpeaker) : Observable
+public sealed class TranscriptLine(TranscriptParagraph paragraph, bool showSpeaker) : Observable, IFindableLine
 {
     private static readonly Brush Clear = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
     private bool _isCurrent;

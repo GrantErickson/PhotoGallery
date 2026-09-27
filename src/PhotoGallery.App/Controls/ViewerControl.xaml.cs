@@ -85,11 +85,7 @@ public sealed partial class ViewerControl : UserControl
         {
             if (Visibility != Visibility.Visible || App.MainWindow.IsEditorOpen) return;
             args.Handled = true;
-            if (ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), TranscriptFind) && TranscriptFind.Text.Length > 0)
-            {
-                TranscriptFind.Text = "";
-                return;
-            }
+            if ((TranscriptFinder.IsFocused && TranscriptFinder.ClearText()) || (PhotoTextFinder.IsFocused && PhotoTextFinder.ClearText())) return;
             Close();
         };
         KeyboardAccelerators.Add(escape);
@@ -295,7 +291,7 @@ public sealed partial class ViewerControl : UserControl
     /// <summary>Pointing at someone in the photo outlines their face and names them.</summary>
     private void OnPhotoPointerMoved(object sender, PointerRoutedEventArgs e)
     {
-        if (_faces.Count == 0 || _pointedName is not null || PhotoLayer.ActualWidth <= 0) return;
+        if (_faces.Count == 0 || _pointedName is not null || _overFaceLabel || PhotoLayer.ActualWidth <= 0) return;
         var p = e.GetCurrentPoint(PhotoLayer).Position;
         double w = PhotoLayer.ActualWidth, h = PhotoLayer.ActualHeight;
         // Generous target: the face plus some room around it; the smallest (nearest) face wins when they overlap.
@@ -310,11 +306,37 @@ public sealed partial class ViewerControl : UserControl
 
     private void OnPhotoPointerExited(object sender, PointerRoutedEventArgs e)
     {
-        if (_pointedName is null) ShowFace(null);
+        if (_pointedName is null && !_overFaceLabel) ShowFace(null);
+    }
+
+    /// <summary>The face whose name label is showing, and whether the pointer is on that label.</summary>
+    private FaceRow? _shownFace;
+    private bool _overFaceLabel;
+
+    /// <summary>The name under a face works like the name in the People list: underlined when pointed at, click to open.</summary>
+    private void OnFaceLabelPointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        _overFaceLabel = true;
+        FaceLabelText.TextDecorations = Windows.UI.Text.TextDecorations.Underline;
+    }
+
+    private void OnFaceLabelPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        _overFaceLabel = false;
+        FaceLabelText.TextDecorations = Windows.UI.Text.TextDecorations.None;
+    }
+
+    private void OnFaceLabelTapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (_shownFace is not { } face || S.People.Get(face.PersonId) is not { } person) return;
+        _overFaceLabel = false;
+        App.MainWindow.NavigateFromViewer(() => PhotoGallery.App.Pages.PeoplePage.Open(person));
     }
 
     private void ShowFace(FaceRow? face)
     {
+        _shownFace = face?.Box is null ? null : face;
         if (face?.Box is not { } box || Photo.Source is null || PhotoLayer.ActualWidth <= 0)
         {
             FaceBoxOuter.Visibility = Visibility.Collapsed;
@@ -616,8 +638,11 @@ public sealed partial class ViewerControl : UserControl
                 break;
             case VirtualKey.F when IsDown(VirtualKey.Control) && TranscriptPane.Visibility == Visibility.Visible &&
                                    TranscriptFindBar.Visibility == Visibility.Visible:
-                TranscriptFind.Focus(FocusState.Keyboard);
-                TranscriptFind.SelectAll();
+                TranscriptFinder.Focus();
+                break;
+            case VirtualKey.F when IsDown(VirtualKey.Control) && InfoPane.Visibility == Visibility.Visible &&
+                                   PhotoTextFindBar.Visibility == Visibility.Visible:
+                PhotoTextFinder.Focus();
                 break;
             case VirtualKey.E:
                 OpenEditor();
@@ -839,21 +864,18 @@ public sealed partial class ViewerControl : UserControl
     private DateTime _userScrolledAt;
     /// <summary>What the gallery was searched for (the viewer was opened from search results).</summary>
     private string? _searchQuery;
-    /// <summary>What's being found in the transcript on screen: the search, when it was said here, or what was typed.</summary>
-    private string? _highlight;
     /// <summary>Showing a search match: don't scroll away to follow playback until the reader moves on.</summary>
     private bool _followHeld;
-    private static readonly Microsoft.UI.Xaml.Media.Brush MarkBackground =
-        new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xE0, 0x66));
-    private static readonly Microsoft.UI.Xaml.Media.Brush CurrentMarkBackground =
-        new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x9F, 0x1C));
-    /// <summary>Every match in reading order, and which one is selected.</summary>
-    private List<(TranscriptLine Line, int Index)> _findMatches = [];
-    private int _findIndex = -1;
-    private bool _settingFindText;
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _findTimer;
-    private static readonly Microsoft.UI.Xaml.Media.Brush MarkForeground =
-        new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black);
+    private FindController? _transcriptFindCore;
+    /// <summary>The transcript's find box (built on first use, once the XAML exists).</summary>
+    private FindController TranscriptFinder => _transcriptFindCore ??= CreateTranscriptFinder();
+
+    private FindController CreateTranscriptFinder()
+    {
+        var finder = new FindController(TranscriptFind, TranscriptFindCount, FindPreviousButton, FindNextButton, TranscriptList);
+        finder.MatchSelected += _ => _followHeld = true; // stay on the match instead of following playback
+        return finder;
+    }
     /// <summary>Which tab videos open on; remembers the last choice.</summary>
     private bool _preferDetails;
 
@@ -920,11 +942,8 @@ public sealed partial class ViewerControl : UserControl
                 SetTranscriptLines(paragraphs.Select(p => new TranscriptLine(p, speakers > 1)).ToList());
                 TranscriptStatusText.Text = LanguageName(transcript.Language) is { } language ? $"Spoken {language}" : "";
                 // Start with the gallery search if it's said here (it may have matched the name or tags instead).
-                _highlight = _searchQuery is { } query && paragraphs.Any(p => SearchHighlighter.Find(p.Text, query).Count > 0) ? query : null;
-                _settingFindText = true;
-                TranscriptFind.Text = _highlight ?? "";
-                _settingFindText = false;
-                ApplyFind(jump: true);
+                var said = _searchQuery is { } query && paragraphs.Any(p => SearchHighlighter.Find(p.Text, query).Count > 0) ? query : null;
+                TranscriptFinder.SetLines(_transcriptLines, said);
                 break;
         }
     }
@@ -937,8 +956,7 @@ public sealed partial class ViewerControl : UserControl
         TranscriptList.ItemsSource = _transcriptLines;
         CopyTranscriptButton.Visibility = _transcriptLines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         TranscriptFindBar.Visibility = _transcriptLines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        _findMatches = [];
-        _findIndex = -1;
+        if (lines is null) TranscriptFinder.SetLines([], null);
         if (lines is null)
         {
             _transcript = null;
@@ -976,111 +994,7 @@ public sealed partial class ViewerControl : UserControl
     /// <summary>The paragraph's text, with the found words marked.</summary>
     private void OnTranscriptTextDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
     {
-        if (sender is not TextBlock text || args.NewValue is not TranscriptLine line) return;
-        line.View = text;
-        text.Text = line.Text;
-        ApplyHighlights(line);
-    }
-
-    /// <summary>Marks the line's matches: the selected one orange, the rest yellow.</summary>
-    private static void ApplyHighlights(TranscriptLine line)
-    {
-        if (line.View is not { } text) return;
-        text.TextHighlighters.Clear();
-        if (line.Matches.Count == 0) return;
-        var marker = new Microsoft.UI.Xaml.Documents.TextHighlighter { Background = MarkBackground, Foreground = MarkForeground };
-        var current = new Microsoft.UI.Xaml.Documents.TextHighlighter { Background = CurrentMarkBackground, Foreground = MarkForeground };
-        for (var i = 0; i < line.Matches.Count; i++)
-            (i == line.CurrentMatch ? current : marker).Ranges.Add(
-                new Microsoft.UI.Xaml.Documents.TextRange { StartIndex = line.Matches[i].Start, Length = line.Matches[i].Length });
-        text.TextHighlighters.Add(marker);
-        if (current.Ranges.Count > 0) text.TextHighlighters.Add(current);
-    }
-
-    private void OnTranscriptFindChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_settingFindText) return;
-        // Wait for a pause in typing, then find.
-        _findTimer ??= CreateFindTimer();
-        _findTimer.Stop();
-        _findTimer.Start();
-    }
-
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer CreateFindTimer()
-    {
-        var timer = DispatcherQueue.CreateTimer();
-        timer.Interval = TimeSpan.FromMilliseconds(200);
-        timer.IsRepeating = false;
-        timer.Tick += (_, _) =>
-        {
-            _highlight = string.IsNullOrWhiteSpace(TranscriptFind.Text) ? null : TranscriptFind.Text.Trim();
-            ApplyFind(jump: true);
-        };
-        return timer;
-    }
-
-    /// <summary>Finds <see cref="_highlight"/> in every paragraph, marks the matches and (optionally) shows the first.</summary>
-    private void ApplyFind(bool jump)
-    {
-        _findMatches = [];
-        foreach (var line in _transcriptLines)
-        {
-            line.Matches = SearchHighlighter.Find(line.Text, _highlight);
-            line.CurrentMatch = -1;
-            for (var i = 0; i < line.Matches.Count; i++) _findMatches.Add((line, i));
-            ApplyHighlights(line);
-        }
-        _findIndex = -1;
-        FindPreviousButton.IsEnabled = FindNextButton.IsEnabled = _findMatches.Count > 1;
-        if (_findMatches.Count > 0 && jump) GoToMatch(0);
-        else UpdateFindCount();
-    }
-
-    private void UpdateFindCount() => TranscriptFindCount.Text =
-        _highlight is null ? "" : _findMatches.Count == 0 ? "No matches" : _findIndex < 0 ? $"{_findMatches.Count}" : $"{_findIndex + 1} of {_findMatches.Count}";
-
-    /// <summary>Selects a match and scrolls it into view; playback following waits until the reader moves on.</summary>
-    private void GoToMatch(int index)
-    {
-        if (_findMatches.Count == 0) return;
-        index = (index % _findMatches.Count + _findMatches.Count) % _findMatches.Count;
-        if (_findIndex >= 0 && _findIndex < _findMatches.Count)
-        {
-            var previous = _findMatches[_findIndex].Line;
-            previous.CurrentMatch = -1;
-            ApplyHighlights(previous);
-        }
-        _findIndex = index;
-        var (line, match) = _findMatches[index];
-        line.CurrentMatch = match;
-        ApplyHighlights(line);
-        UpdateFindCount();
-        _followHeld = true;
-        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-        {
-            TranscriptList.UpdateLayout();
-            if (TranscriptList.ContainerFromItem(line) is UIElement container)
-                container.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.15, AnimationDesired = true });
-        });
-    }
-
-    private void OnFindNext(object sender, RoutedEventArgs e) => GoToMatch(_findIndex + 1);
-
-    private void OnFindPrevious(object sender, RoutedEventArgs e) => GoToMatch(_findIndex - 1);
-
-    private void OnTranscriptFindKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (e.Key != VirtualKey.Enter) return;
-        e.Handled = true;
-        if (_findTimer?.IsRunning == true)
-        {
-            // Enter before the pause: find now.
-            _findTimer.Stop();
-            _highlight = string.IsNullOrWhiteSpace(TranscriptFind.Text) ? null : TranscriptFind.Text.Trim();
-            ApplyFind(jump: true);
-            return;
-        }
-        GoToMatch(IsDown(VirtualKey.Shift) ? _findIndex - 1 : _findIndex + 1);
+        if (sender is TextBlock text && args.NewValue is TranscriptLine line) FindController.Attach(text, line);
     }
 
     private void OnTranscriptSeek(object sender, RoutedEventArgs e)
@@ -1135,8 +1049,26 @@ public sealed partial class ViewerControl : UserControl
     // ---- Text in photos ----
 
     private PhotoGallery.Core.Ocr.PhotoText? _photoText;
+    private List<PhotoTextLine> _photoTextLines = [];
     private static readonly Microsoft.UI.Xaml.Media.Brush TextMarkFill =
         new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0x55, 0xFF, 0xE0, 0x66));
+    private static readonly Microsoft.UI.Xaml.Media.Brush CurrentTextMarkFill =
+        new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0x99, 0xFF, 0x9F, 0x1C));
+    private static readonly Microsoft.UI.Xaml.Media.Brush TextMarkBorder =
+        new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x9F, 0x1C));
+    /// <summary>A find box shows for text longer than this.</summary>
+    private const int FindAboveLines = 10;
+
+    private FindController? _photoTextFindCore;
+    private FindController PhotoTextFinder => _photoTextFindCore ??= CreatePhotoTextFinder();
+
+    private FindController CreatePhotoTextFinder()
+    {
+        var finder = new FindController(PhotoTextFind, PhotoTextFindCount, PhotoTextPrevious, PhotoTextNext, PhotoTextList);
+        finder.Changed += ShowTextMarks;
+        finder.MatchSelected += _ => ShowTextMarks();
+        return finder;
+    }
 
     /// <summary>For a photo: shows the text read from it (reading it now if that hasn't happened yet).</summary>
     private async void ShowPhotoText(MediaItem item, CancellationToken ct)
@@ -1151,60 +1083,57 @@ public sealed partial class ViewerControl : UserControl
     private void SetPhotoText(PhotoGallery.Core.Ocr.PhotoText? text)
     {
         _photoText = text is { HasText: true } ? text : null;
+        _photoTextLines = _photoText?.Lines.Select(l => new PhotoTextLine(l)).ToList() ?? [];
         PhotoTextPanel.Visibility = _photoText is null ? Visibility.Collapsed : Visibility.Visible;
-        PhotoTextBlock.TextHighlighters.Clear();
-        PhotoTextBlock.MaxLines = 12;
-        if (_photoText is null)
-        {
-            PhotoTextBlock.Text = "";
-            PhotoTextMore.Visibility = Visibility.Collapsed;
-            TextMarkLayer.Children.Clear();
-            return;
-        }
-        var plain = _photoText.Text;
-        PhotoTextBlock.Text = plain;
-        PhotoTextMore.Content = $"Show all ({_photoText.Lines.Count} lines)";
-        PhotoTextMore.Visibility = _photoText.Lines.Count > 12 ? Visibility.Visible : Visibility.Collapsed;
-        // Opened from search results: mark what was searched for, in the text and on the photo.
-        var matches = SearchHighlighter.Find(plain, _searchQuery);
-        if (matches.Count > 0)
-        {
-            var marker = new Microsoft.UI.Xaml.Documents.TextHighlighter { Background = MarkBackground, Foreground = MarkForeground };
-            foreach (var m in matches) marker.Ranges.Add(new Microsoft.UI.Xaml.Documents.TextRange { StartIndex = m.Start, Length = m.Length });
-            PhotoTextBlock.TextHighlighters.Add(marker);
-        }
-        ShowTextMarks();
+        PhotoTextTitle.Text = _photoTextLines.Count > 1 ? $"Text in photo · {_photoTextLines.Count} lines" : "Text in photo";
+        PhotoTextFindBar.Visibility = _photoTextLines.Count > FindAboveLines ? Visibility.Visible : Visibility.Collapsed;
+        PhotoTextList.ItemsSource = _photoTextLines;
+        PhotoTextScroll.ChangeView(null, 0, null, disableAnimation: true);
+        SizeDetails();
+        // Opened from search results and the words are in this photo's text: find them (marked in the text and on the photo).
+        var shown = _searchQuery is { } query && _photoTextLines.Any(l => SearchHighlighter.Find(l.Text, query).Count > 0) ? query : null;
+        PhotoTextFinder.SetLines(_photoTextLines, shown);
     }
 
-    /// <summary>Outlines the searched-for words on the photo (only where the photo is shown as shot: not rotated or cropped here).</summary>
+    private void OnPhotoTextLineDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    {
+        if (sender is TextBlock text && args.NewValue is PhotoTextLine line) FindController.Attach(text, line);
+    }
+
+    private void OnInfoPaneSizeChanged(object sender, SizeChangedEventArgs e) => SizeDetails();
+
+    /// <summary>With text below, the details scroll within the top part so the text keeps at least ~200 px.</summary>
+    private void SizeDetails() =>
+        DetailsScroll.MaxHeight = PhotoTextPanel.Visibility == Visibility.Visible && InfoPane.ActualHeight > 0
+            ? Math.Max(160, InfoPane.ActualHeight - 200)
+            : double.PositiveInfinity;
+
+    /// <summary>Outlines the words being found on the photo (only where it's shown as shot: not rotated or cropped here).</summary>
     private void ShowTextMarks()
     {
         TextMarkLayer.Children.Clear();
-        if (_photoText is null || _searchQuery is null || _current is null || PhotoLayer.ActualWidth <= 0) return;
+        if (_photoText is null || PhotoTextFinder.Query is null || _current is null || PhotoLayer.ActualWidth <= 0) return;
         if (S.Edits.Get(_current.Id) is { } edits && (edits.Rotation != 0 || edits.FlipHorizontal || edits.Crop is not null)) return;
         double w = PhotoLayer.ActualWidth, h = PhotoLayer.ActualHeight;
-        foreach (var word in _photoText.Lines.SelectMany(l => l.Words).Where(word => SearchHighlighter.Find(word.Text, _searchQuery).Count > 0))
-        {
-            var (x, y, bw, bh) = word.In(w, h);
-            var pad = Math.Max(2, bh * 0.2);
-            var mark = new Border
-            {
-                Width = bw + 2 * pad, Height = bh + 2 * pad, CornerRadius = new CornerRadius(3),
-                Background = TextMarkFill, BorderBrush = CurrentMarkBackground, BorderThickness = new Thickness(2),
-            };
-            Canvas.SetLeft(mark, x - pad);
-            Canvas.SetTop(mark, y - pad);
-            TextMarkLayer.Children.Add(mark);
-        }
+        foreach (var line in _photoTextLines)
+            for (var i = 0; i < line.Matches.Count; i++)
+                foreach (var word in line.WordsIn(line.Matches[i]))
+                {
+                    var (x, y, bw, bh) = word.In(w, h);
+                    var pad = Math.Max(2, bh * 0.2);
+                    var mark = new Border
+                    {
+                        Width = bw + 2 * pad, Height = bh + 2 * pad, CornerRadius = new CornerRadius(3),
+                        Background = i == line.CurrentMatch ? CurrentTextMarkFill : TextMarkFill,
+                        BorderBrush = TextMarkBorder, BorderThickness = new Thickness(i == line.CurrentMatch ? 3 : 2),
+                    };
+                    Canvas.SetLeft(mark, x - pad);
+                    Canvas.SetTop(mark, y - pad);
+                    TextMarkLayer.Children.Add(mark);
+                }
     }
 
     private void OnPhotoLayerSizeChanged(object sender, SizeChangedEventArgs e) => ShowTextMarks();
-
-    private void OnPhotoTextMore(object sender, RoutedEventArgs e)
-    {
-        PhotoTextBlock.MaxLines = 0;
-        PhotoTextMore.Visibility = Visibility.Collapsed;
-    }
 
     private void OnCopyPhotoText(object sender, RoutedEventArgs e)
     {
