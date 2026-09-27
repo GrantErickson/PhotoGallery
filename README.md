@@ -31,6 +31,11 @@ See [docs/plan.md](docs/plan.md).
 
 ## Build and run
 
+Double-click `PhotoGallery.bat` in the repo root: it starts the app, building it first if needed
+(`PhotoGallery.bat build` rebuilds, e.g. after pulling changes). It won't start a second copy.
+
+Or from a terminal:
+
 ```
 dotnet build PhotoGallery.slnx
 dotnet run --project src/PhotoGallery.App
