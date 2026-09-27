@@ -10,6 +10,8 @@ public enum GroupMode
     Day,
     /// <summary>No headers or jump list: the query's own order (e.g. blurriest first).</summary>
     None,
+    /// <summary>One header per year.</summary>
+    Year,
 }
 
 /// <summary>A section of the date-ordered grid: its header and items.</summary>
@@ -17,7 +19,7 @@ public sealed class MonthGroup(string title) : List<MediaSummary>
 {
     public string Title { get; } = title;
 
-    /// <summary>Consecutive items (newest first) split wherever the month (or day) changes.</summary>
+    /// <summary>Consecutive items (in date order, either way) split wherever the month (or day, or year) changes.</summary>
     public static List<MonthGroup> Split(IReadOnlyList<MediaSummary> items, GroupMode mode = GroupMode.Month)
     {
         var groups = new List<MonthGroup>();
@@ -26,11 +28,17 @@ public sealed class MonthGroup(string title) : List<MediaSummary>
         foreach (var item in items)
         {
             var taken = item.TakenLocal;
-            var itemKey = mode == GroupMode.Day ? taken.Date : new DateTime(taken.Year, taken.Month, 1);
+            var itemKey = mode switch
+            {
+                GroupMode.Day => taken.Date,
+                GroupMode.Year => new DateTime(taken.Year, 1, 1),
+                _ => new DateTime(taken.Year, taken.Month, 1),
+            };
             if (current is null || itemKey != key)
             {
                 key = itemKey;
-                current = new MonthGroup(itemKey.ToString(mode == GroupMode.Day ? "dddd, MMMM d, yyyy" : "MMMM yyyy", CultureInfo.CurrentCulture));
+                var format = mode switch { GroupMode.Day => "dddd, MMMM d, yyyy", GroupMode.Year => "yyyy", _ => "MMMM yyyy" };
+                current = new MonthGroup(itemKey.ToString(format, CultureInfo.CurrentCulture));
                 groups.Add(current);
             }
             current.Add(item);

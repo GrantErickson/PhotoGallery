@@ -1,3 +1,4 @@
+using Dapper;
 using Microsoft.Data.Sqlite;
 using PhotoGallery.Core.Data;
 using PhotoGallery.Core.Media;
@@ -115,6 +116,35 @@ public sealed class SimilarityTests : IDisposable
         _media.RemoveRoot(@"D:\Lib");
 
         Assert.Equal([a, b], announced);
+    }
+
+    [Fact]
+    public void People_filter_needs_everyone_chosen_and_dates_sort_both_ways()
+    {
+        var both = Add("both.jpg");
+        var onlyAnne = Add("anne.jpg");
+        var nobody = Add("nobody.jpg");
+        using (var db = _database.Open())
+        {
+            var anne = db.ExecuteScalar<long>("INSERT INTO People (Name) VALUES ('Anne') RETURNING Id");
+            var emily = db.ExecuteScalar<long>("INSERT INTO People (Name) VALUES ('Emily') RETURNING Id");
+            db.Execute("INSERT INTO MediaFaces (MediaId, PersonId) VALUES (@both, @anne), (@both, @emily), (@onlyAnne, @anne)", new { both, onlyAnne, anne, emily });
+            db.Execute("UPDATE Media SET DateTaken = Id * 100");
+            Assert.Equal([both], _media.Query(new MediaFilter { People = [anne, emily] }).Select(m => m.Id));
+            Assert.Equal([onlyAnne, both], _media.Query(new MediaFilter { People = [anne] }).Select(m => m.Id));
+        }
+        Assert.Equal([both, onlyAnne, nobody], _media.Query(new MediaFilter { Order = MediaOrder.Oldest }).Select(m => m.Id));
+        Assert.Equal([nobody, onlyAnne, both], _media.Query(new MediaFilter { Ids = [both, nobody, onlyAnne], Order = MediaOrder.Newest }).Select(m => m.Id));
+    }
+
+    [Fact]
+    public void Word_search_finds_every_word_best_match_first()
+    {
+        var cake = Add("birthday cake.jpg");
+        Add("cake.jpg");
+        var party = Add("birthday party cake at the lake.jpg");
+        Assert.Equal([cake, party], _media.SearchWords("birthday cake").Order());
+        Assert.Empty(_media.SearchWords("   "));
     }
 
     [Fact]

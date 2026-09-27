@@ -9,15 +9,30 @@
     <Grid Padding="20,12,8,0" RowSpacing="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <StackPanel Orientation="Horizontal" Spacing="12">
             <TextBlock x:Name="TitleText" Style="{StaticResource TitleTextBlockStyle}" />
             <TextBlock x:Name="SubtitleText" VerticalAlignment="Bottom" Margin="0,0,0,4" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <Button x:Name="NameButton" Content="Name…" Visibility="Collapsed" VerticalAlignment="Center" Click="OnNamePerson" />
-            <HyperlinkButton x:Name="LooksLikeButton" Visibility="Collapsed" VerticalAlignment="Center" Click="OnLooksLike"
-                             ToolTipService.ToolTip="Find photos by what's in them, not just by their words (AI)" />
         </StackPanel>
-        <controls:GalleryView x:Name="Gallery" Grid.Row="1" />
+        <StackPanel x:Name="SearchBar" Grid.Row="1" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+            <ToggleButton x:Name="ExactToggle" Content="Exact words" Click="OnExactClick"
+                          ToolTipService.ToolTip="Only photos whose names, folders, tags, people, places, cameras, text or speech contain the words" />
+            <ComboBox x:Name="SortBox" SelectedIndex="0" MinWidth="150" SelectionChanged="OnSearchChoiceChanged" ToolTipService.ToolTip="Sort">
+                <x:String>Best match first</x:String>
+                <x:String>Newest first</x:String>
+                <x:String>Oldest first</x:String>
+            </ComboBox>
+            <ComboBox x:Name="GroupBox" SelectedIndex="2" MinWidth="140" SelectionChanged="OnSearchChoiceChanged" ToolTipService.ToolTip="Group by date (when sorted by date)">
+                <x:String>No groups</x:String>
+                <x:String>By day</x:String>
+                <x:String>By month</x:String>
+                <x:String>By year</x:String>
+            </ComboBox>
+            <ProgressRing x:Name="SearchBusy" IsActive="False" Width="18" Height="18" />
+        </StackPanel>
+        <controls:GalleryView x:Name="Gallery" Grid.Row="2" />
     </Grid>
 </Page>

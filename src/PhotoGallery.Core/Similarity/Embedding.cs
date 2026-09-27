@@ -108,6 +108,13 @@ public sealed class SimilarityIndex
         }
     }
 
+    /// <summary>How similar an item is to the query, or null if it has no embedding.</summary>
+    public double? SimilarityOf(ReadOnlySpan<sbyte> query, long id)
+    {
+        var vector = VectorOf(id);
+        return vector.Length == 0 || query.Length != vector.Length ? null : Embedding.Similarity(query, vector);
+    }
+
     /// <summary>Drops an item (its row is filled with the last one).</summary>
     public void Remove(long id)
     {

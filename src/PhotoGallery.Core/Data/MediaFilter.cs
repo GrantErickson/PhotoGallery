@@ -12,6 +12,7 @@ public enum KindFilter
 public enum MediaOrder
 {
     Newest,
+    Oldest,
     /// <summary>Least sharp first (only photos with a sharpness score).</summary>
     Blurriest,
     /// <summary>In the order of <see cref="MediaFilter.Ids"/> (e.g. most similar first).</summary>
@@ -41,6 +42,8 @@ public sealed record MediaFilter
     public long? TagId { get; init; }
     /// <summary>Photos OneDrive recognised this person in.</summary>
     public long? PersonId { get; init; }
+    /// <summary>Photos with all of these people in them.</summary>
+    public IReadOnlyCollection<long>? People { get; init; }
     /// <summary>Photos at one of your places.</summary>
     public long? PlaceId { get; init; }
     public string? Text { get; init; }

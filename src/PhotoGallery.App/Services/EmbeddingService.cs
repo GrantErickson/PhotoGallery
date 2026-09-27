@@ -82,14 +82,28 @@ public sealed class EmbeddingService(AppServices services) : IDisposable
         return query.Length == 0 ? [] : index.Search(query, count, minSimilarity: 0.55, except: mediaId);
     }
 
-    /// <summary>Photos and videos that look like a description (best first).</summary>
-    public async Task<List<(long Id, double Similarity)>> SearchAsync(string description, int count = 300, CancellationToken ct = default)
+    /// <summary>
+    /// A search's best matches, best first: photos and videos that look like the words (CLIP) together with those
+    /// whose names, folders, tags, people, places, text or speech contain them, which rank higher the better they look
+    /// the part too. Only word matches (in their own order) while the model isn't ready; Pictures says which it was.
+    /// </summary>
+    public async Task<(List<long> Ids, bool Pictures)> SearchAsync(string text, CancellationToken ct = default)
     {
-        if (!ModelsReady) throw new InvalidOperationException("The model hasn't been downloaded yet.");
+        const double WordBonus = 0.1, MinSimilarity = 0.19;
+        var words = await Task.Run(() => services.Media.SearchWords(text), ct);
+        if (!ModelsReady || !IsInstalled) return (words, false);
         _tokenizer ??= ClipTokenizer.Load(ModelPath("vocab.json"), ModelPath("merges.txt"));
-        var query = Embedding.Quantize(await Embedder.EmbedTextAsync(_tokenizer.Encode(description), ct));
+        var query = Embedding.Quantize(await Embedder.EmbedTextAsync(_tokenizer.Encode(text), ct));
         _lastUse = DateTime.UtcNow;
-        return (await IndexAsync()).Search(query, count, minSimilarity: 0.19);
+        var index = await IndexAsync();
+        var scores = index.Search(query, 400, MinSimilarity).ToDictionary(r => r.Id, r => r.Similarity);
+        for (var rank = 0; rank < words.Count; rank++)
+        {
+            // Not compared yet: placed just above the picture-only matches, in word order.
+            var similarity = index.SimilarityOf(query, words[rank]) ?? MinSimilarity - rank * 1e-7;
+            scores[words[rank]] = similarity + WordBonus;
+        }
+        return (scores.OrderByDescending(s => s.Value).Select(s => s.Key).ToList(), true);
     }
 
     private EmbedderClient Embedder => _embedder ??= new EmbedderClient(ModelPath("vision_model_fp16.onnx"), ModelPath("text_model_fp16.onnx"));

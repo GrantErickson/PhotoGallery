@@ -82,6 +82,7 @@ public sealed partial class GalleryView : UserControl
         Kinds = (KindFilter)Math.Max(0, KindBox.SelectedIndex),
         MinRating = Math.Max(f.MinRating, RatingBox.SelectedIndex),
         MotionOnly = f.MotionOnly || MotionToggle.IsChecked == true,
+        People = _people.Count == 0 ? f.People : [.. _people, .. f.People ?? []],
         IncludeScreenshots = ScreenshotBox.SelectedIndex >= 1,
         ScreenshotsOnly = ScreenshotBox.SelectedIndex == 2,
         AlbumId = AlbumId ?? f.AlbumId,
@@ -155,6 +156,7 @@ public sealed partial class GalleryView : UserControl
                 : new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = MonthGroup.Split(items, GroupMode) }.View;
         }
         CountText.Text = items.Count == 1 ? "1 item" : $"{items.Count:N0} items";
+        JumpList.Visibility = Flat ? Visibility.Collapsed : Visibility.Visible;
         EmptyText.Text = EmptyMessage;
         EmptyText.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         BuildJumpList();
@@ -608,6 +610,68 @@ public sealed partial class GalleryView : UserControl
         else if (index >= 0 && index < _items.Count)
             Grid.ScrollIntoView(_items[index]);
         Grid.Focus(FocusState.Programmatic);
+    }
+
+    // ---------- People filter ----------
+
+    private readonly HashSet<long> _people = [];
+    private List<Pages.PersonTile>? _allPeople;
+    private bool _settingPeople;
+
+    /// <summary>Named people, most photos first (loaded the first time the list opens).</summary>
+    private async void OnPeopleFlyoutOpening(object? sender, object e)
+    {
+        _allPeople ??= (await Task.Run(() => S.People.GetPeople()))
+            .Where(p => p.Name is not null).OrderByDescending(p => p.Count).Select(p => new Pages.PersonTile(p)).ToList();
+        ShowPeople();
+    }
+
+    private void OnPeopleSearchChanged(object sender, TextChangedEventArgs e) => ShowPeople();
+
+    private void ShowPeople()
+    {
+        if (_allPeople is null) return;
+        var text = PeopleSearch.Text.Trim();
+        var shown = _allPeople.Where(p => text.Length == 0 || p.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase))
+            .OrderByDescending(p => _people.Contains(p.Row.Id)).ToList(); // the chosen ones stay at the top
+        _settingPeople = true;
+        try
+        {
+            PeopleList.ItemsSource = shown;
+            PeopleList.UpdateLayout();
+            foreach (var tile in shown.Where(p => _people.Contains(p.Row.Id))) PeopleList.SelectedItems.Add(tile);
+        }
+        finally
+        {
+            _settingPeople = false;
+        }
+    }
+
+    private void OnPeopleContainerChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.Item is Pages.PersonTile tile) _ = tile.EnsureCoverAsync();
+    }
+
+    private void OnPeopleSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_settingPeople) return;
+        foreach (var tile in e.AddedItems.OfType<Pages.PersonTile>()) _people.Add(tile.Row.Id);
+        foreach (var tile in e.RemovedItems.OfType<Pages.PersonTile>()) _people.Remove(tile.Row.Id);
+        PeopleChanged();
+    }
+
+    private void OnClearPeople(object sender, RoutedEventArgs e)
+    {
+        _people.Clear();
+        PeopleFlyout.Hide();
+        PeopleChanged();
+    }
+
+    private void PeopleChanged()
+    {
+        var names = _allPeople?.Where(p => _people.Contains(p.Row.Id)).Select(p => p.Name).ToList() ?? [];
+        PeopleText.Text = names.Count switch { 0 => "Anyone", 1 => names[0], _ => $"{names[0]} + {names.Count - 1}" };
+        if (_loaded) _ = ReloadAsync();
     }
 
     // ---------- Filters and selection ----------

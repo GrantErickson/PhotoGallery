@@ -12,23 +12,31 @@
 
     <Grid x:Name="Root" PreviewKeyDown="OnRootPreviewKeyDown">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
+        <!-- Title bar: back, menu and the search box (the window's own caption buttons sit to its right) -->
+        <TitleBar x:Name="AppTitleBar" Title="Photo Gallery"
+                  IsBackButtonVisible="True" IsBackButtonEnabled="False" BackRequested="OnTitleBarBackRequested"
+                  IsPaneToggleButtonVisible="True" PaneToggleRequested="OnTitleBarPaneToggleRequested">
+            <TitleBar.Content>
+                <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Search your photos: people, places, things, text, what was said"
+                                QueryIcon="Find" MinWidth="360" MaxWidth="640" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                QuerySubmitted="OnSearchSubmitted" />
+            </TitleBar.Content>
+        </TitleBar>
+
         <NavigationView
             x:Name="Nav"
+            Grid.Row="1"
             PaneDisplayMode="Left"
-            IsBackButtonVisible="Visible"
-            IsBackEnabled="False"
-            BackRequested="OnNavBackRequested"
+            IsBackButtonVisible="Collapsed"
+            IsPaneToggleButtonVisible="False"
             IsSettingsVisible="True"
             OpenPaneLength="220"
             SelectionChanged="OnNavSelectionChanged">
-            <NavigationView.AutoSuggestBox>
-                <AutoSuggestBox x:Name="SearchBox" PlaceholderText="Search names, folders, tags, cameras" QueryIcon="Find"
-                                QuerySubmitted="OnSearchSubmitted" />
-            </NavigationView.AutoSuggestBox>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Photos" Tag="timeline" IsSelected="True">
                     <NavigationViewItem.Icon>
@@ -92,7 +100,7 @@
         </NavigationView>
 
         <!-- Status bar -->
-        <Grid Grid.Row="1" Padding="12,4" ColumnSpacing="12" Background="{ThemeResource LayerFillColorDefaultBrush}"
+        <Grid Grid.Row="2" Padding="12,4" ColumnSpacing="12" Background="{ThemeResource LayerFillColorDefaultBrush}"
               BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -103,10 +111,10 @@
         </Grid>
 
         <!-- Viewer overlay -->
-        <controls:ViewerControl x:Name="Viewer" Grid.RowSpan="2" Visibility="Collapsed" />
+        <controls:ViewerControl x:Name="Viewer" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed" />
 
         <!-- Editor overlay (on top of the viewer) -->
-        <controls:EditorControl x:Name="Editor" Grid.RowSpan="2" Visibility="Collapsed" />
-        <controls:VideoEditorControl x:Name="VideoEditor" Grid.RowSpan="2" Visibility="Collapsed" />
+        <controls:EditorControl x:Name="Editor" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed" />
+        <controls:VideoEditorControl x:Name="VideoEditor" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed" />
     </Grid>
 </Window>

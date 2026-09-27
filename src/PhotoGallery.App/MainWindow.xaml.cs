@@ -18,6 +18,8 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ExtendsContentIntoTitleBar = true; // the search box lives in the title bar
+        SetTitleBar(AppTitleBar);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1500, 950));
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
 
@@ -83,7 +85,7 @@ public sealed partial class MainWindow : Window
 
     public bool CanGoBack => IsEditorOpen || Viewer.Visibility == Visibility.Visible || ContentFrame.CanGoBack;
 
-    private void UpdateBackButton() => Nav.IsBackEnabled = CanGoBack;
+    private void UpdateBackButton() => AppTitleBar.IsBackButtonEnabled = CanGoBack;
 
     private bool IsOnCurrentPage(FrameworkElement element)
     {
@@ -149,7 +151,9 @@ public sealed partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void OnNavBackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args) => GoBack();
+    private void OnTitleBarBackRequested(TitleBar sender, object args) => GoBack();
+
+    private void OnTitleBarPaneToggleRequested(TitleBar sender, object args) => Nav.IsPaneOpen = !Nav.IsPaneOpen;
 
     private void OnFrameNavigating(object sender, Microsoft.UI.Xaml.Navigation.NavigatingCancelEventArgs e)
     {
@@ -311,29 +315,10 @@ public sealed partial class MainWindow : Window
         text = text.Trim();
         if (text.Length == 0) return;
         SearchBox.Text = text;
-        var looksLike = App.Services.Similar.ModelsReady ? text : null;
+        if (Viewer.Visibility == Visibility.Visible) Viewer.Close();
+        // The page runs the search: best matches first, with exact words, sorting and grouping to choose from there.
         ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest($"“{text}”", new MediaFilter { Text = text, IncludeScreenshots = true },
-            "File and folder names, tags, people, cameras, text in photos and what's said in videos",
-            EmptyMessage: looksLike is null ? "No matches." : "No words match. Try the photos that look like it (above).", LooksLike: looksLike));
-    }
-
-    /// <summary>Photos and videos that look like a description (CLIP), best matches first.</summary>
-    public async void SearchLooksLike(string text)
-    {
-        ShowStatus($"Looking for photos that look like “{text}”…");
-        try
-        {
-            var found = await App.Services.Similar.SearchAsync(text);
-            ShowStatus("");
-            ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest($"Looks like “{text}”",
-                new MediaFilter { Ids = found.Select(f => f.Id).ToList(), Order = MediaOrder.Listed, IncludeScreenshots = true },
-                "Best matches first, by what's in the picture", EmptyMessage: "Nothing looks like that.", Group: GroupMode.None));
-        }
-        catch (Exception ex) when (ex is IOException or InvalidOperationException or InvalidDataException or TimeoutException or System.ComponentModel.Win32Exception)
-        {
-            PhotoGallery.Core.Log.Error($"Searching for photos that look like \"{text}\" failed", ex);
-            ShowStatus($"Couldn't search by description: {ex.Message}");
-        }
+            EmptyMessage: "No matches.", Search: text));
     }
 
     /// <summary>A photo followed by the ones most like it (most similar first).</summary>

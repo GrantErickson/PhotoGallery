@@ -231,7 +231,15 @@ public sealed class MediaRepository(GalleryDatabase database)
     internal static (string Sql, DynamicParameters Parameters) BuildQuery(MediaFilter f, string columns, bool ordered = true)
     {
         var p = new DynamicParameters();
-        var sql = new StringBuilder($"SELECT {columns} FROM Media m");
+        var sql = new StringBuilder($"SELECT {columns} FROM ");
+        if (f.Ids is { } ids)
+        {
+            // json_each avoids SQLite's parameter limit for big lists, and its key keeps their order. CROSS JOIN makes
+            // the list the outer loop (looked up by id); left to the planner it scanned the library once per id.
+            sql.Append("json_each(@idsJson) listed CROSS JOIN Media m ON m.Id = listed.value");
+            p.Add("idsJson", System.Text.Json.JsonSerializer.Serialize(ids));
+        }
+        else sql.Append("Media m");
         if (f.AlbumId is { } albumId)
         {
             sql.Append(" JOIN AlbumMedia am ON am.MediaId = m.Id AND am.AlbumId = @albumId");
@@ -285,6 +293,12 @@ public sealed class MediaRepository(GalleryDatabase database)
             sql.Append(" AND m.Id IN (SELECT MediaId FROM MediaFaces WHERE PersonId = @personId)");
             p.Add("personId", personId);
         }
+        var n = 0;
+        foreach (var person in f.People ?? [])
+        {
+            sql.Append($" AND m.Id IN (SELECT MediaId FROM MediaFaces WHERE PersonId = @person{n})");
+            p.Add($"person{n++}", person);
+        }
         if (ToFtsQuery(f.Text) is { } fts)
         {
             sql.Append(" AND m.Id IN (SELECT rowid FROM MediaFts WHERE MediaFts MATCH @fts)");
@@ -305,12 +319,6 @@ public sealed class MediaRepository(GalleryDatabase database)
             sql.Append(" AND strftime('%m-%d', m.DateTaken, 'unixepoch') = @monthDay");
             p.Add("monthDay", $"{monthDay.Month:00}-{monthDay.Day:00}");
         }
-        if (f.Ids is { } ids)
-        {
-            // json_each avoids SQLite's parameter limit for big clusters.
-            sql.Append(" AND m.Id IN (SELECT value FROM json_each(@idsJson))");
-            p.Add("idsJson", System.Text.Json.JsonSerializer.Serialize(ids));
-        }
         if (f.Bounds is { } bounds)
         {
             var (south, west, north, east) = bounds;
@@ -321,9 +329,18 @@ public sealed class MediaRepository(GalleryDatabase database)
         if (ordered)
             sql.Append(f.AlbumId is not null ? " ORDER BY am.SortOrder, m.DateTaken"
                 : f.Order == MediaOrder.Blurriest ? " ORDER BY m.Sharpness, m.DateTaken DESC"
-                : f.Order == MediaOrder.Listed && f.Ids is not null ? " ORDER BY (SELECT key FROM json_each(@idsJson) WHERE value = m.Id)"
+                : f.Order == MediaOrder.Listed && f.Ids is not null ? " ORDER BY listed.key"
+                : f.Order == MediaOrder.Oldest ? " ORDER BY m.DateTaken, m.Id"
                 : " ORDER BY m.DateTaken DESC, m.Id DESC");
         return (sql.ToString(), p);
+    }
+
+    /// <summary>Items whose words match (names, folders, tags, people, places, cameras, text, speech), best match first.</summary>
+    public List<long> SearchWords(string text, int limit = 20_000)
+    {
+        if (ToFtsQuery(text) is not { } fts) return [];
+        using var db = database.Open();
+        return db.Query<long>("SELECT rowid FROM MediaFts WHERE MediaFts MATCH @fts ORDER BY rank LIMIT @limit", new { fts, limit }).AsList();
     }
 
     /// <summary>Each word becomes a quoted prefix term; all terms must match.</summary>

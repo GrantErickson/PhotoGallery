@@ -17,6 +17,8 @@ public sealed class PersonTile(PersonRow row) : Observable
     public string Name => Row.DisplayName;
     public double NameOpacity => Row.Name is null ? 0.6 : 1;
     public string CountText => Row.Count == 1 ? "1 photo" : $"{Row.Count:N0} photos";
+    /// <summary>The same, under a name that doesn't clash with the gallery's own CountText element (x:Bind in its people filter).</summary>
+    public string PhotoCountText => CountText;
 
     public ImageSource? Cover
     {
