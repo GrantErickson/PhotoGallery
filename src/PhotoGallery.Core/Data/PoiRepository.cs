@@ -49,7 +49,7 @@ public sealed class PoiRepository(GalleryDatabase database)
     {
         using var db = database.Open();
         return db.QuerySingleOrDefault<Poi>(
-            "SELECT p.Id, p.OsmKey, p.Name, p.Kind, p.Latitude, p.Longitude, p.South, p.West, p.North, p.East FROM Pois p JOIN Media m ON m.PoiId = p.Id WHERE m.Id = @mediaId",
+            "SELECT p.Id, p.OsmKey, p.Name, p.Kind, p.Latitude, p.Longitude, p.South, p.West, p.North, p.East, p.Shape FROM Pois p JOIN Media m ON m.PoiId = p.Id WHERE m.Id = @mediaId",
             new { mediaId });
     }
 
@@ -63,10 +63,11 @@ public sealed class PoiRepository(GalleryDatabase database)
             foreach (var poi in pois)
                 db.Execute(
                     """
-                    INSERT INTO Pois (OsmKey, Name, Kind, Latitude, Longitude, South, West, North, East)
-                    VALUES (@OsmKey, @Name, @Kind, @Latitude, @Longitude, @South, @West, @North, @East)
+                    INSERT INTO Pois (OsmKey, Name, Kind, Latitude, Longitude, South, West, North, East, Shape)
+                    VALUES (@OsmKey, @Name, @Kind, @Latitude, @Longitude, @South, @West, @North, @East, @Shape)
                     ON CONFLICT(OsmKey) DO UPDATE SET Name = excluded.Name, Kind = excluded.Kind, Latitude = excluded.Latitude,
-                        Longitude = excluded.Longitude, South = excluded.South, West = excluded.West, North = excluded.North, East = excluded.East
+                        Longitude = excluded.Longitude, South = excluded.South, West = excluded.West, North = excluded.North,
+                        East = excluded.East, Shape = excluded.Shape
                     """, poi, tx);
             db.Execute("INSERT OR REPLACE INTO PoiTiles (Tile, FetchedUtc, Count) VALUES (@tile, @now, @count)",
                 new { tile = Overpass.TileKey(tile), now = DateTime.UtcNow.ToString("O"), count = pois.Count }, tx);
@@ -95,7 +96,7 @@ public sealed class PoiRepository(GalleryDatabase database)
             const double Around = 0.01; // spots just over the tile's edge
             var candidates = db.Query<Poi>(
                 """
-                SELECT Id, OsmKey, Name, Kind, Latitude, Longitude, South, West, North, East FROM Pois
+                SELECT Id, OsmKey, Name, Kind, Latitude, Longitude, South, West, North, East, Shape FROM Pois
                 WHERE (South IS NULL AND Latitude BETWEEN @s AND @n AND Longitude BETWEEN @w AND @e)
                    OR (South IS NOT NULL AND South <= @n AND North >= @s AND West <= @e AND East >= @w)
                 """, new { s = s - Around, n = n + Around, w = w - Around, e = e + Around }, tx).AsList();

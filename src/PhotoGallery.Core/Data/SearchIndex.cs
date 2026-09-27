@@ -9,7 +9,7 @@ namespace PhotoGallery.Core.Data;
 /// </summary>
 internal static class SearchIndex
 {
-    private const string TagsExpression =
+    internal const string TagsExpression =
         """
         trim(coalesce((SELECT group_concat(t.Name, ' ') FROM MediaTags mt JOIN Tags t ON t.Id = mt.TagId WHERE mt.MediaId = MediaFts.rowid), '')
              || ' ' ||

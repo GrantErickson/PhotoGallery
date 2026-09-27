@@ -64,6 +64,43 @@ public sealed class PoiTests : IDisposable
         Assert.Contains("\"leisure\"~\"^(park|", query);
     }
 
+    [Fact]
+    public void Areas_use_their_outline_not_their_box()
+    {
+        // A thin diagonal strip (a riverside reserve) from SW to NE: its box covers the corners, the strip doesn't.
+        IReadOnlyList<(double, double)> strip = [(47.760, -117.545), (47.762, -117.545), (47.798, -117.455), (47.796, -117.455), (47.760, -117.545)];
+        var reserve = new Poi(1, "r1", "Little River Natural Area", "nature reserve", 47.779, -117.5, 47.760, -117.545, 47.798, -117.455,
+            PoiShape.Encode([strip]));
+        Assert.False(reserve.Contains(47.795, -117.540)); // top-left corner of the box: a neighbourhood, not the reserve
+        Assert.True(reserve.Contains(47.779, -117.4975));  // on the strip
+        Assert.True(reserve.Contains(47.7785, -117.4995, margin: 150)); // just beside it, within the margin
+        Assert.Null(PoiMatcher.Best(47.795, -117.540, [reserve]));
+    }
+
+    [Fact]
+    public void Outlines_are_read_from_ways_and_relations()
+    {
+        const string json = """
+            {"elements":[
+              {"type":"way","id":1,"bounds":{"minlat":0,"minlon":0,"maxlat":1,"maxlon":1},"tags":{"leisure":"park","name":"Square Park"},
+               "geometry":[{"lat":0,"lon":0},{"lat":0,"lon":1},{"lat":1,"lon":1},{"lat":1,"lon":0},{"lat":0,"lon":0}]},
+              {"type":"relation","id":2,"bounds":{"minlat":0,"minlon":0,"maxlat":2,"maxlon":2},"tags":{"leisure":"nature_reserve","name":"Split Reserve"},
+               "members":[{"type":"way","ref":5,"role":"outer","geometry":[{"lat":0,"lon":0},{"lat":0,"lon":2},{"lat":2,"lon":2}]},
+                          {"type":"way","ref":6,"role":"outer","geometry":[{"lat":2,"lon":2},{"lat":2,"lon":0},{"lat":0,"lon":0}]},
+                          {"type":"way","ref":7,"role":"inner","geometry":[{"lat":0.5,"lon":0.5},{"lat":0.5,"lon":1.5},{"lat":1.5,"lon":1.5},{"lat":1.5,"lon":0.5},{"lat":0.5,"lon":0.5}]}]},
+              {"type":"way","id":3,"bounds":{"minlat":0,"minlon":0,"maxlat":0.1,"maxlon":0.1},"tags":{"leisure":"track","name":"Open Track"},
+               "geometry":[{"lat":0,"lon":0},{"lat":0.1,"lon":0.1}]}
+            ]}
+            """;
+        var pois = Overpass.Parse(json);
+        var park = pois.Single(p => p.Name == "Square Park");
+        var reserve = pois.Single(p => p.Name == "Split Reserve");
+        Assert.True(park.Contains(0.5, 0.5, margin: 0));
+        Assert.True(reserve.Contains(0.25, 0.25, margin: 0));  // inside the outer ring, drawn as two ways
+        Assert.False(reserve.Contains(1.0, 1.0, margin: 0));   // in the hole
+        Assert.False(pois.Single(p => p.Name == "Open Track").IsArea); // an open line counts as a spot
+    }
+
     private long Add(string name, double lat, double lon)
     {
         using var db = _database.Open();

@@ -20,8 +20,7 @@ public sealed partial class OneDriveConnectPage : Page
     {
         try
         {
-            await Browser.EnsureCoreWebView2Async();
-            Session.Attach(Browser.CoreWebView2);
+            Session.Attach(await WebViewHost.StartAsync(Browser));
             Session.Connected += OnConnected;
             if (Session.IsConnected) ShowConnected();
             Browser.Source = new Uri(OneDriveWebSession.StartUrl);

@@ -19,6 +19,8 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
     private static readonly string[] ApiFilters = ["https://my.microsoftpersonalcontent.com/_api/*", "https://api.onedrive.com/*"];
     private static readonly TimeSpan Fresh = TimeSpan.FromMinutes(40);
     private static readonly TimeSpan RefreshTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(5);
+    private DateTime _renewFailedAt;
 
     private readonly SemaphoreSlim _refreshGate = new(1);
     private string? _authorization;
@@ -35,6 +37,8 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
     {
         if (!IsConnected) return null;
         if (!forceRefresh && IsFresh) return _authorization;
+        // Just failed to renew: don't load OneDrive in the background again for every Live Photo viewed meanwhile.
+        if (DateTime.UtcNow - _renewFailedAt < RetryAfter) return null;
 
         var before = _capturedAt;
         await _refreshGate.WaitAsync(ct);
@@ -76,6 +80,7 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
 
         _authorization = value;
         _capturedAt = DateTime.UtcNow;
+        _renewFailedAt = default;
         if (!services.Settings.OneDriveWebConnected)
         {
             services.Settings.OneDriveWebConnected = true;
@@ -98,7 +103,7 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
         Captured += OnCaptured;
         try
         {
-            var environment = await CoreWebView2Environment.CreateAsync(); // WEBVIEW2_USER_DATA_FOLDER → the app's profile
+            var environment = await WebViewHost.EnvironmentAsync(); // shared with the map and the Connect page
             controller = await environment.CreateCoreWebView2ControllerAsync(
                 CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)App.MainWindow.Handle));
             // Hidden but full-sized, so the web app lays out and loads like a normal (background) tab.
@@ -129,6 +134,7 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
 
         if (_capturedAt > before) return _authorization;
         Log.Info("OneDrive web session needs signing in again");
+        _renewFailedAt = DateTime.UtcNow;
         return null;
     }
 
@@ -143,7 +149,7 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
         {
             try
             {
-                var environment = await CoreWebView2Environment.CreateAsync();
+                var environment = await WebViewHost.EnvironmentAsync();
                 var controller = await environment.CreateCoreWebView2ControllerAsync(
                     CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)App.MainWindow.Handle));
                 await controller.CoreWebView2.Profile.ClearBrowsingDataAsync();

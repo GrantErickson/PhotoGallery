@@ -44,11 +44,11 @@ public sealed partial class MapPage : Page
         if (_initialized) return;
         _initialized = true;
         PlaceRadiusSlider.Value = RadiusToSlider(150);
+        MapError.Visibility = Visibility.Collapsed;
         try
         {
             await WritePointsAsync();
-            await Map.EnsureCoreWebView2Async();
-            var core = Map.CoreWebView2;
+            var core = await PhotoGallery.App.Services.WebViewHost.StartAsync(Map);
             var services = App.Services;
             core.SetVirtualHostNameToFolderMapping("gallery.local", services.Paths.Root, CoreWebView2HostResourceAccessKind.Allow);
             core.SetVirtualHostNameToFolderMapping("app.local", Path.Combine(AppContext.BaseDirectory, "Assets"), CoreWebView2HostResourceAccessKind.Allow);
@@ -62,8 +62,9 @@ public sealed partial class MapPage : Page
         catch (Exception ex)
         {
             PhotoGallery.Core.Log.Error("Map failed to start", ex);
-            MapError.Text = $"The map needs the Microsoft Edge WebView2 runtime and an internet connection for map tiles.\n{ex.Message}";
+            MapError.Text = $"The map couldn't start: {ex.Message}\nIt needs the Microsoft Edge WebView2 runtime, and an internet connection for map tiles. Open the map again to retry.";
             MapError.Visibility = Visibility.Visible;
+            _initialized = false; // try again next time the map is opened
         }
     }
 

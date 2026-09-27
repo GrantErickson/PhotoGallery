@@ -292,6 +292,17 @@ public sealed class GalleryDatabase
         ) WITHOUT ROWID;
         ALTER TABLE Media ADD COLUMN PoiId INTEGER;
         """,
+        // v16: areas' real outlines (bounding boxes alone put a whole neighbourhood inside a long riverside reserve).
+        // What was looked up with boxes is forgotten, and its names taken out of the search index, to be redone.
+        $"""
+        ALTER TABLE Pois ADD COLUMN Shape BLOB;
+        CREATE TEMP TABLE PoiReset AS SELECT Id FROM Media WHERE PoiId > 0;
+        UPDATE Media SET PoiId = NULL WHERE PoiId IS NOT NULL;
+        DELETE FROM Pois;
+        DELETE FROM PoiTiles;
+        UPDATE MediaFts SET Tags = {SearchIndex.TagsExpression} WHERE rowid IN (SELECT Id FROM PoiReset);
+        DROP TABLE PoiReset;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

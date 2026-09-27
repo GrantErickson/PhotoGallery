@@ -5,11 +5,11 @@ using System.Text.Json;
 namespace PhotoGallery.Core.Places;
 
 /// <summary>
-/// A named place from OpenStreetMap (a park, school, restaurant, museum…): a point, or an area given by its bounding
-/// box. <see cref="Kind"/> is a plain word ("park", "restaurant") that is searchable too.
+/// A named place from OpenStreetMap (a park, school, restaurant, museum…): a point, or an area with its bounding box
+/// and outline (<see cref="PoiShape"/>). <see cref="Kind"/> is a plain word ("park", "restaurant") that is searchable.
 /// </summary>
 public sealed record Poi(long Id, string OsmKey, string Name, string Kind, double Latitude, double Longitude,
-    double? South = null, double? West = null, double? North = null, double? East = null)
+    double? South = null, double? West = null, double? North = null, double? East = null, byte[]? Shape = null)
 {
     public bool IsArea => South is not null && West is not null && North is not null && East is not null;
 
@@ -18,13 +18,74 @@ public sealed record Poi(long Id, string OsmKey, string Name, string Kind, doubl
         ? Geo.Meters(South!.Value, West!.Value, North!.Value, West.Value) * Geo.Meters(South.Value, West.Value, South.Value, East!.Value)
         : 0;
 
-    /// <summary>Inside the box, give or take <paramref name="margin"/> metres (GPS is rarely better than ~10 m).</summary>
+    /// <summary>
+    /// Inside the outline (or the box, for an area without one), give or take <paramref name="margin"/> metres: GPS is
+    /// rarely better than ~10 m.
+    /// </summary>
     public bool Contains(double latitude, double longitude, double margin = 15)
     {
         if (!IsArea) return false;
         var dLat = margin / 111_320.0;
         var dLon = margin / (111_320.0 * Math.Max(0.1, Math.Cos(latitude * Math.PI / 180)));
-        return latitude >= South - dLat && latitude <= North + dLat && longitude >= West - dLon && longitude <= East + dLon;
+        if (latitude < South - dLat || latitude > North + dLat || longitude < West - dLon || longitude > East + dLon) return false;
+        return Shape is null || PoiShape.Contains(Shape, latitude, longitude, margin);
+    }
+}
+
+/// <summary>
+/// An area's outline: its rings (a closed way) or member ways (a multipolygon's outer and inner parts), stored as
+/// int32 counts and coordinates × 10⁷. A point is inside when a ray from it crosses the boundary an odd number of
+/// times, which holds for multipolygons split over many ways too.
+/// </summary>
+public static class PoiShape
+{
+    public static byte[] Encode(IReadOnlyList<IReadOnlyList<(double Latitude, double Longitude)>> lines)
+    {
+        var values = new List<int> { lines.Count };
+        foreach (var line in lines)
+        {
+            values.Add(line.Count);
+            foreach (var (lat, lon) in line)
+            {
+                values.Add((int)Math.Round(lat * 1e7));
+                values.Add((int)Math.Round(lon * 1e7));
+            }
+        }
+        var bytes = new byte[values.Count * 4];
+        for (var i = 0; i < values.Count; i++) BitConverter.TryWriteBytes(bytes.AsSpan(i * 4), values[i]);
+        return bytes;
+    }
+
+    public static bool Contains(byte[] shape, double latitude, double longitude, double margin)
+    {
+        ReadOnlySpan<int> v = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, int>(shape);
+        if (v.Length == 0) return false;
+        var inside = false;
+        var nearest = double.MaxValue;
+        var metersPerLon = 111_320.0 * Math.Cos(latitude * Math.PI / 180);
+        int p = 1, lines = v[0];
+        for (var l = 0; l < lines && p < v.Length; l++)
+        {
+            var count = v[p++];
+            for (var i = 0; i + 1 < count && p + 2 * i + 3 < v.Length; i++)
+            {
+                double y1 = v[p + 2 * i] / 1e7, x1 = v[p + 2 * i + 1] / 1e7, y2 = v[p + 2 * i + 2] / 1e7, x2 = v[p + 2 * i + 3] / 1e7;
+                if ((y1 > latitude) != (y2 > latitude) && longitude < (x2 - x1) * (latitude - y1) / (y2 - y1) + x1) inside = !inside;
+                nearest = Math.Min(nearest, SegmentMeters(latitude, longitude, y1, x1, y2, x2, metersPerLon));
+            }
+            p += 2 * count;
+        }
+        return inside || nearest <= margin;
+    }
+
+    /// <summary>Metres from a point to a segment, on a local flat projection (fine at these distances).</summary>
+    private static double SegmentMeters(double lat, double lon, double y1, double x1, double y2, double x2, double metersPerLon)
+    {
+        double ax = (x1 - lon) * metersPerLon, ay = (y1 - lat) * 111_320.0, bx = (x2 - lon) * metersPerLon, by = (y2 - lat) * 111_320.0;
+        double dx = bx - ax, dy = by - ay, length = dx * dx + dy * dy;
+        var t = length == 0 ? 0 : Math.Clamp(-(ax * dx + ay * dy) / length, 0, 1);
+        double cx = ax + t * dx, cy = ay + t * dy;
+        return Math.Sqrt(cx * cx + cy * cy);
     }
 }
 
@@ -95,7 +156,7 @@ public static class Overpass
     public static (double South, double West, double North, double East) Bounds((int Row, int Column) tile) =>
         (tile.Row * TileSize, tile.Column * TileSize, (tile.Row + 1) * TileSize, (tile.Column + 1) * TileSize);
 
-    /// <summary>The Overpass QL for one tile: named places of the kinds above, with areas' bounding boxes.</summary>
+    /// <summary>The Overpass QL for one tile: named places of the kinds above, with areas' outlines and bounding boxes.</summary>
     public static string Query((int Row, int Column) tile)
     {
         var (s, w, n, e) = Bounds(tile);
@@ -103,7 +164,7 @@ public static class Overpass
         var q = new StringBuilder("[out:json][timeout:90];(");
         foreach (var (key, values) in Kinds)
             q.Append(CultureInfo.InvariantCulture, $"nwr[\"name\"][\"{key}\"~\"^({string.Join('|', values.Keys)})$\"]{box};");
-        q.Append(");out tags bb;");
+        q.Append(");out tags geom;");
         return q.ToString();
     }
 
@@ -125,13 +186,46 @@ public static class Overpass
             {
                 double s = b.GetProperty("minlat").GetDouble(), w = b.GetProperty("minlon").GetDouble(),
                     n = b.GetProperty("maxlat").GetDouble(), ea = b.GetProperty("maxlon").GetDouble();
-                result.Add(new Poi(0, key, name.Trim(), kind, (s + n) / 2, (w + ea) / 2, s, w, n, ea));
+                var outline = Outline(e);
+                var hasGeometry = e.TryGetProperty("geometry", out _) || e.TryGetProperty("members", out _);
+                if (hasGeometry && outline.Count == 0) // an open line (a track, a stretch of beach): where its middle is
+                    result.Add(new Poi(0, key, name.Trim(), kind, (s + n) / 2, (w + ea) / 2));
+                else
+                    result.Add(new Poi(0, key, name.Trim(), kind, (s + n) / 2, (w + ea) / 2, s, w, n, ea,
+                        outline.Count == 0 ? null : PoiShape.Encode(outline))); // no geometry sent: just the box
             }
             else if (e.TryGetProperty("lat", out var lat) && e.TryGetProperty("lon", out var lon))
                 result.Add(new Poi(0, key, name.Trim(), kind, lat.GetDouble(), lon.GetDouble()));
         }
         return result;
     }
+
+    /// <summary>A closed way's ring, or a relation's outer and inner member ways; empty for an open way.</summary>
+    private static List<IReadOnlyList<(double, double)>> Outline(JsonElement e)
+    {
+        var lines = new List<IReadOnlyList<(double, double)>>();
+        if (e.TryGetProperty("geometry", out var geometry))
+        {
+            var ring = Points(geometry);
+            if (ring.Count >= 4 && ring[0] == ring[^1]) lines.Add(ring);
+        }
+        else if (e.TryGetProperty("members", out var members))
+        {
+            foreach (var member in members.EnumerateArray())
+                if (member.TryGetProperty("geometry", out var g) &&
+                    member.TryGetProperty("role", out var role) && role.GetString() is "outer" or "inner" or "")
+                {
+                    var line = Points(g);
+                    if (line.Count >= 2) lines.Add(line);
+                }
+        }
+        return lines;
+    }
+
+    private static List<(double, double)> Points(JsonElement geometry) =>
+        geometry.EnumerateArray()
+            .Where(p => p.ValueKind == JsonValueKind.Object && p.TryGetProperty("lat", out _))
+            .Select(p => (p.GetProperty("lat").GetDouble(), p.GetProperty("lon").GetDouble())).ToList();
 
     private static string? KindOf(JsonElement tags)
     {
