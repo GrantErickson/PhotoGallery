@@ -75,6 +75,10 @@ public sealed class PoiTests : IDisposable
         Assert.True(reserve.Contains(47.779, -117.4975));  // on the strip
         Assert.True(reserve.Contains(47.7785, -117.4995, margin: 150)); // just beside it, within the margin
         Assert.Null(PoiMatcher.Best(47.795, -117.540, [reserve]));
+
+        // The same reserve without an outline: its box is far too big to trust.
+        Assert.False((reserve with { Shape = null }).Contains(47.795, -117.540));
+        Assert.Contains("out geom;", Overpass.Query(Overpass.TileOf(47.78, -117.5)));
     }
 
     [Fact]

@@ -13,6 +13,9 @@ public sealed record Poi(long Id, string OsmKey, string Name, string Kind, doubl
 {
     public bool IsArea => South is not null && West is not null && North is not null && East is not null;
 
+    /// <summary>The largest area (m²) matched by its bounding box alone, when OpenStreetMap sent no outline.</summary>
+    public const double MaxBoxOnlyArea = 500_000;
+
     /// <summary>Square metres of the bounding box (0 for a point).</summary>
     public double AreaM2 => IsArea
         ? Geo.Meters(South!.Value, West!.Value, North!.Value, West.Value) * Geo.Meters(South.Value, West.Value, South.Value, East!.Value)
@@ -28,7 +31,8 @@ public sealed record Poi(long Id, string OsmKey, string Name, string Kind, doubl
         var dLat = margin / 111_320.0;
         var dLon = margin / (111_320.0 * Math.Max(0.1, Math.Cos(latitude * Math.PI / 180)));
         if (latitude < South - dLat || latitude > North + dLat || longitude < West - dLon || longitude > East + dLon) return false;
-        return Shape is null || PoiShape.Contains(Shape, latitude, longitude, margin);
+        // Without an outline only a small box is trusted: a long riverside reserve's box covers whole neighbourhoods.
+        return Shape is null ? AreaM2 <= MaxBoxOnlyArea : PoiShape.Contains(Shape, latitude, longitude, margin);
     }
 }
 
@@ -164,7 +168,7 @@ public static class Overpass
         var q = new StringBuilder("[out:json][timeout:90];(");
         foreach (var (key, values) in Kinds)
             q.Append(CultureInfo.InvariantCulture, $"nwr[\"name\"][\"{key}\"~\"^({string.Join('|', values.Keys)})$\"]{box};");
-        q.Append(");out tags geom;");
+        q.Append(");out geom;"); // "out tags geom" leaves out relations' members, and with them their outlines
         return q.ToString();
     }
 

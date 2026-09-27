@@ -303,6 +303,16 @@ public sealed class GalleryDatabase
         UPDATE MediaFts SET Tags = {SearchIndex.TagsExpression} WHERE rowid IN (SELECT Id FROM PoiReset);
         DROP TABLE PoiReset;
         """,
+        // v17: the same again: the v16 lookups asked for "tags" only, which left multipolygons (big parks and
+        // reserves) without their outlines.
+        $"""
+        CREATE TEMP TABLE PoiReset AS SELECT Id FROM Media WHERE PoiId > 0;
+        UPDATE Media SET PoiId = NULL WHERE PoiId IS NOT NULL;
+        DELETE FROM Pois;
+        DELETE FROM PoiTiles;
+        UPDATE MediaFts SET Tags = {SearchIndex.TagsExpression} WHERE rowid IN (SELECT Id FROM PoiReset);
+        DROP TABLE PoiReset;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>
