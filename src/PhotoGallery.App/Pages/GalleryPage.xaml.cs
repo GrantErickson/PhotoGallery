@@ -8,8 +8,12 @@ namespace PhotoGallery.App.Pages;
 /// <param name="Section">The menu item this view belongs to (highlighted after Back/Forward).</param>
 /// <param name="Group">Month headers (date order), or <see cref="GroupMode.None"/> for the filter's own order.</param>
 /// <param name="Search">Search results for these words: the page runs the search and offers exact words, sorting and grouping.</param>
+/// <param name="Carry">A search's choices and filters carried over from the search before it.</param>
 public sealed record GalleryRequest(string Title, MediaFilter Filter, string? Subtitle = null, long? AlbumId = null, string? EmptyMessage = null,
-    long? PersonId = null, string? Section = null, GroupMode Group = GroupMode.Month, string? Search = null);
+    long? PersonId = null, string? Section = null, GroupMode Group = GroupMode.Month, string? Search = null, SearchCarry? Carry = null);
+
+/// <summary>How a search was being looked at (exact words, sort, grouping, filters), kept for the next search.</summary>
+public sealed record SearchCarry(bool Exact, int Sort, int Group, Controls.GalleryView.ViewFilters Filters);
 
 /// <summary>What a gallery looked like when it was left, restored when coming back to it.</summary>
 internal sealed class GalleryNavState
@@ -20,6 +24,7 @@ internal sealed class GalleryNavState
     public long? ReopenViewerOnForward { get; set; }
     /// <summary>A search's choices: exact words only, sort (0 best match, 1 newest, 2 oldest), grouping (0 none … 3 year).</summary>
     public (bool Exact, int Sort, int Group)? SearchChoices { get; set; }
+    public Controls.GalleryView.ViewFilters? Filters { get; set; }
 }
 
 public sealed partial class GalleryPage : Page
@@ -45,8 +50,19 @@ public sealed partial class GalleryPage : Page
             // A viewer backed out of stays forward-able only while we're moving back through history.
             ReopenViewerOnForward = e.NavigationMode == NavigationMode.Back ? reopenOnForward : null,
             SearchChoices = _request.Search is null ? null : (ExactToggle.IsChecked == true, SortBox.SelectedIndex, GroupBox.SelectedIndex),
+            Filters = Gallery.Filters,
         });
     }
+
+    /// <summary>The words this page shows results for, if it's a search.</summary>
+    public string? SearchText => _request?.Search;
+
+    /// <summary>This search's choices and filters, for the next search to start from.</summary>
+    public SearchCarry? CurrentSearch => _request?.Search is null
+        ? null
+        : new SearchCarry(ExactToggle.IsChecked == true, SortBox.SelectedIndex, GroupBox.SelectedIndex, Gallery.Filters);
+
+    private void OnClearSearch(object sender, Microsoft.UI.Xaml.RoutedEventArgs e) => App.MainWindow.ClearSearch();
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -56,6 +72,7 @@ public sealed partial class GalleryPage : Page
         if (e.NavigationMode != NavigationMode.New && States.TryGetValue(request, out var state))
         {
             restored = state;
+            if (state.Filters is { } filters) Gallery.ApplyFilters(filters);
             Gallery.RestoreOnNextLoad(state.AnchorId, state.SelectedIds, e.NavigationMode == NavigationMode.Back ? state.ReopenViewerOnBack : null);
             if (e.NavigationMode == NavigationMode.Forward && state.ReopenViewerOnForward is { } forwardId)
                 App.MainWindow.RestoreForwardViewer(Gallery, forwardId);
@@ -69,7 +86,8 @@ public sealed partial class GalleryPage : Page
         if (request.Search is { } text)
         {
             _choosing = true;
-            var (exact, sort, group) = restored?.SearchChoices ?? (false, 0, 2);
+            var (exact, sort, group) = restored?.SearchChoices ?? (request.Carry is { } carry ? (carry.Exact, carry.Sort, carry.Group) : (false, 0, 2));
+            if (restored is null && request.Carry is { } carried) Gallery.ApplyFilters(carried.Filters);
             ExactToggle.IsChecked = exact;
             SortBox.SelectedIndex = sort;
             GroupBox.SelectedIndex = group;

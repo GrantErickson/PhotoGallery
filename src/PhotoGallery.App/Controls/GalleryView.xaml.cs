@@ -59,6 +59,35 @@ public sealed partial class GalleryView : UserControl
     /// <summary>Section headers per month (timeline) or per day with the full date (On this day).</summary>
     public GroupMode GroupMode { get; set; } = GroupMode.Month;
 
+    /// <summary>The filter bar's choices (kind, rating, Live, screenshots, people).</summary>
+    public sealed record ViewFilters(int Kind, int Rating, bool Live, int Screenshots, IReadOnlyList<long> People);
+
+    public ViewFilters Filters =>
+        new(KindBox.SelectedIndex, RatingBox.SelectedIndex, MotionToggle.IsChecked == true, ScreenshotBox.SelectedIndex, [.. _people]);
+
+    /// <summary>Sets the filter bar (before the view loads, or it reloads).</summary>
+    public void ApplyFilters(ViewFilters filters)
+    {
+        _settingScreenshots = true;
+        _screenshotsChosen = true;
+        try
+        {
+            KindBox.SelectedIndex = filters.Kind;
+            RatingBox.SelectedIndex = filters.Rating;
+            MotionToggle.IsChecked = filters.Live;
+            ScreenshotBox.SelectedIndex = filters.Screenshots;
+        }
+        finally
+        {
+            _settingScreenshots = false;
+        }
+        _people.Clear();
+        _people.UnionWith(filters.People);
+        PeopleChanged();
+    }
+
+    private bool _screenshotsChosen;
+
     /// <summary>The page's query; the grid stays empty until this is set.</summary>
     public MediaFilter? BaseFilter
     {
@@ -66,7 +95,7 @@ public sealed partial class GalleryView : UserControl
         set
         {
             // Views that show screenshots anyway (search, folders) start with them included.
-            if (value is { IncludeScreenshots: true } && (_baseFilter is null || !_baseFilter.IncludeScreenshots) && ScreenshotBox.SelectedIndex == 0)
+            if (value is { IncludeScreenshots: true } && (_baseFilter is null || !_baseFilter.IncludeScreenshots) && ScreenshotBox.SelectedIndex == 0 && !_screenshotsChosen)
             {
                 _settingScreenshots = true;
                 ScreenshotBox.SelectedIndex = 1;
@@ -669,7 +698,8 @@ public sealed partial class GalleryView : UserControl
 
     private void PeopleChanged()
     {
-        var names = _allPeople?.Where(p => _people.Contains(p.Row.Id)).Select(p => p.Name).ToList() ?? [];
+        var names = _allPeople?.Where(p => _people.Contains(p.Row.Id)).Select(p => p.Name).ToList()
+                    ?? _people.Select(id => S.People.Get(id)?.DisplayName).OfType<string>().ToList();
         PeopleText.Text = names.Count switch { 0 => "Anyone", 1 => names[0], _ => $"{names[0]} + {names.Count - 1}" };
         if (_loaded) _ = ReloadAsync();
     }

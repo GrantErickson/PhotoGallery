@@ -32,6 +32,12 @@
                 <x:String>By year</x:String>
             </ComboBox>
             <ProgressRing x:Name="SearchBusy" IsActive="False" Width="18" Height="18" />
+            <Button Click="OnClearSearch" Style="{StaticResource SubtleButtonStyle}" ToolTipService.ToolTip="Back to where you were before searching (Esc in the search box)">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE711;" FontSize="12" />
+                    <TextBlock Text="Clear search" />
+                </StackPanel>
+            </Button>
         </StackPanel>
         <controls:GalleryView x:Name="Gallery" Grid.Row="2" />
     </Grid>

@@ -145,6 +145,10 @@ public sealed partial class MainWindow : Window
             case Windows.System.VirtualKey.Right when alt:
                 GoForward();
                 break;
+            case Windows.System.VirtualKey.E when Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down) && !IsEditorOpen:
+                SearchBox.Focus(FocusState.Keyboard);
+                break;
             default:
                 return;
         }
@@ -172,6 +176,12 @@ public sealed partial class MainWindow : Window
     {
         if (e.NavigationMode == Microsoft.UI.Xaml.Navigation.NavigationMode.New) _forwardViewer = null;
         SyncNavSelection(e.SourcePageType, e.Parameter);
+        // The box shows the search on screen, and nothing elsewhere.
+        _settingSearchText = true;
+        SearchBox.Text = (e.Parameter as GalleryRequest)?.Search ?? "";
+        _settingSearchText = false;
+        SearchBox.ItemsSource = null; // no leftover suggestions over the new page
+        SearchBox.IsSuggestionListOpen = false;
         UpdateBackButton();
     }
 
@@ -308,17 +318,73 @@ public sealed partial class MainWindow : Window
             Section: "blurry", Group: GroupMode.None);
     }
 
-    private void OnSearchSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) => Search(args.QueryText);
+    private bool _settingSearchText;
+
+    private void OnSearchSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+        var text = (args.ChosenSuggestion as SearchSuggestion)?.Query ?? args.QueryText;
+        if (string.IsNullOrWhiteSpace(text)) ClearSearch();
+        else Search(text);
+    }
+
+    /// <summary>Recent searches as soon as the box is clicked into.</summary>
+    private void OnSearchBoxGotFocus(object sender, RoutedEventArgs e)
+    {
+        if (SearchBox.Text.Length > 0 || App.Services.Settings.RecentSearches.Count == 0) return;
+        SearchBox.ItemsSource = SearchSuggestion.For("", App.Services);
+        SearchBox.IsSuggestionListOpen = true;
+    }
+
+    private void OnSearchTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (_settingSearchText || args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+        sender.ItemsSource = SearchSuggestion.For(sender.Text, App.Services);
+    }
+
+    private void OnSuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+        _settingSearchText = true;
+        sender.Text = (args.SelectedItem as SearchSuggestion)?.Query ?? sender.Text;
+        _settingSearchText = false;
+    }
+
+    /// <summary>Esc (with the list closed) clears the search and goes back to before it.</summary>
+    private void OnSearchBoxKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Escape || SearchBox.IsSuggestionListOpen) return;
+        ClearSearch();
+        ContentFrame.Focus(FocusState.Programmatic);
+        e.Handled = true;
+    }
 
     public void Search(string text)
     {
         text = text.Trim();
         if (text.Length == 0) return;
+        _settingSearchText = true;
         SearchBox.Text = text;
+        _settingSearchText = false;
+        SearchBox.IsSuggestionListOpen = false;
+        SearchSuggestion.Remember(text, App.Services);
         if (Viewer.Visibility == Visibility.Visible) Viewer.Close();
+        // A search started from search results keeps how they were being looked at (exact words, sort, filters).
+        var carry = (ContentFrame.Content as GalleryPage)?.CurrentSearch;
         // The page runs the search: best matches first, with exact words, sorting and grouping to choose from there.
         ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest($"“{text}”", new MediaFilter { Text = text, IncludeScreenshots = true },
-            EmptyMessage: "No matches.", Search: text));
+            EmptyMessage: "No matches.", Search: text, Carry: carry));
+    }
+
+    /// <summary>Empties the search box and goes back past the searches just made, to where searching started.</summary>
+    public void ClearSearch()
+    {
+        _settingSearchText = true;
+        SearchBox.Text = "";
+        _settingSearchText = false;
+        SearchBox.ItemsSource = null;
+        SearchBox.IsSuggestionListOpen = false;
+        if (Viewer.Visibility == Visibility.Visible) Viewer.Close();
+        while (ContentFrame.Content is GalleryPage { SearchText: not null } && ContentFrame.CanGoBack) ContentFrame.GoBack();
+        if (ContentFrame.Content is GalleryPage { SearchText: not null }) ContentFrame.Navigate(typeof(GalleryPage), TimelineRequest());
     }
 
     /// <summary>A photo followed by the ones most like it (most similar first).</summary>
