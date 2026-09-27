@@ -6,12 +6,14 @@ timeline. Written September 2026; check the linked policies before submitting, a
 
 ## Summary
 
-It's feasible, and most of the app can ship as it is. There are three problems to solve first:
+It's feasible, and most of the app can ship as it is. Three things need attention first:
 
-1. **The OneDrive web-session features have to come out of the Store build.** These are Live Photo videos stored
-   only in OneDrive, and people, names and faces from OneDrive. They work by reading the authorization header of the
-   user's own OneDrive web session and calling undocumented OneDrive endpoints. That is a poor fit for Store Policy
-   10.2 (security) and for OneDrive's terms, and it could break whenever OneDrive changes.
+1. **The OneDrive web-session features are a known risk, and you've decided to keep them.** These are Live Photo
+   videos stored only in OneDrive, and people, names and faces from OneDrive. They work by reading the authorization
+   header of the user's own OneDrive web session and calling undocumented OneDrive endpoints. A reviewer could read
+   that as a problem under Store Policy 10.2 (security), it may conflict with OneDrive's terms, and it could break
+   whenever OneDrive changes. §2.1 makes it opt-in, clearly disclosed and switchable off, with a fallback if
+   certification objects. §6 lists documented alternatives that reduce how much the app depends on it.
 2. **The map and the place names use free OpenStreetMap community servers** that aren't meant for apps distributed
    to the public. They need a paid or self-hosted provider, or those features stay off.
 3. **The name.** "Photo Gallery" is generic and close to Microsoft's old *Windows Photo Gallery*. The Store needs a
@@ -34,28 +36,46 @@ The rest is ordinary packaging and polish:
 | Package type | **MSIX**: Store-signed, auto-updates, clean uninstall. **EXE/MSI from your own URL** (Policy 10.2.9): you sign it (needs a code-signing certificate), host it and update it. | MSIX. |
 | Price | Free / paid / free trial / add-ons | Decide before submission. Using the Store's commerce costs 15% for apps; non-game apps can use their own commerce and keep 100%. |
 | Name | — | A distinct brand. Keep "OneDrive", "iPhone" and "Live Photos" out of the title; "works with OneDrive" is fine in the description. |
-| Features in v1 | See §2 | Ship without the web-session features. Place names off (or served by your own data). |
+| Features in v1 | See §2 | Keep the web-session features, opt-in and switchable off (§2.1). Place names from your own data, or off (§2.4, §6). |
 | Architectures | x64, ARM64 | x64 first. ARM64 after checking the native parts (§3, item 11). |
 | Minimum Windows | Currently 10.0.19041 | Keep it. Windows 10 needs WebView2 checks (§2.7). |
 
 ## 2. Blockers and risks
 
-### 2.1 OneDrive web session (must change)
+### 2.1 OneDrive web session (kept: accepted risk)
 - **What it does:** a WebView2 loads onedrive.live.com with the user's sign-in, captures the `Authorization` header
   of its API calls, and uses it (in memory only) for:
   - Live Photo videos stored only in OneDrive;
   - people, names and face boxes.
-- **Why it's a problem:**
-  - Policy 10.2: products must not "jeopardize or compromise user security", and a reviewer may read token capture
-    that way.
-  - The endpoints are undocumented and can change without notice.
-  - It may conflict with OneDrive's terms of use.
-- **Action:**
-  - Add a `STORE` build flag that removes the Connect page and the web-session clients.
-  - In the Store build:
-    - cloud-only Live Photos show the still, with "Open in OneDrive" (already the fallback);
-    - people come from the Microsoft Graph metadata sync (the older, pre-merge data), or are left out.
-  - Revisit if Microsoft documents a Live Photo or people API.
+- **The risks you're accepting:**
+  - **Certification:** Policy 10.2 says products must not "jeopardize or compromise user security". A reviewer who
+    notices token capture may reject the submission, or ask for changes.
+  - **Removal later:** the app could be pulled after a complaint, even after it's approved.
+  - **Breakage:** the endpoints are undocumented and can change without notice. The Live Photo video endpoint has
+    already changed once (Graph's `format=video` began refusing with 406).
+  - **Terms:** it may conflict with OneDrive's or the Microsoft Services Agreement's terms. Keep it low-volume and
+    limited to the user's own data, as it is now.
+- **Mitigations to build before submitting:**
+  - **Opt-in and plain-spoken.** Nothing happens until the user clicks Connect. The Connect page and the listing say
+    what it does ("uses your OneDrive web sign-in to play cloud-only Live Photos and bring in OneDrive's people"), and
+    that it's unofficial and may stop working.
+  - **Handle the token exactly as now**, and say so in the privacy policy:
+    - memory only, never stored, logged or sent anywhere but OneDrive's API host;
+    - on demand and low-volume;
+    - Disconnect clears the sign-in cookies.
+  - **Remote off switch.** A small JSON file the app reads at start, on your own site, can turn the feature off
+    everywhere if Microsoft objects or the endpoints break. Turning a described feature *off* is fine; the dynamic-code
+    rule (10.2.2) is about adding behaviour.
+  - **Fails gracefully.** If an endpoint stops answering as expected:
+    - Live Photos fall back to "Open in OneDrive" (already done);
+    - people keep the last data read, with a note in Settings.
+  - **A `STORE_SAFE` build flag** that removes the feature entirely, ready to resubmit within a day if certification
+    objects.
+  - **Certification notes:** say it's optional, off by default, and how it works. Being upfront beats being found
+    out.
+- **Reduce the dependence over time** with the documented alternatives in §6:
+  - local face recognition for people;
+  - local `.MOV` pairs for Live Photos (iCloud for Windows and USB import keep them).
 
 ### 2.2 Microsoft Graph sign-in (needs a production setup)
 - Register the app in Microsoft Entra ID under your publisher account (personal Microsoft accounts, read-only
@@ -154,7 +174,10 @@ The rest is ordinary packaging and polish:
    - Publish the app and the embedder self-contained for win-x64.
    - Consider ReadyToRun for startup time.
    - Avoid trimming: WinUI and reflection-based binding don't trim safely.
-3. **Store build flag** (`STORE`): removes the web-session features (§2.1) and the development client ID.
+3. **Build flags and switches:**
+   - a remote off switch for the web-session features;
+   - a `STORE_SAFE` build that removes them (§2.1);
+   - production app registration IDs instead of the development client ID.
 4. **App data under MSIX.** Writes to `%LocalAppData%\PhotoGallery` are redirected to the package's private storage.
    The app keeps working unchanged, but:
    - an existing unpackaged install's database and caches aren't visible. Offer "import existing data", or accept a
@@ -220,27 +243,99 @@ The rest is ordinary packaging and polish:
    resubmit.
 10. **Publish.** The Store handles updates: bump the version for each submission.
 
-## 5. After launch
+## 5. Branding
+
+"Photo Gallery" can't be the Store name: it's generic, and close to Microsoft's old *Windows Photo Gallery*. The app's
+real difference is **finding** things in a huge library, by what's in the photos, privately on your own PC. A name
+and look should carry that.
+
+### Name ideas
+In a quick search I found no photo app with these names, except where noted. That is **not** a trademark check (see
+below).
+
+| Name | Idea | Notes |
+|---|---|---|
+| **Findframe** | Find the frame: search, and the sharpest frame of a Live Photo | Short, says what it does. No conflicts found. |
+| **Cairn** | Stones stacked to mark a trail: photos as markers of where you've been | Calm and memorable. A 2025 game shares the name, in a different class. |
+| **Hindsight** | Looking back, and seeing clearly | Common word; check for photo or software marks. |
+| **Porchlight** | Warm, family, "come on in" | Friendly; less about search. |
+| **Keepwell** | Keep your photos well organized, safe and local | Fits the privacy angle. |
+| **Trove** | A treasure trove of photos | Very common word; a longer form like "Photo Trove" may be needed. |
+| ~~Everframe~~ | — | Taken (an event photo platform and a digital frame). |
+
+**Avoid:**
+- "Lens" (Google Lens, Microsoft Lens);
+- "Recall" (Windows Recall);
+- "Photos" alone, or anything with "Windows", "OneDrive", "iPhone" or "Live Photos" in the title;
+- "Aperture" and "Darkroom" (existing apps).
+
+**Before committing to a name:**
+1. Search the Microsoft Store, the web and app stores for it.
+2. Search the USPTO trademark database (classes 9 and 42 cover software), and your country's register.
+3. Reserve it in Partner Center; the name is then yours for the Store.
+4. Get a matching domain for the privacy policy and support pages.
+
+### Tagline options
+- "Every photo, found."
+- "Your whole photo library, searchable, private, on your PC."
+- "Search your photos by what's in them: people, places, words and moments."
+
+### Look
+- **Dark-first**, matching the app's default: near-black surfaces, and photos as the colour.
+- **One warm accent**, for example amber (#F2A33A), for selection and highlights. It stands out against the blues
+  of most photo tools.
+- **Icon:** a simple mark that reads at 16 px. Ideas:
+  - a photo frame with a small magnifier in one corner;
+  - for Cairn, three stacked rounded stones, the top one a photo.
+
+  Provide it in the Store's logo sizes and as the app's tile and taskbar icon.
+- **Screenshots:**
+  - lead with search ("birthday cake" finding cakes);
+  - then people, the map, a transcript beside a video, and Blurry photos with Sharpest frame.
+
+### Positioning
+Against Mylio, Excire, ACDSee and Microsoft Photos:
+- private on-device AI (search by description, speech in videos, text in photos);
+- built for very large libraries;
+- made for iPhone photos in OneDrive (Live Photos, people).
+
+## 6. Store-friendly services and APIs
+
+Documented, licensed ways to cover what the app uses community servers or private APIs for today.
+
+| Need | Now | Store-friendly options | Notes |
+|---|---|---|---|
+| Map tiles | tile.openstreetmap.org | **Azure Maps** (Render); **MapTiler**, **Stadia Maps**, **Thunderforest**; or **Protomaps** vector tiles on your own storage | Keep the OpenStreetMap attribution. Keys shipped in an app can be extracted: restrict them, or proxy. |
+| Place names (parks, schools, restaurants) | Overpass (public) | **Overture Maps Places** (CDLA Permissive 2.0 and Apache 2.0) or **Foursquare Open Source Places** (Apache 2.0, 100M+ places, updated monthly): build compact place tiles and host them. Or **Azure Maps Search** (points of interest near a point: 5,000 free transactions a month, then per 1,000). | Pre-built tiles cost nothing per user and work offline. Check any API's terms on *storing* results: many geocoding APIs forbid keeping them long-term. |
+| Towns | GeoNames download | The same file, **bundled in the package** (CC BY 4.0, credited) | No runtime download. |
+| People and faces | OneDrive web API (private) | **On-device face detection and recognition**: OpenCV Zoo's YuNet (detection) and SFace (recognition), run with ONNX Runtime, then cluster the faces locally | Works without OneDrive and with any photos. Check each model's licence: avoid InsightFace or ArcFace weights, which are for non-commercial use only. Windows' own FaceAnalysis only finds faces; it doesn't recognise them. |
+| Live Photo video | OneDrive web API (private) | **Local pairs**: the app already plays `.MOV`s stored beside the photo. iCloud for Windows and USB import keep them, and older OneDrive camera uploads did too (2,503 pairs in the author's library). | There's no documented OneDrive or Graph API for the video part (Graph's `format=video` returns 406). |
+| OneDrive files and metadata | Microsoft Graph | **Microsoft Graph** (documented): files, thumbnails, the photo facet (date taken, camera, location) | Already used; needs a production app registration (§2.2). |
+| Text in photos | Windows OCR | Keep it; on Copilot+ PCs, the **Windows AI text recognition** API is more accurate | Optional improvement. |
+| Captions and search | CLIP (local) | Keep it; on Copilot+ PCs, **Windows AI image description** could add captions | Optional. |
+| Speech | Whisper (local) | Keep it | Already Store-safe (models are downloaded data). |
+
+## 7. After launch
 - Watch health reports (crashes, hangs) and ratings, and answer reviews.
 - Keep Windows App SDK, .NET, WebView2, ONNX Runtime and Whisper.net up to date (security fixes).
 - Keep the tile key and provider plan in budget. Refresh place data if you host it.
 - Watch the Store policies (currently version 7.20) for changes.
 
-## 6. Rough timeline (focused work)
+## 8. Rough timeline (focused work)
 
 | Week | Work |
 |---|---|
-| 1 | MSIX and self-contained build, `STORE` flag, Partner Center account and name, Entra app registration. |
+| 1 | MSIX and self-contained build, `STORE_SAFE` flag, remote off switch, Partner Center account and name, Entra app registration. |
 | 2 | First-run page, download consent and hashes, About and notices, privacy policy page. |
 | 3 | Map tile provider, place-names decision, codec and WebView2 detection, accessibility pass. |
 | 4 | Clean-VM and WACK testing, listing assets, private flight to a few testers. |
 | 5 | Fixes from the flight, submit, certification. |
 
-## 7. Open questions for you
+## 9. Open questions for you
 - Free or paid (and a trial)? Individual or company account?
-- The brand name.
-- Ship v1 without the OneDrive web-session features? (Recommended.)
-- Budget for map tiles, and possibly place data hosting.
+- The brand name (§5).
+- Where to host the remote off switch, privacy policy and support pages (GitHub Pages works for all three).
+- Budget for map tiles, and possibly place data hosting (§6).
 - Is ARM64 needed at launch?
 - Who hosts the privacy policy and support pages (GitHub Pages works)?
 
@@ -252,3 +347,6 @@ The rest is ordinary packaging and polish:
 - [Benefits of distributing through the Store (commerce fees)](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/why-distribute-through-store)
 - [OSMF tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
 - [Overpass API: commons and fair use](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html)
+- [Overture Maps: attribution and licensing](https://docs.overturemaps.org/attribution/)
+- [Foursquare Open Source Places](https://foursquare.com/resources/blog/products/foursquare-open-source-places-a-new-foundational-dataset-for-the-geospatial-community/)
+- [Azure Maps pricing](https://azure.microsoft.com/en-us/pricing/details/azure-maps/)
