@@ -14,6 +14,8 @@ public sealed partial class SettingsPage : Page
         InitializeComponent();
         App.Services.Transcription.StateChanged += OnTranscriptionChanged;
         App.Services.Transcription.Completed += _ => OnTranscriptionChanged();
+        App.Services.PhotoText.StateChanged += OnTranscriptionChanged;
+        App.Services.PhotoText.Completed += _ => OnTranscriptionChanged();
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -22,6 +24,7 @@ public sealed partial class SettingsPage : Page
         RefreshAccount();
         _loadingSwitch = true;
         TranscribeSwitch.IsOn = App.Services.Settings.TranscribeInBackground;
+        PhotoTextSwitch.IsOn = App.Services.Settings.ReadPhotoTextInBackground;
         _loadingSwitch = false;
         await RefreshTranscriptsAsync();
         var services = App.Services;
@@ -50,6 +53,21 @@ public sealed partial class SettingsPage : Page
         var (done, total, withSpeech) = await Task.Run(App.Services.Transcripts.GetProgress);
         var runtime = service.Runtime is { } r ? $" · running on {(r == "Cpu" ? "the CPU" : $"the GPU ({r})")}" : "";
         TranscriptStatsText.Text = $"{done:N0} of {total:N0} videos done, {withSpeech:N0} with speech · {service.Status}{runtime}";
+
+        var ocr = App.Services.PhotoText;
+        var (read, photos, withText) = await Task.Run(App.Services.PhotoTexts.GetProgress);
+        PhotoTextStatsText.Text = !ocr.IsAvailable
+            ? "Windows has no OCR language installed for your languages (Settings › Time & language › Language)."
+            : $"{read:N0} of {photos:N0} photos read, {withText:N0} with text · " +
+              (!App.Services.Settings.ReadPhotoTextInBackground ? "background reading is off" : ocr.IsWorking ? "Reading…" : read == photos ? "Up to date" : "Waiting to start");
+    }
+
+    private void OnPhotoTextToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingSwitch) return;
+        App.Services.Settings.ReadPhotoTextInBackground = PhotoTextSwitch.IsOn;
+        App.Services.SaveSettings();
+        App.Services.PhotoText.Nudge();
     }
 
     private void OnTranscribeToggled(object sender, RoutedEventArgs e)

@@ -203,8 +203,9 @@ public sealed class TranscriptTests : IDisposable
             db.Open();
             db.Execute("CREATE TABLE Media (Id INTEGER PRIMARY KEY);");
             db.Execute(migration![8]);
+            db.Execute(migration[9]);
             Assert.Equal(7, db.ExecuteScalar<long>("SELECT rowid FROM MediaFts WHERE MediaFts MATCH 'ocean'"));
-            Assert.Equal(5, db.Query("PRAGMA table_info(MediaFts)").Count());
+            Assert.Equal(6, db.Query("PRAGMA table_info(MediaFts)").Count());
         }
     }
 }

@@ -65,6 +65,14 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="Text in photos" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Text in photos and screenshots (signs, receipts, documents, whiteboards) is read on this PC with Windows' built-in OCR, shown under Details and searchable. Screenshots and photos OneDrive filed as text are read first." />
+                <ToggleSwitch x:Name="PhotoTextSwitch" Header="Read text in all photos in the background" Toggled="OnPhotoTextToggled" />
+                <TextBlock x:Name="PhotoTextStatsText" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="Library" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock x:Name="StatsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 <TextBlock x:Name="PathsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}"

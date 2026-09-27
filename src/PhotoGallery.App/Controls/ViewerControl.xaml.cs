@@ -85,6 +85,11 @@ public sealed partial class ViewerControl : UserControl
         {
             if (Visibility != Visibility.Visible || App.MainWindow.IsEditorOpen) return;
             args.Handled = true;
+            if (ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), TranscriptFind) && TranscriptFind.Text.Length > 0)
+            {
+                TranscriptFind.Text = "";
+                return;
+            }
             Close();
         };
         KeyboardAccelerators.Add(escape);
@@ -101,7 +106,7 @@ public sealed partial class ViewerControl : UserControl
     public void Show(IReadOnlyList<MediaSummary> items, int index, string? highlight = null)
     {
         _items = items;
-        _highlight = string.IsNullOrWhiteSpace(highlight) ? null : highlight.Trim();
+        _searchQuery = string.IsNullOrWhiteSpace(highlight) ? null : highlight.Trim();
         _changed = false;
         InfoToggle.IsChecked = InfoColumn.Width.Value > 0;
         _ = ShowIndexAsync(index);
@@ -134,6 +139,7 @@ public sealed partial class ViewerControl : UserControl
         _current = item;
         ShowDetails(item);
         ShowTranscript(item, ct);
+        ShowPhotoText(item, ct);
         PrefetchMotion(item, ct);
 
         if (item.Kind == MediaKind.Video)
@@ -608,6 +614,11 @@ public sealed partial class ViewerControl : UserControl
             case VirtualKey.S when _videoPath is not null && !IsDown(VirtualKey.Control):
                 _ = SaveFrameAsync();
                 break;
+            case VirtualKey.F when IsDown(VirtualKey.Control) && TranscriptPane.Visibility == Visibility.Visible &&
+                                   TranscriptFindBar.Visibility == Visibility.Visible:
+                TranscriptFind.Focus(FocusState.Keyboard);
+                TranscriptFind.SelectAll();
+                break;
             case VirtualKey.E:
                 OpenEditor();
                 break;
@@ -826,12 +837,21 @@ public sealed partial class ViewerControl : UserControl
     private Transcript? _transcript;
     private TranscriptLine? _currentLine;
     private DateTime _userScrolledAt;
-    /// <summary>What was searched for, highlighted in transcripts.</summary>
+    /// <summary>What the gallery was searched for (the viewer was opened from search results).</summary>
+    private string? _searchQuery;
+    /// <summary>What's being found in the transcript on screen: the search, when it was said here, or what was typed.</summary>
     private string? _highlight;
     /// <summary>Showing a search match: don't scroll away to follow playback until the reader moves on.</summary>
     private bool _followHeld;
     private static readonly Microsoft.UI.Xaml.Media.Brush MarkBackground =
         new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xE0, 0x66));
+    private static readonly Microsoft.UI.Xaml.Media.Brush CurrentMarkBackground =
+        new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0x9F, 0x1C));
+    /// <summary>Every match in reading order, and which one is selected.</summary>
+    private List<(TranscriptLine Line, int Index)> _findMatches = [];
+    private int _findIndex = -1;
+    private bool _settingFindText;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _findTimer;
     private static readonly Microsoft.UI.Xaml.Media.Brush MarkForeground =
         new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black);
     /// <summary>Which tab videos open on; remembers the last choice.</summary>
@@ -897,13 +917,14 @@ public sealed partial class ViewerControl : UserControl
             default:
                 var paragraphs = TranscriptFormatter.Paragraphs(transcript.Segments);
                 var speakers = paragraphs.Select(p => p.Speaker).Distinct().Count(s => s is not null);
-                var lines = paragraphs.Select(p => new TranscriptLine(p, speakers > 1, SearchHighlighter.Find(p.Text, _highlight))).ToList();
-                SetTranscriptLines(lines);
-                var mentions = lines.Sum(l => l.Matches.Count);
-                var spoken = LanguageName(transcript.Language) is { } language ? $"Spoken {language}" : "";
-                TranscriptStatusText.Text = mentions == 0 ? spoken
-                    : $"“{_highlight}” · {(mentions == 1 ? "1 mention" : $"{mentions} mentions")}{(spoken.Length > 0 ? " · " + spoken : "")}";
-                if (lines.FirstOrDefault(l => l.Matches.Count > 0) is { } first) ShowFirstMatch(first);
+                SetTranscriptLines(paragraphs.Select(p => new TranscriptLine(p, speakers > 1)).ToList());
+                TranscriptStatusText.Text = LanguageName(transcript.Language) is { } language ? $"Spoken {language}" : "";
+                // Start with the gallery search if it's said here (it may have matched the name or tags instead).
+                _highlight = _searchQuery is { } query && paragraphs.Any(p => SearchHighlighter.Find(p.Text, query).Count > 0) ? query : null;
+                _settingFindText = true;
+                TranscriptFind.Text = _highlight ?? "";
+                _settingFindText = false;
+                ApplyFind(jump: true);
                 break;
         }
     }
@@ -915,6 +936,9 @@ public sealed partial class ViewerControl : UserControl
         _followHeld = false;
         TranscriptList.ItemsSource = _transcriptLines;
         CopyTranscriptButton.Visibility = _transcriptLines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        TranscriptFindBar.Visibility = _transcriptLines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _findMatches = [];
+        _findIndex = -1;
         if (lines is null)
         {
             _transcript = null;
@@ -949,28 +973,114 @@ public sealed partial class ViewerControl : UserControl
         TranscriptPane.Visibility = details ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    /// <summary>The paragraph's text, with the searched-for words marked.</summary>
+    /// <summary>The paragraph's text, with the found words marked.</summary>
     private void OnTranscriptTextDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
     {
         if (sender is not TextBlock text || args.NewValue is not TranscriptLine line) return;
+        line.View = text;
         text.Text = line.Text;
+        ApplyHighlights(line);
+    }
+
+    /// <summary>Marks the line's matches: the selected one orange, the rest yellow.</summary>
+    private static void ApplyHighlights(TranscriptLine line)
+    {
+        if (line.View is not { } text) return;
         text.TextHighlighters.Clear();
         if (line.Matches.Count == 0) return;
         var marker = new Microsoft.UI.Xaml.Documents.TextHighlighter { Background = MarkBackground, Foreground = MarkForeground };
-        foreach (var m in line.Matches) marker.Ranges.Add(new Microsoft.UI.Xaml.Documents.TextRange { StartIndex = m.Start, Length = m.Length });
+        var current = new Microsoft.UI.Xaml.Documents.TextHighlighter { Background = CurrentMarkBackground, Foreground = MarkForeground };
+        for (var i = 0; i < line.Matches.Count; i++)
+            (i == line.CurrentMatch ? current : marker).Ranges.Add(
+                new Microsoft.UI.Xaml.Documents.TextRange { StartIndex = line.Matches[i].Start, Length = line.Matches[i].Length });
         text.TextHighlighters.Add(marker);
+        if (current.Ranges.Count > 0) text.TextHighlighters.Add(current);
     }
 
-    /// <summary>Scrolls to where the searched-for word is first said (once the list is laid out).</summary>
-    private void ShowFirstMatch(TranscriptLine line)
+    private void OnTranscriptFindChanged(object sender, TextChangedEventArgs e)
     {
+        if (_settingFindText) return;
+        // Wait for a pause in typing, then find.
+        _findTimer ??= CreateFindTimer();
+        _findTimer.Stop();
+        _findTimer.Start();
+    }
+
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer CreateFindTimer()
+    {
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(200);
+        timer.IsRepeating = false;
+        timer.Tick += (_, _) =>
+        {
+            _highlight = string.IsNullOrWhiteSpace(TranscriptFind.Text) ? null : TranscriptFind.Text.Trim();
+            ApplyFind(jump: true);
+        };
+        return timer;
+    }
+
+    /// <summary>Finds <see cref="_highlight"/> in every paragraph, marks the matches and (optionally) shows the first.</summary>
+    private void ApplyFind(bool jump)
+    {
+        _findMatches = [];
+        foreach (var line in _transcriptLines)
+        {
+            line.Matches = SearchHighlighter.Find(line.Text, _highlight);
+            line.CurrentMatch = -1;
+            for (var i = 0; i < line.Matches.Count; i++) _findMatches.Add((line, i));
+            ApplyHighlights(line);
+        }
+        _findIndex = -1;
+        FindPreviousButton.IsEnabled = FindNextButton.IsEnabled = _findMatches.Count > 1;
+        if (_findMatches.Count > 0 && jump) GoToMatch(0);
+        else UpdateFindCount();
+    }
+
+    private void UpdateFindCount() => TranscriptFindCount.Text =
+        _highlight is null ? "" : _findMatches.Count == 0 ? "No matches" : _findIndex < 0 ? $"{_findMatches.Count}" : $"{_findIndex + 1} of {_findMatches.Count}";
+
+    /// <summary>Selects a match and scrolls it into view; playback following waits until the reader moves on.</summary>
+    private void GoToMatch(int index)
+    {
+        if (_findMatches.Count == 0) return;
+        index = (index % _findMatches.Count + _findMatches.Count) % _findMatches.Count;
+        if (_findIndex >= 0 && _findIndex < _findMatches.Count)
+        {
+            var previous = _findMatches[_findIndex].Line;
+            previous.CurrentMatch = -1;
+            ApplyHighlights(previous);
+        }
+        _findIndex = index;
+        var (line, match) = _findMatches[index];
+        line.CurrentMatch = match;
+        ApplyHighlights(line);
+        UpdateFindCount();
         _followHeld = true;
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             TranscriptList.UpdateLayout();
             if (TranscriptList.ContainerFromItem(line) is UIElement container)
-                container.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.15, AnimationDesired = false });
+                container.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.15, AnimationDesired = true });
         });
+    }
+
+    private void OnFindNext(object sender, RoutedEventArgs e) => GoToMatch(_findIndex + 1);
+
+    private void OnFindPrevious(object sender, RoutedEventArgs e) => GoToMatch(_findIndex - 1);
+
+    private void OnTranscriptFindKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter) return;
+        e.Handled = true;
+        if (_findTimer?.IsRunning == true)
+        {
+            // Enter before the pause: find now.
+            _findTimer.Stop();
+            _highlight = string.IsNullOrWhiteSpace(TranscriptFind.Text) ? null : TranscriptFind.Text.Trim();
+            ApplyFind(jump: true);
+            return;
+        }
+        GoToMatch(IsDown(VirtualKey.Shift) ? _findIndex - 1 : _findIndex + 1);
     }
 
     private void OnTranscriptSeek(object sender, RoutedEventArgs e)
@@ -1020,5 +1130,88 @@ public sealed partial class ViewerControl : UserControl
         if (_current is not { } item) return;
         S.Transcripts.Delete(item.Id);
         ShowTranscript(item, _loadCts.Token);
+    }
+
+    // ---- Text in photos ----
+
+    private PhotoGallery.Core.Ocr.PhotoText? _photoText;
+    private static readonly Microsoft.UI.Xaml.Media.Brush TextMarkFill =
+        new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0x55, 0xFF, 0xE0, 0x66));
+
+    /// <summary>For a photo: shows the text read from it (reading it now if that hasn't happened yet).</summary>
+    private async void ShowPhotoText(MediaItem item, CancellationToken ct)
+    {
+        SetPhotoText(null);
+        if (item.Kind == MediaKind.Video || !S.PhotoText.IsAvailable) return;
+        var text = await Task.Run(() => S.PhotoTexts.Get(item.Id)) ?? await S.PhotoText.RequestAsync(item.Id);
+        if (ct.IsCancellationRequested || _current?.Id != item.Id) return;
+        SetPhotoText(text);
+    }
+
+    private void SetPhotoText(PhotoGallery.Core.Ocr.PhotoText? text)
+    {
+        _photoText = text is { HasText: true } ? text : null;
+        PhotoTextPanel.Visibility = _photoText is null ? Visibility.Collapsed : Visibility.Visible;
+        PhotoTextBlock.TextHighlighters.Clear();
+        PhotoTextBlock.MaxLines = 12;
+        if (_photoText is null)
+        {
+            PhotoTextBlock.Text = "";
+            PhotoTextMore.Visibility = Visibility.Collapsed;
+            TextMarkLayer.Children.Clear();
+            return;
+        }
+        var plain = _photoText.Text;
+        PhotoTextBlock.Text = plain;
+        PhotoTextMore.Content = $"Show all ({_photoText.Lines.Count} lines)";
+        PhotoTextMore.Visibility = _photoText.Lines.Count > 12 ? Visibility.Visible : Visibility.Collapsed;
+        // Opened from search results: mark what was searched for, in the text and on the photo.
+        var matches = SearchHighlighter.Find(plain, _searchQuery);
+        if (matches.Count > 0)
+        {
+            var marker = new Microsoft.UI.Xaml.Documents.TextHighlighter { Background = MarkBackground, Foreground = MarkForeground };
+            foreach (var m in matches) marker.Ranges.Add(new Microsoft.UI.Xaml.Documents.TextRange { StartIndex = m.Start, Length = m.Length });
+            PhotoTextBlock.TextHighlighters.Add(marker);
+        }
+        ShowTextMarks();
+    }
+
+    /// <summary>Outlines the searched-for words on the photo (only where the photo is shown as shot: not rotated or cropped here).</summary>
+    private void ShowTextMarks()
+    {
+        TextMarkLayer.Children.Clear();
+        if (_photoText is null || _searchQuery is null || _current is null || PhotoLayer.ActualWidth <= 0) return;
+        if (S.Edits.Get(_current.Id) is { } edits && (edits.Rotation != 0 || edits.FlipHorizontal || edits.Crop is not null)) return;
+        double w = PhotoLayer.ActualWidth, h = PhotoLayer.ActualHeight;
+        foreach (var word in _photoText.Lines.SelectMany(l => l.Words).Where(word => SearchHighlighter.Find(word.Text, _searchQuery).Count > 0))
+        {
+            var (x, y, bw, bh) = word.In(w, h);
+            var pad = Math.Max(2, bh * 0.2);
+            var mark = new Border
+            {
+                Width = bw + 2 * pad, Height = bh + 2 * pad, CornerRadius = new CornerRadius(3),
+                Background = TextMarkFill, BorderBrush = CurrentMarkBackground, BorderThickness = new Thickness(2),
+            };
+            Canvas.SetLeft(mark, x - pad);
+            Canvas.SetTop(mark, y - pad);
+            TextMarkLayer.Children.Add(mark);
+        }
+    }
+
+    private void OnPhotoLayerSizeChanged(object sender, SizeChangedEventArgs e) => ShowTextMarks();
+
+    private void OnPhotoTextMore(object sender, RoutedEventArgs e)
+    {
+        PhotoTextBlock.MaxLines = 0;
+        PhotoTextMore.Visibility = Visibility.Collapsed;
+    }
+
+    private void OnCopyPhotoText(object sender, RoutedEventArgs e)
+    {
+        if (_photoText is null) return;
+        var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        package.SetText(_photoText.Text);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        ShowToast("Text copied");
     }
 }

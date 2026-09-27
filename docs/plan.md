@@ -14,6 +14,8 @@ Month headers inside the timeline grid and drag-to-reorder in albums are done.
 
 Round 3 (2026-09-26): OneDrive tags and people via the SharePoint list behind the drive (People and Tags pages, person filter, naming/merging, face-crop avatars via Windows' face detector); day markers and a stronger selection highlight in the grid; Ctrl+wheel zoom; On this day with per-year date headers and day stepping; map cluster selection and deeper zoom; editor side handles and explicit Save as copy / Overwrite original / Keep edits in gallery, with derived-copy badges and an exit warning for gallery-only edits; cloud-only (Files On-Demand) placeholders are never read.
 
+Round 6 (2026-09-26): find box in transcripts (Enter/Shift+Enter, Ctrl+F); text in photos read with Windows OCR, searchable, shown under Details with search matches outlined on the photo.
+
 Round 5 (2026-09-26): video transcripts on this PC (Whisper on the GPU, speaker labels), shown beside the video with click-to-seek and follow-along highlighting, and searchable.
 
 Round 4 (2026-09-26): Live Photo motion plays from OneDrive via the web session; save a frame from any video; save a Live Photo's motion as an MP4; a video editor (rotate, trim, remove sound → MP4); smart crop in the photo editor; People from OneDrive's web API with names, merges and face boxes (People avatars cropped to the face, face outline on hover in the viewer).
@@ -132,6 +134,18 @@ Local speech to text, nothing uploaded. Pipeline per video (`SpeechTranscriber`)
   ERes2Net split more. `SpeakerAssigner` folds voices under 15 % / 4 s into neighbours and labels only when ≥ 2 remain.
 - Stored in `Transcripts` (valid for the file's size/date; model name so older pipelines get redone), words in
   `MediaFts.Speech`. Background queue newest first after videos without transcripts; the viewed video jumps the queue.
+
+## Text in photos (OCR, 2026-09-26, working)
+- Windows' built-in `Windows.Media.Ocr` (offline, user's languages; en-US here). Decoded upright at ~1600 px long side
+  (2600 for tall phone screenshots): as accurate as full size and much faster; a 4K screenshot read *better* downscaled.
+  Per photo ≈ 7 ms open, 20 ms decode (JPEG/PNG; HEIC 180–550 ms), 30–45 ms OCR; scales with workers
+  (1 → 18/s, 4 → 51/s, 8 → 83/s on screenshots). In the app ~20+/s mixed → ~3 h for 240k photos.
+- Quality: fine on receipts, documents, signs; photo-of-paper splits some words ("S okane", "Ai rport").
+- `OcrCleaner` drops texture noise (lone letters/symbols, lines without a word of ≥ 3 letters/digits; a photo needs two
+  real words or one of ≥ 4 letters). Words stored with boxes as fractions of the long side (like faces) in `PhotoText`;
+  words in `MediaFts.PhotoText`. Order: screenshots and OneDrive's Text/Receipt/Document/Whiteboard/Sign/Menu/Poster/Book
+  categories first, then newest first.
+- Viewer: "Text in photo" under Details; opened from search, matches are highlighted there and outlined on the photo.
 
 ## Media formats (from the library census)
 | Kind | Extensions (count) | Decode / handling |

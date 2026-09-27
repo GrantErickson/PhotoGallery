@@ -208,6 +208,22 @@ public sealed class GalleryDatabase
         DROP TABLE MediaFts;
         ALTER TABLE MediaFtsNew RENAME TO MediaFts;
         """,
+        // v10: text read from photos (OCR) with word boxes, and its words in the search index (MediaFts rebuilt again).
+        """
+        CREATE TABLE PhotoText (
+            MediaId      INTEGER PRIMARY KEY REFERENCES Media(Id) ON DELETE CASCADE,
+            FileSize     INTEGER NOT NULL,
+            FileModified INTEGER NOT NULL,
+            Engine       TEXT NOT NULL,
+            CreatedUtc   TEXT NOT NULL,
+            Lines        TEXT NOT NULL,
+            Text         TEXT NOT NULL
+        );
+        CREATE VIRTUAL TABLE MediaFtsNew USING fts5(Name, Folder, Tags, Camera, Speech, PhotoText, tokenize = 'unicode61 remove_diacritics 2');
+        INSERT INTO MediaFtsNew (rowid, Name, Folder, Tags, Camera, Speech) SELECT rowid, Name, Folder, Tags, Camera, Speech FROM MediaFts;
+        DROP TABLE MediaFts;
+        ALTER TABLE MediaFtsNew RENAME TO MediaFts;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

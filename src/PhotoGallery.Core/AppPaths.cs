@@ -38,6 +38,8 @@ public sealed class AppSettings
     public bool OneDriveWebConnected { get; set; }
     /// <summary>Transcribe every video in the background (the one being watched is always done on request).</summary>
     public bool TranscribeInBackground { get; set; } = true;
+    /// <summary>Read the text in every photo (OCR) in the background (the one being viewed is always read).</summary>
+    public bool ReadPhotoTextInBackground { get; set; } = true;
     /// <summary>Grid tile edge in DIPs.</summary>
     public double TileSize { get; set; } = 180;
 

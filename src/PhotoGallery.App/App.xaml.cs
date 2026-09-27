@@ -51,5 +51,6 @@ public partial class App : Application
         await Task.Delay(TimeSpan.FromMinutes(1));
         services.CloudSync.SyncIfStale();
         services.Transcription.Start();
+        services.PhotoText.Start();
     }
 }

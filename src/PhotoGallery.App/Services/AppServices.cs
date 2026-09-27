@@ -22,6 +22,7 @@ public sealed class AppServices
         Edits = new EditRepository(Database);
         People = new PeopleRepository(Database);
         Transcripts = new TranscriptRepository(Database);
+        PhotoTexts = new PhotoTextRepository(Database);
         Faces = new Imaging.FaceCropper(Path.Combine(Paths.Root, "faces"));
         Thumbnails = new ThumbnailCache(Paths.Thumbnails);
         Thumbnails.Failed += (path, ex) => Log.Error($"Thumbnail failed for {path}", ex);
@@ -36,6 +37,7 @@ public sealed class AppServices
         Indexing = new IndexingService(this);
         CloudSync = new CloudSyncService(this);
         Transcription = new TranscriptionService(this);
+        PhotoText = new PhotoTextService(this);
     }
 
     public AppPaths Paths { get; }
@@ -47,6 +49,8 @@ public sealed class AppServices
     public PeopleRepository People { get; }
     public TranscriptRepository Transcripts { get; }
     public TranscriptionService Transcription { get; }
+    public PhotoTextRepository PhotoTexts { get; }
+    public PhotoTextService PhotoText { get; }
     public Imaging.FaceCropper Faces { get; }
     public CloudSyncService CloudSync { get; }
     public ThumbnailCache Thumbnails { get; }

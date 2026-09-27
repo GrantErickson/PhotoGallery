@@ -296,7 +296,7 @@ public sealed partial class MainWindow : Window
         if (text.Length == 0) return;
         SearchBox.Text = text;
         ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest($"“{text}”", new MediaFilter { Text = text, IncludeScreenshots = true },
-            "File and folder names, tags, people, cameras and what's said in videos", EmptyMessage: "No matches."));
+            "File and folder names, tags, people, cameras, text in photos and what's said in videos", EmptyMessage: "No matches."));
     }
 
     // ---------- Viewer ----------
