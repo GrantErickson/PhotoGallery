@@ -27,7 +27,11 @@ public sealed class LibraryStats
 
 public sealed class MediaRepository(GalleryDatabase database)
 {
-    private const string SummaryColumns = "m.Id, m.Kind, m.DateTaken, m.Motion, m.Rating, m.DurationMs, m.IsScreenshot, EXISTS (SELECT 1 FROM Edits e WHERE e.MediaId = m.Id) AS IsEdited, m.DerivedFromId IS NOT NULL AS IsDerived";
+    private const string SummaryColumns =
+        "m.Id, m.Kind, m.DateTaken, m.Motion, m.Rating, m.DurationMs, m.IsScreenshot, EXISTS (SELECT 1 FROM Edits e WHERE e.MediaId = m.Id) AS IsEdited, " +
+        "m.DerivedFromId IS NOT NULL AS IsDerived, " +
+        "(SELECT CAST(round((min(f.BoxX) + max(f.BoxX + f.BoxW)) * 5000) AS INTEGER) * 100000 + CAST(round((min(f.BoxY) + max(f.BoxY + f.BoxH)) * 5000) AS INTEGER) " +
+        "FROM MediaFaces f WHERE f.MediaId = m.Id AND f.BoxX IS NOT NULL) AS FaceFocus";
 
     // ---------- Indexing ----------
 
@@ -219,7 +223,8 @@ public sealed class MediaRepository(GalleryDatabase database)
             case KindFilter.Videos: sql.Append(" AND m.Kind = 2"); break;
         }
         // Screenshots are excluded from the main flow, but always shown when browsing a folder or album explicitly.
-        if (!f.IncludeScreenshots && f.FolderId is null && f.AlbumId is null) sql.Append(" AND m.IsScreenshot = 0");
+        if (f.ScreenshotsOnly) sql.Append(" AND m.IsScreenshot = 1");
+        else if (!f.IncludeScreenshots && f.FolderId is null && f.AlbumId is null) sql.Append(" AND m.IsScreenshot = 0");
         if (f.MotionOnly) sql.Append(" AND m.Motion IN (1, 2, 3)");
         if (f.EditedOnly) sql.Append(" AND m.Id IN (SELECT MediaId FROM Edits)");
         if (f.MinRating > 0)

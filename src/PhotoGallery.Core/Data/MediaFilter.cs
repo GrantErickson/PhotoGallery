@@ -17,6 +17,8 @@ public sealed record MediaFilter
 {
     public KindFilter Kinds { get; init; } = KindFilter.All;
     public bool IncludeScreenshots { get; init; }
+    /// <summary>Nothing but screenshots.</summary>
+    public bool ScreenshotsOnly { get; init; }
     public bool MotionOnly { get; init; }
     /// <summary>Only items with edits kept in the gallery (not yet written to a file).</summary>
     public bool EditedOnly { get; init; }
@@ -54,6 +56,14 @@ public sealed class MediaSummary
     public bool IsDerived { get; set; }
     /// <summary>First item of a new day in the current (date-ordered) list; set by the view.</summary>
     public bool StartsDay { get; set; }
+    /// <summary>
+    /// Where the faces are (the middle of the box around all of them), packed as x·10⁹ + y·10⁴ with x, y in
+    /// ten-thousandths of the upright picture's long side; null without face boxes. See <see cref="Focus"/>.
+    /// </summary>
+    public long? FaceFocus { get; set; }
+
+    /// <summary>The faces' middle as fractions of the long side, if known (for cropping tiles around people).</summary>
+    public (double X, double Y)? Focus => FaceFocus is { } f ? (f / 100000 / 10000.0, f % 100000 / 10000.0) : null;
 
     public DateTime TakenLocal => DateTime.SpecifyKind(DateTime.UnixEpoch.AddSeconds(DateTaken), DateTimeKind.Unspecified);
 }

@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using PhotoGallery.App.Services;
 using PhotoGallery.Core.Data;
+using Windows.Media.Playback;
 using Windows.System;
 
 namespace PhotoGallery.App.Controls;
@@ -64,6 +65,13 @@ public sealed partial class GalleryView : UserControl
         get => _baseFilter;
         set
         {
+            // Views that show screenshots anyway (search, folders) start with them included.
+            if (value is { IncludeScreenshots: true } && (_baseFilter is null || !_baseFilter.IncludeScreenshots) && ScreenshotBox.SelectedIndex == 0)
+            {
+                _settingScreenshots = true;
+                ScreenshotBox.SelectedIndex = 1;
+                _settingScreenshots = false;
+            }
             _baseFilter = value;
             if (_loaded) _ = ReloadAsync();
         }
@@ -74,7 +82,8 @@ public sealed partial class GalleryView : UserControl
         Kinds = (KindFilter)Math.Max(0, KindBox.SelectedIndex),
         MinRating = Math.Max(f.MinRating, RatingBox.SelectedIndex),
         MotionOnly = f.MotionOnly || MotionToggle.IsChecked == true,
-        IncludeScreenshots = f.IncludeScreenshots || ScreenshotToggle.IsChecked == true,
+        IncludeScreenshots = ScreenshotBox.SelectedIndex >= 1,
+        ScreenshotsOnly = ScreenshotBox.SelectedIndex == 2,
         AlbumId = AlbumId ?? f.AlbumId,
     };
 
@@ -98,6 +107,7 @@ public sealed partial class GalleryView : UserControl
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        StopPreview();
         S.Indexing.LibraryChanged -= OnLibraryChanged;
         S.SaveSettings();
     }
@@ -151,7 +161,7 @@ public sealed partial class GalleryView : UserControl
             Grid.ScrollIntoView(items[index], ScrollIntoViewAlignment.Leading);
         if (_restore is not null)
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, ApplyRestore); // after layout
-        UpdateCurrentDate();
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, UpdateCurrentDate);
     }
 
     private static void MarkDayStarts(List<MediaSummary> items, bool dateOrdered)
@@ -176,20 +186,22 @@ public sealed partial class GalleryView : UserControl
 
     private void OnContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
-        if (args.ItemContainer.ContentTemplateRoot is not Grid root || root.Children[0] is not Image image) return;
+        if (args.ItemContainer.ContentTemplateRoot is not Grid root || root.Children[0] is not Border image) return;
 
         if (args.InRecycleQueue)
         {
+            if (ReferenceEquals(_previewRoot, root)) StopPreview();
             (root.Tag as TileState)?.Cancellation.Cancel();
             root.Tag = null;
-            image.Source = null;
+            image.Background = null;
             return;
         }
 
         if (args.Phase == 0)
         {
+            if (ReferenceEquals(_previewRoot, root)) StopPreview();
             (root.Tag as TileState)?.Cancellation.Cancel();
-            image.Source = null;
+            image.Background = null;
             SetSelectedVisual(root, args.ItemContainer.IsSelected);
             if (args.Item is MediaSummary item) root.Tag = new TileState(item);
             args.RegisterUpdateCallback(1, OnContainerContentChanging);
@@ -201,7 +213,7 @@ public sealed partial class GalleryView : UserControl
         args.Handled = true;
     }
 
-    private async Task LoadThumbnailAsync(Grid root, Image image, TileState state)
+    private async Task LoadThumbnailAsync(Grid root, Border image, TileState state)
     {
         var id = state.Item.Id;
         var ct = state.Cancellation.Token;
@@ -219,13 +231,107 @@ public sealed partial class GalleryView : UserControl
         }
         if (path is null || ct.IsCancellationRequested || !ReferenceEquals(root.Tag, state)) return; // recycled meanwhile
 
-        var scale = XamlRoot?.RasterizationScale ?? 1.0;
-        image.Source = new BitmapImage
+        // Thumbnails are small (360 px); decoded whole so the short side still fills the square tile.
+        var bitmap = new BitmapImage();
+        var brush = new ImageBrush { ImageSource = bitmap, Stretch = Stretch.UniformToFill };
+        if (state.Item.Focus is { } focus)
+            bitmap.ImageOpened += (_, _) => brush.RelativeTransform = FocusShift(focus, bitmap.PixelWidth, bitmap.PixelHeight);
+        bitmap.UriSource = new Uri(path);
+        image.Background = brush;
+    }
+
+    /// <summary>
+    /// Moves a cropped picture so the faces sit in the middle of the square tile (as far as the picture allows),
+    /// instead of always keeping the middle of the picture. <paramref name="focus"/> is in fractions of the long side.
+    /// </summary>
+    private static TranslateTransform? FocusShift((double X, double Y) focus, int width, int height)
+    {
+        if (width <= 0 || height <= 0 || width == height) return null;
+        double longSide = Math.Max(width, height);
+        if (width > height)
         {
-            DecodePixelWidth = (int)(SizeSlider.Value * scale),
-            DecodePixelType = DecodePixelType.Physical,
-            UriSource = new Uri(path),
-        };
+            // Filled by height: the picture is `aspect` tiles wide, centred; slide it sideways.
+            var aspect = width / (double)height;
+            var shift = Math.Clamp(aspect * (0.5 - focus.X * longSide / width), -(aspect - 1) / 2, (aspect - 1) / 2);
+            return new TranslateTransform { X = shift };
+        }
+        else
+        {
+            var aspect = height / (double)width;
+            var shift = Math.Clamp(aspect * (0.5 - focus.Y * longSide / height), -(aspect - 1) / 2, (aspect - 1) / 2);
+            return new TranslateTransform { Y = shift };
+        }
+    }
+
+    // ---------- Video previews in the grid ----------
+
+    private MediaPlayer? _previewPlayer;
+    private Microsoft.UI.Xaml.Controls.MediaPlayerElement? _previewElement;
+    private Grid? _previewRoot;
+    private Button? _previewButton;
+
+    /// <summary>The tile's play button: plays the video right there; again pauses, again resumes.</summary>
+    private void OnTilePlayClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || FindAncestor<Grid>(button, g => g.Tag is TileState) is not { Tag: TileState state } root) return;
+        if (ReferenceEquals(_previewRoot, root) && _previewPlayer is { } player)
+        {
+            if (player.PlaybackSession.PlaybackState == Windows.Media.Playback.MediaPlaybackState.Playing)
+            {
+                player.Pause();
+                SetPlayGlyph(button, playing: false);
+            }
+            else
+            {
+                player.Play();
+                SetPlayGlyph(button, playing: true);
+            }
+            return;
+        }
+        StopPreview();
+        if (S.Media.GetPath(state.Item.Id) is not { } path) return;
+        _previewPlayer ??= CreatePreviewPlayer();
+        _previewElement = new Microsoft.UI.Xaml.Controls.MediaPlayerElement { Stretch = Stretch.UniformToFill, IsHitTestVisible = false };
+        _previewElement.SetMediaPlayer(_previewPlayer);
+        root.Children.Insert(1, _previewElement); // over the thumbnail, under the badges
+        _previewRoot = root;
+        _previewButton = button;
+        _previewPlayer.Source = Windows.Media.Core.MediaSource.CreateFromUri(new Uri(path));
+        _previewPlayer.Play();
+        SetPlayGlyph(button, playing: true);
+    }
+
+    private MediaPlayer CreatePreviewPlayer()
+    {
+        var player = new MediaPlayer { AutoPlay = false };
+        player.MediaEnded += (_, _) => DispatcherQueue.TryEnqueue(StopPreview);
+        return player;
+    }
+
+    private void StopPreview()
+    {
+        if (_previewPlayer is { } player)
+        {
+            player.Pause();
+            player.Source = null;
+        }
+        if (_previewRoot is not null && _previewElement is not null) _previewRoot.Children.Remove(_previewElement);
+        if (_previewButton is not null) SetPlayGlyph(_previewButton, playing: false);
+        _previewElement = null;
+        _previewRoot = null;
+        _previewButton = null;
+    }
+
+    private static void SetPlayGlyph(Button button, bool playing)
+    {
+        if (button.Content is StackPanel { Children: [FontIcon icon, ..] }) icon.Glyph = playing ? "\uE769" : "\uE768";
+    }
+
+    private static T? FindAncestor<T>(DependencyObject start, Func<T, bool> match) where T : DependencyObject
+    {
+        for (var node = VisualTreeHelper.GetParent(start); node is not null; node = VisualTreeHelper.GetParent(node))
+            if (node is T t && match(t)) return t;
+        return null;
     }
 
     // ---------- Tile size ----------
@@ -278,6 +384,27 @@ public sealed partial class GalleryView : UserControl
             }
         }
         JumpList.ItemsSource = entries;
+        _jumpEntries = entries;
+        _currentJump = null;
+    }
+
+    private List<JumpEntry> _jumpEntries = [];
+    private JumpEntry? _currentJump;
+    private JumpEntry? _currentJumpYear;
+
+    /// <summary>Marks the month (and year) at the top of the grid in the jump list, and keeps it in view there.</summary>
+    private void UpdateCurrentJump(int firstVisible)
+    {
+        if (_jumpEntries.Count == 0 || firstVisible < 0) return;
+        var entry = _jumpEntries.LastOrDefault(e => e.Index <= firstVisible && (!e.IsYear || GroupMode != GroupMode.Month)) ?? _jumpEntries[0];
+        if (ReferenceEquals(entry, _currentJump)) return;
+        if (_currentJump is not null) _currentJump.IsCurrent = false;
+        if (_currentJumpYear is not null) _currentJumpYear.IsCurrent = false;
+        _currentJump = entry;
+        entry.IsCurrent = true;
+        _currentJumpYear = _jumpEntries.LastOrDefault(e => e.IsYear && e.Index <= entry.Index);
+        if (_currentJumpYear is not null) _currentJumpYear.IsCurrent = true;
+        JumpList.ScrollIntoView(entry);
     }
 
     private void OnJumpClick(object sender, ItemClickEventArgs e)
@@ -324,13 +451,27 @@ public sealed partial class GalleryView : UserControl
             Open(viewed);
     }
 
-    private MediaSummary? FirstVisibleItem() =>
-        Grid.ItemsPanelRoot is ItemsWrapGrid { FirstVisibleIndex: >= 0 } panel && panel.FirstVisibleIndex < _items.Count
-            ? _items[panel.FirstVisibleIndex]
-            : null;
+    /// <summary>
+    /// The item at the top-left of the visible grid, found by hit-testing (the panel's FirstVisibleIndex isn't
+    /// reliable once the grid is grouped by month).
+    /// </summary>
+    private MediaSummary? FirstVisibleItem()
+    {
+        if (Grid.ActualWidth <= 0 || XamlRoot is null) return null;
+        var origin = Grid.TransformToVisual(null).TransformPoint(new Windows.Foundation.Point(0, 0));
+        for (var y = 8.0; y < Math.Min(Grid.ActualHeight, 600); y += 24)
+            foreach (var x in new[] { 24.0, 96.0 })
+                foreach (var element in VisualTreeHelper.FindElementsInHostCoordinates(new Windows.Foundation.Point(origin.X + x, origin.Y + y), Grid))
+                    if (element is GridViewItem container && Grid.ItemFromContainer(container) is MediaSummary item) return item;
+        return null;
+    }
 
-    private void UpdateCurrentDate() =>
-        CurrentDate.Text = AlbumId is null && FirstVisibleItem() is { } item ? item.TakenLocal.ToString("MMMM yyyy", CultureInfo.CurrentCulture) : "";
+    private void UpdateCurrentDate()
+    {
+        var first = FirstVisibleItem();
+        CurrentDate.Text = AlbumId is null && first is { } item ? item.TakenLocal.ToString("MMMM yyyy", CultureInfo.CurrentCulture) : "";
+        if (AlbumId is null && first is { } top) UpdateCurrentJump(_items.IndexOf(top));
+    }
 
     // ---------- Opening the viewer ----------
 
@@ -436,9 +577,11 @@ public sealed partial class GalleryView : UserControl
 
     // ---------- Filters and selection ----------
 
+    private bool _settingScreenshots;
+
     private void OnFilterChanged(object sender, RoutedEventArgs e)
     {
-        if (_loaded) _ = ReloadAsync();
+        if (_loaded && !_settingScreenshots) _ = ReloadAsync();
     }
 
     /// <summary>The tile's selection overlay (accent border, tint and check) — stronger than the default highlight.</summary>

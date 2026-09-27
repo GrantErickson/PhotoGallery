@@ -42,12 +42,11 @@
                         <TextBlock Text="◉ Live" />
                     </StackPanel>
                 </ToggleButton>
-                <ToggleButton x:Name="ScreenshotToggle" Click="OnFilterChanged" ToolTipService.ToolTip="Include screenshots">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xF7ED;" FontSize="14" />
-                        <TextBlock Text="Screenshots" />
-                    </StackPanel>
-                </ToggleButton>
+                <ComboBox x:Name="ScreenshotBox" SelectedIndex="0" MinWidth="150" SelectionChanged="OnFilterChanged" ToolTipService.ToolTip="Screenshots">
+                    <x:String>No screenshots</x:String>
+                    <x:String>With screenshots</x:String>
+                    <x:String>Only screenshots</x:String>
+                </ComboBox>
             </StackPanel>
 
             <CommandBar x:Name="SelectionBar" Visibility="Collapsed" DefaultLabelPosition="Right" HorizontalAlignment="Left" Background="Transparent">
@@ -88,7 +87,7 @@
                 <ProgressRing x:Name="Busy" IsActive="False" Width="16" Height="16" />
                 <TextBlock x:Name="CurrentDate" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                 <TextBlock x:Name="CountText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                <Slider x:Name="SizeSlider" Width="110" Minimum="100" Maximum="360" StepFrequency="20" ValueChanged="OnTileSizeChanged"
+                <Slider x:Name="SizeSlider" Width="130" Minimum="100" Maximum="480" StepFrequency="20" ValueChanged="OnTileSizeChanged"
                         ToolTipService.ToolTip="Thumbnail size" VerticalAlignment="Center" />
             </StackPanel>
         </Grid>
@@ -127,9 +126,9 @@
             </GridView.GroupStyle>
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="data:MediaSummary">
-                    <!-- Children order matters to code-behind: [0] image ... [^2] day accent bar, [^1] selection overlay. -->
+                    <!-- Children order matters to code-behind: [0] picture (an image brush, shifted to show faces) ... [^2] day accent bar, [^1] selection overlay. -->
                     <Grid Background="{ThemeResource ControlAltFillColorSecondaryBrush}" CornerRadius="4" DoubleTapped="OnTileDoubleTapped" RightTapped="OnTileRightTapped">
-                        <Image Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <Border />
                         <StackPanel Orientation="Horizontal" Spacing="4" Margin="6" HorizontalAlignment="Left" VerticalAlignment="Top">
                             <Border Visibility="{x:Bind app:Format.Visible(StartsDay)}" Padding="8,2" CornerRadius="10"
                                     Background="{ThemeResource AccentFillColorDefaultBrush}" BorderBrush="#E6FFFFFF" BorderThickness="1">
@@ -150,12 +149,13 @@
                                     ToolTipService.ToolTip="Has edits kept in the gallery (not written to a file yet)">
                                 <FontIcon Glyph="&#xE70F;" FontSize="10" Foreground="White" />
                             </Border>
-                            <Border Visibility="{x:Bind app:Format.IsVideo(Kind)}" Padding="5,1" CornerRadius="3" Background="#99000000">
+                            <Button Visibility="{x:Bind app:Format.IsVideo(Kind)}" Padding="6,2" MinHeight="0" CornerRadius="3" Background="#99000000"
+                                    BorderThickness="0" Click="OnTilePlayClick" ToolTipService.ToolTip="Play a preview here">
                                 <StackPanel Orientation="Horizontal" Spacing="4">
                                     <FontIcon Glyph="&#xE768;" FontSize="10" Foreground="White" />
                                     <TextBlock Text="{x:Bind app:Format.Duration(DurationMs)}" FontSize="11" Foreground="White" />
                                 </StackPanel>
-                            </Border>
+                            </Button>
                         </StackPanel>
                         <TextBlock Visibility="{x:Bind app:Format.HasRating(Rating)}" Text="{x:Bind app:Format.Stars(Rating)}"
                                    Margin="6" FontSize="12" Foreground="Gold" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
@@ -194,8 +194,8 @@
             </ListView.ItemContainerStyle>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="app:JumpEntry">
-                    <TextBlock Text="{x:Bind Label}" FontSize="{x:Bind FontSize}" FontWeight="{x:Bind Weight}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="{x:Bind Label}" FontSize="{x:Bind FontSize}" FontWeight="{x:Bind Weight, Mode=OneWay}"
+                               Foreground="{x:Bind Foreground, Mode=OneWay}" />
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>

@@ -41,7 +41,9 @@ public sealed class AppSettings
     /// <summary>Read the text in every photo (OCR) in the background (the one being viewed is always read).</summary>
     public bool ReadPhotoTextInBackground { get; set; } = true;
     /// <summary>Grid tile edge in DIPs.</summary>
-    public double TileSize { get; set; } = 180;
+    public double TileSize { get; set; } = 220;
+    /// <summary>Bumped when a default changes, so saved settings can move to it once.</summary>
+    public int Version { get; set; }
 
     public static AppSettings Load(AppPaths paths)
     {
@@ -54,7 +56,12 @@ public sealed class AppSettings
         catch (JsonException)
         {
         }
-        settings ??= new AppSettings();
+        settings ??= new AppSettings { Version = 2 };
+        if (settings.Version < 2)
+        {
+            if (settings.TileSize <= 180) settings.TileSize = 220; // tiles got bigger by default
+            settings.Version = 2;
+        }
         var oneDrive = Environment.GetEnvironmentVariable("OneDriveConsumer") ?? Environment.GetEnvironmentVariable("OneDrive");
         settings.OneDriveRoot ??= oneDrive;
         if (settings.LibraryRoots.Count == 0 && oneDrive is not null)
