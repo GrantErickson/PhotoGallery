@@ -14,6 +14,8 @@ Month headers inside the timeline grid and drag-to-reorder in albums are done.
 
 Round 3 (2026-09-26): OneDrive tags and people via the SharePoint list behind the drive (People and Tags pages, person filter, naming/merging, face-crop avatars via Windows' face detector); day markers and a stronger selection highlight in the grid; Ctrl+wheel zoom; On this day with per-year date headers and day stepping; map cluster selection and deeper zoom; editor side handles and explicit Save as copy / Overwrite original / Keep edits in gallery, with derived-copy badges and an exit warning for gallery-only edits; cloud-only (Files On-Demand) placeholders are never read.
 
+Round 7 (2026-09-26): screenshots-only view; face names in the viewer link to the person; photo text at the bottom of the details with its own find; timeline tiles centred on faces, bigger by default, with video previews and a jump list that follows scrolling; the map opens at a photo (coordinates) or its town/place (offline GeoNames names), and custom places (centre + radius) are searchable; Live badges only where OneDrive has the video; Auto light and colour plus saturation/warmth/tint in the editor; Blurry photos (blurriest first) and a Live Photo's sharpest frame; Similar photos and searching by description (CLIP on the GPU).
+
 Round 6 (2026-09-26): find box in transcripts (Enter/Shift+Enter, Ctrl+F); text in photos read with Windows OCR, searchable, shown under Details with search matches outlined on the photo.
 
 Round 5 (2026-09-26): video transcripts on this PC (Whisper on the GPU, speaker labels), shown beside the video with click-to-seek and follow-along highlighting, and searchable.
@@ -146,6 +148,43 @@ Local speech to text, nothing uploaded. Pipeline per video (`SpeechTranscriber`)
   words in `MediaFts.PhotoText`. Order: screenshots and OneDrive's Text/Receipt/Document/Whiteboard/Sign/Menu/Poster/Book
   categories first, then newest first.
 - Viewer: "Text in photo" under Details; opened from search, matches are highlighted there and outlined on the photo.
+
+## Live Photo badges (2026-09-26)
+- A still with an Apple content identifier and no local video was badged as a cloud Live Photo (32,000), but plain
+  photos carry one too. OneDrive's photo listing (already read by the face sync) marks Live Photos with an empty
+  `photo.livePhoto` object; it's stored as `Media.CloudLive` and decides the badge (the old guess only for photos
+  OneDrive hasn't reported). After a full scan (15 min): 29,349 Live in OneDrive, 28,969 badged as cloud-only (the rest
+  have local videos), ~3,000 false badges gone.
+
+## Auto light and colour (2026-09-26)
+- All colour edits are one matrix (`ColorAdjust`): white balance as log-balanced channel gains (warmth, tint) →
+  saturation around Rec. 709 luma → contrast/brightness around mid-grey. Exposure stays a separate effect.
+- Auto (`AutoAdjust`, from a 256 px render of the crop): levels stretch the 0.5–99.5th luma percentiles to 0.02–0.98
+  (contrast only raised, ×1.6 at most), midtones nudged into 0.38–0.55, a little saturation for dull pictures. White
+  balance only corrects what two estimates agree on — near-grey pixels and "grey edge" (colour differences across
+  edges) — taking the smaller, 70 % of it: grey world alone cooled sunny grass/wood scenes by −0.4–0.6, while lamp-lit
+  rooms still lose their orange cast (−0.2 to −0.3).
+
+## Sharpness and Blurry photos (2026-09-26)
+- Score (`Sharpness`): on the 360 px thumbnail, brightness stretched to its 1st–99th percentile (so dark ≠ blurry), then
+  the standard deviation of the Laplacian per tile of a 4 × 4 grid, 90th percentile tile (a sharp subject on a soft
+  background counts as sharp). Tried per-tile contrast normalisation: flagged smooth sharp portraits. Threshold 24:
+  12.6k of 240k photos (5 %); ~490 photos/s from cached thumbnails.
+- Sharpest frame of a Live Photo's video: `MediaComposition.GetThumbnailsAsync` (batch) returns neighbouring frames,
+  and a paused MediaPlayer shows a frame or two off, so frames are grabbed one at a time (~200 ms each; ≤ 30 spread
+  frames, then the neighbours of the best) at times read from the file's `stts`/`ctts`/`elst` (an iPhone 6s Live Photo
+  starts at 7.5 fps, then 15), and the chosen frame is shown as a still — exactly what Save frame writes.
+
+## Similar photos and searching by description (CLIP, 2026-09-26)
+- OpenAI CLIP ViT-L/14 as ONNX fp16 (Xenova/clip-vit-large-patch14: vision 609 MB, text 248 MB), embeddings from the
+  thumbnails (shorter side 224, centre crop), stored as 768 × int8 (unit vector × 127) in `Embeddings`; all in memory
+  (~170 MB) and searched by brute force on all cores in tens of milliseconds.
+- ONNX Runtime conflict: sherpa-onnx ships the CPU runtime 1.28.2 as `onnxruntime.dll`, which wins over Windows ML's
+  1.24 (DirectML) in the output; DirectML packages stop at 1.24.4. So CLIP runs in its own process,
+  `PhotoGallery.Embedder` (copied to `embedder\`), JSON lines over stdin/stdout, below-normal priority, stopped after
+  5 minutes idle. On the RTX 4070 Ti through DirectML: ~120 photos/s → the library in ~35 min.
+- Similar: nearest 200 with cosine ≥ 0.55 (a photo not yet reached is embedded on demand). Description: CLIP BPE
+  tokenizer in Core, nearest 300 with cosine ≥ 0.19, offered from word-search results as "Photos that look like …".
 
 ## Media formats (from the library census)
 | Kind | Extensions (count) | Decode / handling |
