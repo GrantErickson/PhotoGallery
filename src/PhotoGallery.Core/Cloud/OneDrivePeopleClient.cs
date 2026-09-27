@@ -27,8 +27,8 @@ public readonly record struct FaceBox(double X, double Y, double Width, double H
 /// <summary>One detected face: OneDrive's id for the face, the person it belongs to and where it is.</summary>
 public sealed record OneDriveFace(string FaceId, string PersonId, FaceBox Box);
 
-/// <summary>A photo in OneDrive with the faces detected in it.</summary>
-public sealed record OneDrivePhoto(string ItemId, string Name, string? FolderPath, string? ETag, IReadOnlyList<OneDriveFace> Faces);
+/// <summary>A photo in OneDrive with the faces detected in it, and whether OneDrive has its Live Photo video.</summary>
+public sealed record OneDrivePhoto(string ItemId, string Name, string? FolderPath, string? ETag, IReadOnlyList<OneDriveFace> Faces, bool IsLive = false);
 
 public sealed record OneDrivePhotoPage(IReadOnlyList<OneDrivePhoto> Photos, string? NextLink);
 
@@ -168,7 +168,9 @@ public sealed class OneDrivePeopleClient(IOneDriveWebToken token, HttpMessageHan
                 faces.Add(new OneDriveFace(faceId, personId, box));
             }
         }
-        return new OneDrivePhoto(id, name, folder, Str(e, "@odata.etag"), faces);
+        // A Live Photo has an (empty) "livePhoto" object in its photo facet.
+        var live = e.TryGetProperty("photo", out var photo) && photo.ValueKind == JsonValueKind.Object && photo.TryGetProperty("livePhoto", out _);
+        return new OneDrivePhoto(id, name, folder, Str(e, "@odata.etag"), faces, live);
     }
 
     private static string? Str(JsonElement e, string name) =>

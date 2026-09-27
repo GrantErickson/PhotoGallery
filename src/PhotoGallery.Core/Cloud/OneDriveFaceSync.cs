@@ -16,7 +16,8 @@ public sealed record FaceSyncResult(int People, int Named, int PhotosRead, int P
 /// column <see cref="OneDriveMetadataSync"/> reads, faces here mostly point at people as merged in OneDrive; the rest
 /// (groups merged away, which can keep the person's name) are resolved so one person no longer shows up as several.
 /// A full scan reads every photo's faces (about 250 requests for 250,000 photos); an incremental one reads the newest
-/// photos until a page brings nothing new, then resolves people merged since.
+/// photos until a page brings nothing new, then resolves people merged since. The same listing says which photos
+/// OneDrive has a Live Photo video for.
 /// </summary>
 public sealed class OneDriveFaceSync(OneDrivePeopleClient client, GalleryDatabase database, MediaRepository media, AppSettings settings)
 {
@@ -67,6 +68,7 @@ public sealed class OneDriveFaceSync(OneDrivePeopleClient client, GalleryDatabas
         var remapped = await ResolveUnlistedAsync(driveId, byId, persons, ct);
         var named = StorePeople(everyone);
         var combined = CombineSameNames(byId);
+        media.RecomputeMotion(); // which photos OneDrive has a Live Photo video for
 
         var now = DateTime.UtcNow.ToString("O");
         media.SetSyncValue(LastSyncKey, now);
@@ -112,7 +114,8 @@ public sealed class OneDriveFaceSync(OneDrivePeopleClient client, GalleryDatabas
         var stored = 0;
         foreach (var (mediaId, photo) in photos)
         {
-            db.Execute("UPDATE Media SET OneDriveItemId = @ItemId, OneDriveETag = @ETag WHERE Id = @mediaId", new { photo.ItemId, photo.ETag, mediaId }, tx);
+            db.Execute("UPDATE Media SET OneDriveItemId = @ItemId, OneDriveETag = @ETag, CloudLive = @IsLive WHERE Id = @mediaId",
+                new { photo.ItemId, photo.ETag, photo.IsLive, mediaId }, tx);
             db.Execute("DELETE FROM MediaFaces WHERE MediaId = @mediaId", new { mediaId }, tx);
             // A person is listed once per photo; keep their largest face.
             foreach (var face in photo.Faces.OrderByDescending(f => f.Box.Area))

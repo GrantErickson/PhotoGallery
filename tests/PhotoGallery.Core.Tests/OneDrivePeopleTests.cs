@@ -79,12 +79,12 @@ public sealed class OneDrivePeopleTests : IDisposable
     private static string Page(string? next, params string[] values) =>
         "{\"value\":[" + string.Join(",", values) + "]" + (next is null ? "" : ",\"@odata.nextLink\":" + JsonSerializer.Serialize(next)) + "}";
 
-    private long AddPhoto(string path)
+    private long AddPhoto(string path, string? contentId = null)
     {
         using var db = _database.Open();
         using var tx = db.BeginTransaction();
         var folder = Path.GetDirectoryName(path)!;
-        var item = new MediaItem { Path = path, FileName = Path.GetFileName(path), FileSize = 1, FileModified = 1, Kind = MediaKind.Photo };
+        var item = new MediaItem { Path = path, FileName = Path.GetFileName(path), FileSize = 1, FileModified = 1, Kind = MediaKind.Photo, ContentId = contentId };
         item.FolderId = _media.EnsureFolder(db, tx, _media.GetFolderIds(), folder, @"D:\OneDrive\Pictures");
         _media.Upsert(db, tx, item, folder);
         tx.Commit();
@@ -104,6 +104,7 @@ public sealed class OneDrivePeopleTests : IDisposable
         var photo = OneDrivePeopleClient.ParsePhoto(json.RootElement)!;
 
         Assert.Equal("Pictures/Camera Roll/2026", photo.FolderPath);
+        Assert.False(photo.IsLive);
         var face = Assert.Single(photo.Faces); // a face without a person is skipped
         Assert.Equal("p1", face.PersonId);
         Assert.Equal(new FaceBox(0.25, 0.1875, 0.1, 0.075), face.Box); // 4000 × 3000: all over 4000
@@ -186,6 +187,31 @@ public sealed class OneDrivePeopleTests : IDisposable
         Assert.Equal([solo, group, young], _media.Query(new MediaFilter { Text = "emily" }).Select(m => m.Id).Order());
         using (var db = _database.Open())
             Assert.Equal(emily.Id, db.ExecuteScalar<long>("SELECT PersonId FROM PersonAliases WHERE OneDrivePersonId = 'oldemily'"));
+    }
+
+    [Fact]
+    public async Task Cloud_Live_Photos_are_the_ones_OneDrive_says_once_it_has()
+    {
+        var live = AddPhoto(@"D:\OneDrive\Pictures\2026\live.heic", "A");
+        var plain = AddPhoto(@"D:\OneDrive\Pictures\2026\plain.heic", "B");   // content id, but no video in OneDrive
+        var unlisted = AddPhoto(@"D:\OneDrive\Pictures\2026\new.heic", "C"); // OneDrive hasn't said yet
+        _media.RecomputeMotion();
+        Assert.All([live, plain, unlisted], id => Assert.Equal(MotionSource.Cloud, _media.Get(id)!.Motion));
+
+        var server = new Server(url => url switch
+        {
+            _ when url.EndsWith("/drive?select=id") => """{"id":"D"}""",
+            _ when url.Contains("recognizedEntities") => Page(null),
+            _ when url.Contains("items/root/items") => Page(null,
+                Photo("D!live", "Pictures/2026", "live.heic", "e1").Replace("\"photo\":{", "\"photo\":{\"livePhoto\":{},"),
+                Photo("D!plain", "Pictures/2026", "plain.heic", "e2")),
+            _ => null,
+        });
+        await Sync(server).RunAsync(fullScan: true, ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal(MotionSource.Cloud, _media.Get(live)!.Motion);
+        Assert.Equal(MotionSource.None, _media.Get(plain)!.Motion);
+        Assert.Equal(MotionSource.Cloud, _media.Get(unlisted)!.Motion);
     }
 
     [Fact]

@@ -110,7 +110,7 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
         }
         catch (Exception ex)
         {
-            Log.Error($"Refreshing the OneDrive web session failed: {ex.GetType().Name}");
+            Log.Error($"Refreshing the OneDrive web session failed: {ex.GetType().Name} 0x{ex.HResult:X8}");
         }
         finally
         {

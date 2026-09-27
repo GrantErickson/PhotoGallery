@@ -242,6 +242,12 @@ public sealed class GalleryDatabase
         CREATE INDEX IX_MediaPlaces_Place ON MediaPlaces(PlaceId);
         CREATE INDEX IX_Media_Location ON Media(Latitude, Longitude) WHERE Latitude IS NOT NULL;
         """,
+        // v12: whether OneDrive has a Live Photo video for the photo (its photo.livePhoto facet, read by the face
+        // sync); NULL until OneDrive has said. The face sync is made due, as a full scan, so every photo gets it.
+        """
+        ALTER TABLE Media ADD COLUMN CloudLive INTEGER;
+        UPDATE SyncState SET Value = '2000-01-01T00:00:00.0000000Z' WHERE Key IN ('OneDriveFacesSynced', 'OneDriveFacesFullScan');
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

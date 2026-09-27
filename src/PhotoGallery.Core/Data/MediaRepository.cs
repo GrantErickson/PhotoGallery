@@ -157,7 +157,8 @@ public sealed class MediaRepository(GalleryDatabase database)
     /// <summary>
     /// Recomputes Live Photo / motion state for the whole library:
     /// local JPG/HEIC + MOV pairs by Apple content identifier (MOV is hidden from the grid),
-    /// Android embedded motion, and iPhone stills whose video only exists in OneDrive.
+    /// Android embedded motion, and iPhone stills whose video only exists in OneDrive: the ones OneDrive says are Live
+    /// Photos (CloudLive) or, until it has said, stills with an Apple content identifier (which many plain photos have too).
     /// </summary>
     public void RecomputeMotion()
     {
@@ -166,7 +167,7 @@ public sealed class MediaRepository(GalleryDatabase database)
         db.Execute(
             """
             UPDATE Media SET IsHidden = 0, PairedId = NULL WHERE PairedId IS NOT NULL OR IsHidden = 1;
-            UPDATE Media SET Motion = 0 WHERE Motion IN (1, 2);
+            UPDATE Media SET Motion = 0 WHERE Motion IN (1, 2, 3);
 
             CREATE TEMP TABLE IF NOT EXISTS Pairs (StillId INTEGER PRIMARY KEY, VideoId INTEGER);
             DELETE FROM Pairs;
@@ -187,7 +188,7 @@ public sealed class MediaRepository(GalleryDatabase database)
             UPDATE Media SET Motion = 2 WHERE MotionLength > 0 AND Motion = 0;
 
             UPDATE Media SET Motion = 3
-             WHERE Kind = 1 AND ContentId IS NOT NULL AND Motion = 0 AND PairedId IS NULL;
+             WHERE Kind = 1 AND Motion = 0 AND PairedId IS NULL AND (CloudLive = 1 OR CloudLive IS NULL AND ContentId IS NOT NULL);
             """, transaction: tx);
         tx.Commit();
     }
