@@ -233,5 +233,12 @@ public sealed class EmbeddingService(AppServices services) : IDisposable
         File.Move(partial, path, overwrite: true);
     }
 
+    /// <summary>Items that left the library (their ids may be given to new files).</summary>
+    public void Forget(IEnumerable<long> ids)
+    {
+        if (_index is not { } index) return;
+        foreach (var id in ids) index.Remove(id);
+    }
+
     public void Dispose() => _embedder?.Dispose();
 }

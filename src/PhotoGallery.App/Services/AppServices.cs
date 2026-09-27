@@ -43,6 +43,28 @@ public sealed class AppServices
         PhotoText = new PhotoTextService(this);
         Sharpness = new SharpnessService(this);
         Similar = new EmbeddingService(this);
+        Media.Removed += ForgetRemoved;
+    }
+
+    /// <summary>Drops what's cached under the ids of items that left the library, before new files reuse the ids.</summary>
+    private void ForgetRemoved(IReadOnlyCollection<long> ids)
+    {
+        Thumbnails.Invalidate(ids);
+        Similar.Forget(ids);
+        foreach (var id in ids)
+            foreach (var extension in new[] { ".mov", ".mp4" })
+            {
+                try
+                {
+                    File.Delete(Path.Combine(Paths.MotionCache, id + extension));
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
     }
 
     public AppPaths Paths { get; }

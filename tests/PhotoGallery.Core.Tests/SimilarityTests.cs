@@ -88,6 +88,36 @@ public sealed class SimilarityTests : IDisposable
     }
 
     [Fact]
+    public void Removed_embeddings_are_no_longer_found()
+    {
+        var x = Embedding.Quantize(Direction((0, 1)));
+        var y = Embedding.Quantize(Direction((1, 1)));
+        var index = new SimilarityIndex([1, 2, 3], [.. x, .. y, .. y]);
+
+        index.Remove(1);
+        index.Remove(42); // not there
+
+        Assert.Equal(2, index.Count);
+        Assert.False(index.Contains(1));
+        Assert.Equal([2L, 3], index.Search(y, 5).Select(r => r.Id).Order());
+        Assert.Equal(y, index.VectorOf(3).ToArray()); // moved into the freed row
+    }
+
+    [Fact]
+    public void Removing_items_announces_their_ids()
+    {
+        var a = Add("a.jpg");
+        var b = Add("b.jpg");
+        var announced = new List<long>();
+        _media.Removed += ids => announced.AddRange(ids);
+
+        _media.Remove([a]);
+        _media.RemoveRoot(@"D:\Lib");
+
+        Assert.Equal([a, b], announced);
+    }
+
+    [Fact]
     public void Listed_order_keeps_the_order_of_the_ids()
     {
         var a = Add("a.jpg");

@@ -22,7 +22,7 @@ public sealed partial class ViewerControl : UserControl
 {
     private static AppServices S => App.Services;
 
-    private IReadOnlyList<MediaSummary> _items = [];
+    private List<MediaSummary> _items = [];
     private int _index;
     private MediaItem? _current;
     private CancellationTokenSource _loadCts = new();
@@ -102,7 +102,7 @@ public sealed partial class ViewerControl : UserControl
     /// <param name="highlight">Search text to highlight in transcripts (when opened from search results).</param>
     public void Show(IReadOnlyList<MediaSummary> items, int index, string? highlight = null)
     {
-        _items = items;
+        _items = [.. items]; // its own copy: deleting here leaves the gallery's list alone until it reloads
         _searchQuery = string.IsNullOrWhiteSpace(highlight) ? null : highlight.Trim();
         _changed = false;
         InfoToggle.IsChecked = InfoColumn.Width.Value > 0;
@@ -550,6 +550,35 @@ public sealed partial class ViewerControl : UserControl
 
     private async void OnSaveFrame(object sender, RoutedEventArgs e) => await SaveFrameAsync();
 
+    private bool _deleting;
+
+    private async void OnDelete(object sender, RoutedEventArgs e) => await DeleteCurrentAsync();
+
+    /// <summary>Deletes the photo or video on show (to the Recycle Bin) and moves on to the next one.</summary>
+    private async Task DeleteCurrentAsync()
+    {
+        if (_current is not { } item || _deleting || App.MainWindow.IsEditorOpen) return;
+        _deleting = true;
+        try
+        {
+            StopPlayback(); // the player holds the video file open
+            if ((await Deletion.DeleteAsync(XamlRoot, [item.Id])).Count == 0) return;
+            _changed = true; // the gallery reloads without it
+            var index = _items.FindIndex(i => i.Id == item.Id);
+            if (index >= 0) _items.RemoveAt(index);
+            if (_items.Count == 0)
+            {
+                Close();
+                return;
+            }
+            await ShowIndexAsync(Math.Min(Math.Max(index, 0), _items.Count - 1));
+        }
+        finally
+        {
+            _deleting = false;
+        }
+    }
+
     /// <summary>Opens the photos and videos that look most like this one, most similar first.</summary>
     private async void OnFindSimilar(object sender, RoutedEventArgs e)
     {
@@ -733,6 +762,9 @@ public sealed partial class ViewerControl : UserControl
                 break;
             case VirtualKey.E:
                 OpenEditor();
+                break;
+            case VirtualKey.Delete:
+                _ = DeleteCurrentAsync();
                 break;
             case VirtualKey.I:
                 InfoToggle.IsChecked = !InfoToggle.IsChecked;

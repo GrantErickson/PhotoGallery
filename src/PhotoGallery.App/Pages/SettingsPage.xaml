@@ -30,6 +30,8 @@
                     <Button Content="Add folder…" Click="OnAddRoot" />
                     <Button Content="Rescan now" Click="OnRescan" />
                 </StackPanel>
+                <ToggleSwitch x:Name="ConfirmDeleteSwitch" Header="Ask before deleting photos (they go to the Recycle Bin either way)"
+                              Toggled="OnConfirmDeleteToggled" />
             </StackPanel>
 
             <StackPanel Spacing="8">

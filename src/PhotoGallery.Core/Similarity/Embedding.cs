@@ -108,6 +108,23 @@ public sealed class SimilarityIndex
         }
     }
 
+    /// <summary>Drops an item (its row is filled with the last one).</summary>
+    public void Remove(long id)
+    {
+        lock (_gate)
+        {
+            if (!_rows.Remove(id, out var row)) return;
+            var last = _count - 1;
+            if (row != last)
+            {
+                _ids[row] = _ids[last];
+                Array.Copy(_vectors, last * Embedding.Dimensions, _vectors, row * Embedding.Dimensions, Embedding.Dimensions);
+                _rows[_ids[row]] = row;
+            }
+            _count--;
+        }
+    }
+
     /// <summary>The most similar items, best first, at least <paramref name="minSimilarity"/>, leaving out <paramref name="except"/>.</summary>
     public List<(long Id, double Similarity)> Search(ReadOnlySpan<sbyte> query, int count, double minSimilarity = -1, long? except = null)
     {

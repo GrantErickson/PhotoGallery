@@ -130,13 +130,30 @@ public sealed class MediaRepository(GalleryDatabase database)
             """, new { item.Id, item.FileName, folderPath, item.CameraMake, item.CameraModel, item.FileSize, item.FileModified }, tx);
     }
 
+    /// <summary>Takes items out of the library (their tags, faces, album entries and so on go with them).</summary>
+    public void Remove(IReadOnlyCollection<long> ids)
+    {
+        using var db = database.Open();
+        using var tx = db.BeginTransaction();
+        Delete(db, tx, ids);
+        tx.Commit();
+    }
+
+    /// <summary>
+    /// Raised when items leave the library (deleted here, gone from disk, or a folder removed), so anything cached by
+    /// id can be dropped: SQLite hands the ids of the newest removed rows to the next new files.
+    /// </summary>
+    public event Action<IReadOnlyCollection<long>>? Removed;
+
     public void Delete(SqliteConnection db, SqliteTransaction tx, IEnumerable<long> ids)
     {
-        foreach (var chunk in ids.Chunk(500))
+        var list = ids.ToList();
+        foreach (var chunk in list.Chunk(500))
         {
             db.Execute("DELETE FROM MediaFts WHERE rowid IN @chunk", new { chunk }, tx);
             db.Execute("DELETE FROM Media WHERE Id IN @chunk", new { chunk }, tx);
         }
+        if (list.Count > 0) Removed?.Invoke(list);
     }
 
     /// <summary>Forgets everything under a library root that was removed from settings (files are untouched).</summary>

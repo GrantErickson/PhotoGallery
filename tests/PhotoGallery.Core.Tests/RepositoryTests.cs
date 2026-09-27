@@ -135,6 +135,23 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
+    public void Removed_items_leave_albums_tags_and_search()
+    {
+        var keep = Add("keep.jpg");
+        var gone = Add("blurry.jpg");
+        var album = _collections.CreateAlbum("Trip");
+        _collections.AddToAlbum(album, [keep.Id, gone.Id]);
+        _collections.AddTag([keep.Id, gone.Id], "Beach");
+
+        _media.Remove([gone.Id]);
+
+        Assert.Null(_media.Get(gone.Id));
+        Assert.Equal([keep.Id], _media.Query(new MediaFilter { AlbumId = album }).Select(m => m.Id));
+        Assert.Equal([keep.Id], _media.Query(new MediaFilter { Text = "beach" }).Select(m => m.Id));
+        Assert.Empty(_media.Query(new MediaFilter { Text = "blurry" }));
+    }
+
+    [Fact]
     public void Timeline_is_newest_first_and_hides_screenshots_unless_asked()
     {
         var old = Add("old.jpg", taken: new DateTime(2010, 1, 1));

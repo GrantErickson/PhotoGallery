@@ -40,6 +40,8 @@ public sealed class AppSettings
     public bool TranscribeInBackground { get; set; } = true;
     /// <summary>Read the text in every photo (OCR) in the background (the one being viewed is always read).</summary>
     public bool ReadPhotoTextInBackground { get; set; } = true;
+    /// <summary>Ask before deleting photos (they go to the Recycle Bin either way).</summary>
+    public bool ConfirmDelete { get; set; } = true;
     /// <summary>Make CLIP embeddings of the whole library in the background (Similar photos, searching by description).</summary>
     public bool FindSimilarInBackground { get; set; } = true;
     /// <summary>Grid tile edge in DIPs.</summary>

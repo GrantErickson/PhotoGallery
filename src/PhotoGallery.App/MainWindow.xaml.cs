@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
 
         Viewer.Closed += OnViewerClosed;
+        RecycleBin.Owner = Handle; // Windows' "delete permanently?" warning belongs to this window
         // Mouse back/forward buttons anywhere in the window (handledEventsToo: grids and viewers handle presses).
         Root.AddHandler(UIElement.PointerPressedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler(OnRootPointerPressed), handledEventsToo: true);
         AppWindow.Closing += OnClosing;

@@ -27,6 +27,7 @@ public sealed partial class SettingsPage : Page
         TranscribeSwitch.IsOn = App.Services.Settings.TranscribeInBackground;
         PhotoTextSwitch.IsOn = App.Services.Settings.ReadPhotoTextInBackground;
         SimilarSwitch.IsOn = App.Services.Settings.FindSimilarInBackground;
+        ConfirmDeleteSwitch.IsOn = App.Services.Settings.ConfirmDelete;
         _loadingSwitch = false;
         await RefreshTranscriptsAsync();
         var services = App.Services;
@@ -72,6 +73,13 @@ public sealed partial class SettingsPage : Page
               (similar.LastError is { } error ? error
                : !App.Services.Settings.FindSimilarInBackground ? "background comparing is off"
                : similar.IsWorking ? "Comparing…" : compared == all ? "Up to date" : "Waiting to start") + device;
+    }
+
+    private void OnConfirmDeleteToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingSwitch) return;
+        App.Services.Settings.ConfirmDelete = ConfirmDeleteSwitch.IsOn;
+        App.Services.SaveSettings();
     }
 
     private void OnSimilarToggled(object sender, RoutedEventArgs e)

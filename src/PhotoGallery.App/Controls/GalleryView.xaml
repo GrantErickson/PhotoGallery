@@ -79,6 +79,7 @@
                         </MenuFlyout>
                     </AppBarButton.Flyout>
                 </AppBarButton>
+                <AppBarButton Icon="Delete" Label="Delete" Click="OnDeleteSelection" ToolTipService.ToolTip="Move to the Recycle Bin (Del)" />
                 <AppBarButton Icon="Copy" Label="Copy paths" Click="OnCopySelectedPaths" />
                 <AppBarButton Icon="Clear" Label="Clear selection" Click="OnClearSelection" />
             </CommandBar>

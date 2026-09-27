@@ -46,6 +46,9 @@
                 <Button x:Name="EditButton" Click="OnEdit" ToolTipService.ToolTip="Edit (E)" Style="{StaticResource SubtleButtonStyle}">
                     <FontIcon Glyph="&#xE70F;" FontSize="16" />
                 </Button>
+                <Button Click="OnDelete" ToolTipService.ToolTip="Delete (Del)" Style="{StaticResource SubtleButtonStyle}">
+                    <FontIcon Glyph="&#xE74D;" FontSize="16" />
+                </Button>
                 <Button Click="OnCopyPath" ToolTipService.ToolTip="Copy full path (Ctrl+Shift+C)" Style="{StaticResource SubtleButtonStyle}">
                     <FontIcon Glyph="&#xE8C8;" FontSize="16" />
                 </Button>

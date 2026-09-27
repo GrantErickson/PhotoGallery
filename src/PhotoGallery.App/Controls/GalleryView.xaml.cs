@@ -114,12 +114,13 @@ public sealed partial class GalleryView : UserControl
 
     private void OnLibraryChanged() => DispatcherQueue.TryEnqueue(() => _ = ReloadAsync(keepPosition: true));
 
-    public async Task ReloadAsync(bool keepPosition = false)
+    /// <param name="anchorId">The item to keep in view (default: the first one visible now, with <paramref name="keepPosition"/>).</param>
+    public async Task ReloadAsync(bool keepPosition = false, long? anchorId = null)
     {
         if (EffectiveFilter is not { } filter) return;
         var version = ++_loadVersion;
         Busy.IsActive = true;
-        var anchor = keepPosition ? FirstVisibleItem()?.Id : null;
+        var anchor = anchorId ?? (keepPosition ? FirstVisibleItem()?.Id : null);
         List<MediaSummary> items;
         try
         {
@@ -505,6 +506,8 @@ public sealed partial class GalleryView : UserControl
             {
                 if (S.Media.GetPath(state.Item.Id) is { } path) System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
             }));
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(MenuItem(ids.Count == 1 ? "Delete" : $"Delete {ids.Count:N0}", Symbol.Delete, () => _ = DeleteAsync(ids)));
         menu.ShowAt(tile, e.GetPosition(tile));
         e.Handled = true;
     }
@@ -532,6 +535,33 @@ public sealed partial class GalleryView : UserControl
         {
             Open(item);
             e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.Delete && Grid.SelectedItems.Count > 0)
+        {
+            _ = DeleteAsync(SelectedIds());
+            e.Handled = true;
+        }
+    }
+
+    private void OnDeleteSelection(object sender, RoutedEventArgs e) => _ = DeleteAsync(SelectedIds());
+
+    /// <summary>
+    /// Deletes items (to the Recycle Bin), keeping the view where it was and selecting the next item, so Delete can
+    /// be pressed again to go on weeding.
+    /// </summary>
+    private async Task DeleteAsync(IReadOnlyList<long> ids)
+    {
+        var gone = (await Deletion.DeleteAsync(XamlRoot, ids)).ToHashSet();
+        if (gone.Count == 0) return;
+        var last = _items.FindLastIndex(i => gone.Contains(i.Id));
+        var next = _items.Skip(last + 1).FirstOrDefault(i => !gone.Contains(i.Id)) ?? _items.Take(last).LastOrDefault(i => !gone.Contains(i.Id));
+        var top = FirstVisibleItem();
+        await ReloadAsync(keepPosition: true, anchorId: top is not null && !gone.Contains(top.Id) ? top.Id : next?.Id);
+        if (next is not null && _items.FirstOrDefault(i => i.Id == next.Id) is { } again)
+        {
+            Grid.SelectedItems.Clear();
+            Grid.SelectedItem = again;
+            if (Grid.ContainerFromItem(again) is Control tile) tile.Focus(FocusState.Programmatic);
         }
     }
 
