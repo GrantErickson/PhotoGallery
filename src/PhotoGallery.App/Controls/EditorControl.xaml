@@ -136,11 +136,25 @@
                 </StackPanel>
 
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Light" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <Grid>
+                        <TextBlock Text="Light" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                        <Button x:Name="AutoButton" HorizontalAlignment="Right" Click="OnAuto"
+                                ToolTipService.ToolTip="Set brightness, contrast, white balance and saturation from the photo itself; fine-tune with the sliders">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE706;" FontSize="14" />
+                                <TextBlock Text="Auto" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
                     <Slider x:Name="ExposureSlider" Header="Exposure" Minimum="-2" Maximum="2" StepFrequency="0.05" ValueChanged="OnLightChanged" />
-                    <Slider x:Name="BrightnessSlider" Header="Brightness" Minimum="-1" Maximum="1" StepFrequency="0.02" ValueChanged="OnLightChanged" />
-                    <Slider x:Name="ContrastSlider" Header="Contrast" Minimum="-1" Maximum="1" StepFrequency="0.02" ValueChanged="OnLightChanged" />
-                    <Button Content="Reset light" Click="OnResetLight" />
+                    <Slider x:Name="BrightnessSlider" Header="Brightness" Minimum="-1" Maximum="1" StepFrequency="0.01" ValueChanged="OnLightChanged" />
+                    <Slider x:Name="ContrastSlider" Header="Contrast" Minimum="-1" Maximum="1" StepFrequency="0.01" ValueChanged="OnLightChanged" />
+                    <TextBlock Text="Colour" Margin="0,12,0,0" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <Slider x:Name="SaturationSlider" Header="Saturation" Minimum="-1" Maximum="1" StepFrequency="0.01" ValueChanged="OnLightChanged" />
+                    <Slider x:Name="TemperatureSlider" Header="Warmth" Minimum="-1" Maximum="1" StepFrequency="0.01" ValueChanged="OnLightChanged" />
+                    <Slider x:Name="TintSlider" Header="Tint" Minimum="-1" Maximum="1" StepFrequency="0.01" ValueChanged="OnLightChanged"
+                            ToolTipService.ToolTip="Left for greener, right for more magenta" />
+                    <Button Content="Reset light and colour" Click="OnResetLight" />
                 </StackPanel>
 
                 <StackPanel Spacing="6">

@@ -17,7 +17,7 @@ using Windows.System;
 namespace PhotoGallery.App.Controls;
 
 /// <summary>
-/// Non-destructive editor: rotate/flip, crop (free or fixed aspect), exposure/brightness/contrast.
+/// Non-destructive editor: rotate/flip, crop (free or fixed aspect), light and colour (with Auto).
 /// The canvas shows the whole rotated image; the crop box is an overlay in normalised coordinates.
 /// </summary>
 public sealed partial class EditorControl : UserControl
@@ -70,10 +70,8 @@ public sealed partial class EditorControl : UserControl
         _ops = S.Edits.Get(item.Id) ?? EditOperations.None;
         _openedWith = _ops;
         SmartCropText.Visibility = Visibility.Collapsed;
+        ShowLight();
         _suppress = true;
-        ExposureSlider.Value = _ops.Exposure;
-        BrightnessSlider.Value = _ops.Brightness;
-        ContrastSlider.Value = _ops.Contrast;
         AspectBox.SelectedIndex = 0;
         _suppress = false;
 
@@ -365,29 +363,63 @@ public sealed partial class EditorControl : UserControl
         Refresh();
     }
 
+    /// <summary>Puts the light and colour sliders at the current edit's values.</summary>
+    private void ShowLight()
+    {
+        _suppress = true;
+        ExposureSlider.Value = _ops.Exposure;
+        BrightnessSlider.Value = _ops.Brightness;
+        ContrastSlider.Value = _ops.Contrast;
+        SaturationSlider.Value = _ops.Saturation;
+        TemperatureSlider.Value = _ops.Temperature;
+        TintSlider.Value = _ops.Tint;
+        _suppress = false;
+    }
+
     private void OnLightChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         if (_suppress) return;
-        _ops = _ops with { Exposure = ExposureSlider.Value, Brightness = BrightnessSlider.Value, Contrast = ContrastSlider.Value };
+        _ops = _ops with
+        {
+            Exposure = ExposureSlider.Value, Brightness = BrightnessSlider.Value, Contrast = ContrastSlider.Value,
+            Saturation = SaturationSlider.Value, Temperature = TemperatureSlider.Value, Tint = TintSlider.Value,
+        };
+        EditCanvas.Invalidate();
+    }
+
+    /// <summary>Levels, white balance and saturation from what's inside the crop, shown on the sliders.</summary>
+    private void OnAuto(object sender, RoutedEventArgs e)
+    {
+        if (_source is null) return;
+        try
+        {
+            var (bgra, width) = EditRenderer.Sample(_source, _ops.WithoutColor, 256);
+            _ops = AutoAdjust.Apply(_ops, bgra, width);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Auto adjust failed for {_item?.Path}", ex);
+            App.MainWindow.ShowStatus($"Auto adjust failed: {ex.Message}");
+            return;
+        }
+        ShowLight();
         EditCanvas.Invalidate();
     }
 
     private void OnResetLight(object sender, RoutedEventArgs e)
     {
-        _suppress = true;
-        ExposureSlider.Value = BrightnessSlider.Value = ContrastSlider.Value = 0;
-        _suppress = false;
-        _ops = _ops with { Exposure = 0, Brightness = 0, Contrast = 0 };
+        _ops = _ops.WithoutColor;
+        ShowLight();
         EditCanvas.Invalidate();
     }
 
     private void OnResetAll(object sender, RoutedEventArgs e)
     {
+        _ops = EditOperations.None;
+        ShowLight();
         _suppress = true;
-        ExposureSlider.Value = BrightnessSlider.Value = ContrastSlider.Value = 0;
         AspectBox.SelectedIndex = 0;
         _suppress = false;
-        _ops = EditOperations.None;
         Refresh();
     }
 

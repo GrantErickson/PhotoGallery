@@ -30,7 +30,8 @@ public readonly record struct CropRect(double X, double Y, double Width, double 
 
 /// <summary>
 /// Non-destructive edits, stored as JSON in the Edits table and applied at display/export time.
-/// Order of application: colour (exposure, brightness, contrast) → flip → rotate → crop.
+/// Order of application: colour (exposure, then <see cref="ColorAdjust"/>: white balance, saturation, contrast and
+/// brightness) → flip → rotate → crop.
 /// </summary>
 public sealed record EditOperations
 {
@@ -47,16 +48,30 @@ public sealed record EditOperations
     public double Brightness { get; init; }
     /// <summary>-1..1.</summary>
     public double Contrast { get; init; }
+    /// <summary>-1 (black and white) ..1.</summary>
+    public double Saturation { get; init; }
+    /// <summary>Warmth, -1 (bluer) ..1 (more amber).</summary>
+    public double Temperature { get; init; }
+    /// <summary>-1 (greener) ..1 (more magenta).</summary>
+    public double Tint { get; init; }
 
     public static EditOperations None { get; } = new();
 
     [JsonIgnore]
-    public bool IsIdentity =>
-        Rotation % 360 == 0 && !FlipHorizontal && (Crop is null || Crop.Value.IsFull) &&
-        Math.Abs(Exposure) < 0.001 && Math.Abs(Brightness) < 0.001 && Math.Abs(Contrast) < 0.001;
+    public bool IsIdentity => Rotation % 360 == 0 && !FlipHorizontal && (Crop is null || Crop.Value.IsFull) && !HasColorAdjustments;
 
     [JsonIgnore]
-    public bool HasColorAdjustments => Math.Abs(Exposure) >= 0.001 || Math.Abs(Brightness) >= 0.001 || Math.Abs(Contrast) >= 0.001;
+    public bool HasColorAdjustments => Math.Abs(Exposure) >= 0.001 || HasColorMatrix;
+
+    /// <summary>Anything <see cref="ColorAdjust.Matrix"/> does: brightness, contrast, saturation, warmth or tint.</summary>
+    [JsonIgnore]
+    public bool HasColorMatrix =>
+        Math.Abs(Brightness) >= 0.001 || Math.Abs(Contrast) >= 0.001 || Math.Abs(Saturation) >= 0.001 ||
+        Math.Abs(Temperature) >= 0.001 || Math.Abs(Tint) >= 0.001;
+
+    /// <summary>The same edit without any light or colour change.</summary>
+    [JsonIgnore]
+    public EditOperations WithoutColor => this with { Exposure = 0, Brightness = 0, Contrast = 0, Saturation = 0, Temperature = 0, Tint = 0 };
 
     /// <summary>True when width and height swap relative to the original.</summary>
     [JsonIgnore]

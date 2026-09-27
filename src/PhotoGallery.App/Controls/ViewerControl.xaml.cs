@@ -811,7 +811,7 @@ public sealed partial class ViewerControl : UserControl
         if (e.Rotation != 0) parts.Add("rotated");
         if (e.FlipHorizontal) parts.Add("flipped");
         if (e.Crop is { IsFull: false }) parts.Add("cropped");
-        if (e.HasColorAdjustments) parts.Add("light adjusted");
+        if (e.HasColorAdjustments) parts.Add("light and colour adjusted");
         var text = string.Join(", ", parts);
         return text.Length == 0 ? "Edited" : char.ToUpperInvariant(text[0]) + text[1..];
     }

@@ -9,7 +9,7 @@ using Windows.Storage;
 namespace PhotoGallery.App.Editing;
 
 /// <summary>
-/// Applies <see cref="EditOperations"/> with Win2D (GPU): exposure → brightness/contrast → flip/rotate → crop.
+/// Applies <see cref="EditOperations"/> with Win2D (GPU): exposure → colour matrix (<see cref="ColorAdjust"/>) → flip/rotate → crop.
 /// Sources are decoded through WIC with EXIF orientation applied, so every format with a codec works.
 /// </summary>
 public static class EditRenderer
@@ -46,15 +46,22 @@ public static class EditRenderer
 
         if (Math.Abs(ops.Exposure) >= 0.001)
             image = new ExposureEffect { Source = image, Exposure = (float)Math.Clamp(ops.Exposure, -2, 2) };
-        if (Math.Abs(ops.Brightness) >= 0.001 || Math.Abs(ops.Contrast) >= 0.001)
+        if (ops.HasColorMatrix)
         {
-            // out = (in - 0.5) * c + 0.5 + b, per colour channel.
-            var c = (float)(1 + Math.Clamp(ops.Contrast, -1, 1) * 0.8);
-            var o = (float)(0.5 - 0.5 * c + Math.Clamp(ops.Brightness, -1, 1) * 0.4);
+            // White balance, saturation, contrast and brightness in one matrix. Win2D's is input × matrix, so its row
+            // is the input channel and its column the output one.
+            var (m, offset) = ColorAdjust.Matrix(ops);
+            var o = (float)offset;
             image = new ColorMatrixEffect
             {
                 Source = image,
-                ColorMatrix = new Matrix5x4 { M11 = c, M22 = c, M33 = c, M44 = 1, M51 = o, M52 = o, M53 = o },
+                ColorMatrix = new Matrix5x4
+                {
+                    M11 = (float)m[0, 0], M12 = (float)m[1, 0], M13 = (float)m[2, 0],
+                    M21 = (float)m[0, 1], M22 = (float)m[1, 1], M23 = (float)m[2, 1],
+                    M31 = (float)m[0, 2], M32 = (float)m[1, 2], M33 = (float)m[2, 2],
+                    M44 = 1, M51 = o, M52 = o, M53 = o,
+                },
                 ClampOutput = true,
             };
         }
@@ -85,6 +92,20 @@ public static class EditRenderer
             size = new Size(rect.Width, rect.Height);
         }
         return (image, size);
+    }
+
+    /// <summary>The edited picture (cropped) scaled down so its longest side is at most <paramref name="maxSize"/>, as BGRA bytes.</summary>
+    public static (byte[] Bgra, int Width) Sample(CanvasBitmap source, EditOperations ops, int maxSize)
+    {
+        var (image, size) = Apply(source, ops);
+        var scale = Math.Min(1, maxSize / Math.Max(size.Width, size.Height));
+        var width = Math.Max(1, (int)Math.Round(size.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(size.Height * scale));
+        using var target = new CanvasRenderTarget(Device, width, height, 96);
+        using (var session = target.CreateDrawingSession())
+            session.DrawImage(image, new Rect(0, 0, width, height), new Rect(0, 0, size.Width, size.Height));
+        if (!ReferenceEquals(image, source)) (image as IDisposable)?.Dispose();
+        return (target.GetPixelBytes(), width);
     }
 
     /// <summary>Renders the edited image into a SoftwareBitmap (BGRA8 premultiplied, ready for SoftwareBitmapSource).</summary>
