@@ -112,6 +112,24 @@ public sealed class TranscriptTests : IDisposable
         Assert.Equal([1, 2, 1, 2, 2, 2], three.Select(s => s.Speaker));
     }
 
+    [Theory]
+    [InlineData("Happy birthday, Emily!", "birth", new[] { "birthday" })]
+    [InlineData("Happy birthday, Emily!", "EMILY happy", new[] { "Happy", "Emily" })]
+    [InlineData("We ate at the café. Cafeteria food is fine.", "cafe", new[] { "café", "Cafeteria" })]
+    // As in the index, "don't" is the phrase "don" + "t…", which "Don took" matches too.
+    [InlineData("I don't know. Don took it.", "don't", new[] { "don't", "Don took" })]
+    [InlineData("Nothing here.", "birthday", new string[0])]
+    [InlineData("Some text", "", new string[0])]
+    public void Search_words_are_found_as_the_index_matches_them(string text, string query, string[] expected) =>
+        Assert.Equal(expected, SearchHighlighter.Find(text, query).Select(m => text.Substring(m.Start, m.Length)));
+
+    [Fact]
+    public void Overlapping_search_words_highlight_once()
+    {
+        var text = "Grandpa and grandma";
+        Assert.Equal([new TextMatch(0, 7), new TextMatch(12, 7)], SearchHighlighter.Find(text, "grand grandpa"));
+    }
+
     private long AddVideo(string name, long durationMs = 60_000, long size = 100)
     {
         using var db = _database.Open();

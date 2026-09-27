@@ -308,7 +308,8 @@ public sealed partial class MainWindow : Window
         _viewerOwner = owner;
         _forwardViewer = null;
         Viewer.Visibility = Visibility.Visible;
-        Viewer.Show(items, index);
+        // Opened from search results: what was searched for is highlighted in transcripts.
+        Viewer.Show(items, index, owner?.BaseFilter?.Text);
         UpdateBackButton();
     }
 

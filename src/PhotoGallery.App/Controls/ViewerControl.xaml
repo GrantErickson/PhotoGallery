@@ -195,7 +195,7 @@
                                             <TextBlock Text="{x:Bind Speaker}" Visibility="{x:Bind SpeakerVisibility}" FontSize="12" VerticalAlignment="Center"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
-                                        <TextBlock Text="{x:Bind Text}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                        <TextBlock TextWrapping="Wrap" IsTextSelectionEnabled="True" DataContextChanged="OnTranscriptTextDataContextChanged" />
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>

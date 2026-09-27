@@ -97,9 +97,11 @@ public sealed partial class ViewerControl : UserControl
     /// <summary>Raised when the viewer closes: (index of the item last shown, whether ratings/tags changed).</summary>
     public event Action<int, bool>? Closed;
 
-    public void Show(IReadOnlyList<MediaSummary> items, int index)
+    /// <param name="highlight">Search text to highlight in transcripts (when opened from search results).</param>
+    public void Show(IReadOnlyList<MediaSummary> items, int index, string? highlight = null)
     {
         _items = items;
+        _highlight = string.IsNullOrWhiteSpace(highlight) ? null : highlight.Trim();
         _changed = false;
         InfoToggle.IsChecked = InfoColumn.Width.Value > 0;
         _ = ShowIndexAsync(index);
@@ -824,6 +826,14 @@ public sealed partial class ViewerControl : UserControl
     private Transcript? _transcript;
     private TranscriptLine? _currentLine;
     private DateTime _userScrolledAt;
+    /// <summary>What was searched for, highlighted in transcripts.</summary>
+    private string? _highlight;
+    /// <summary>Showing a search match: don't scroll away to follow playback until the reader moves on.</summary>
+    private bool _followHeld;
+    private static readonly Microsoft.UI.Xaml.Media.Brush MarkBackground =
+        new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xE0, 0x66));
+    private static readonly Microsoft.UI.Xaml.Media.Brush MarkForeground =
+        new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black);
     /// <summary>Which tab videos open on; remembers the last choice.</summary>
     private bool _preferDetails;
 
@@ -887,8 +897,13 @@ public sealed partial class ViewerControl : UserControl
             default:
                 var paragraphs = TranscriptFormatter.Paragraphs(transcript.Segments);
                 var speakers = paragraphs.Select(p => p.Speaker).Distinct().Count(s => s is not null);
-                SetTranscriptLines(paragraphs.Select(p => new TranscriptLine(p, speakers > 1)).ToList());
-                TranscriptStatusText.Text = LanguageName(transcript.Language) is { } language ? $"Spoken {language}" : "";
+                var lines = paragraphs.Select(p => new TranscriptLine(p, speakers > 1, SearchHighlighter.Find(p.Text, _highlight))).ToList();
+                SetTranscriptLines(lines);
+                var mentions = lines.Sum(l => l.Matches.Count);
+                var spoken = LanguageName(transcript.Language) is { } language ? $"Spoken {language}" : "";
+                TranscriptStatusText.Text = mentions == 0 ? spoken
+                    : $"“{_highlight}” · {(mentions == 1 ? "1 mention" : $"{mentions} mentions")}{(spoken.Length > 0 ? " · " + spoken : "")}";
+                if (lines.FirstOrDefault(l => l.Matches.Count > 0) is { } first) ShowFirstMatch(first);
                 break;
         }
     }
@@ -897,6 +912,7 @@ public sealed partial class ViewerControl : UserControl
     {
         _transcriptLines = lines ?? [];
         _currentLine = null;
+        _followHeld = false;
         TranscriptList.ItemsSource = _transcriptLines;
         CopyTranscriptButton.Visibility = _transcriptLines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (lines is null)
@@ -933,16 +949,45 @@ public sealed partial class ViewerControl : UserControl
         TranscriptPane.Visibility = details ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    /// <summary>The paragraph's text, with the searched-for words marked.</summary>
+    private void OnTranscriptTextDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    {
+        if (sender is not TextBlock text || args.NewValue is not TranscriptLine line) return;
+        text.Text = line.Text;
+        text.TextHighlighters.Clear();
+        if (line.Matches.Count == 0) return;
+        var marker = new Microsoft.UI.Xaml.Documents.TextHighlighter { Background = MarkBackground, Foreground = MarkForeground };
+        foreach (var m in line.Matches) marker.Ranges.Add(new Microsoft.UI.Xaml.Documents.TextRange { StartIndex = m.Start, Length = m.Length });
+        text.TextHighlighters.Add(marker);
+    }
+
+    /// <summary>Scrolls to where the searched-for word is first said (once the list is laid out).</summary>
+    private void ShowFirstMatch(TranscriptLine line)
+    {
+        _followHeld = true;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            TranscriptList.UpdateLayout();
+            if (TranscriptList.ContainerFromItem(line) is UIElement container)
+                container.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.15, AnimationDesired = false });
+        });
+    }
+
     private void OnTranscriptSeek(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).Tag is not TranscriptLine line || _videoPath is null) return;
         _player.PlaybackSession.Position = TimeSpan.FromSeconds(line.Start);
         _player.Play();
         _userScrolledAt = default;
+        _followHeld = false;
         FollowTranscript(_player.PlaybackSession.Position);
     }
 
-    private void OnTranscriptUserScroll(object sender, object e) => _userScrolledAt = DateTime.UtcNow;
+    private void OnTranscriptUserScroll(object sender, object e)
+    {
+        _userScrolledAt = DateTime.UtcNow;
+        _followHeld = false;
+    }
 
     /// <summary>Highlights what's being said now and keeps it in view (unless the reader scrolled away just now).</summary>
     private void FollowTranscript(TimeSpan position)
@@ -956,7 +1001,7 @@ public sealed partial class ViewerControl : UserControl
         _currentLine = line;
         if (line is null) return;
         line.IsCurrent = true;
-        if (DateTime.UtcNow - _userScrolledAt > TimeSpan.FromSeconds(5) && TranscriptList.ContainerFromItem(line) is UIElement container)
+        if (!_followHeld && DateTime.UtcNow - _userScrolledAt > TimeSpan.FromSeconds(5) && TranscriptList.ContainerFromItem(line) is UIElement container)
             container.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.25, AnimationDesired = true });
     }
 
