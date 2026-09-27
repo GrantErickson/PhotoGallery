@@ -22,7 +22,7 @@ public sealed class RepositoryTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        _db.CloseConnections(); // only this test's database: other test classes run at the same time
         foreach (var f in new[] { _dbPath, _dbPath + "-wal", _dbPath + "-shm" }) File.Delete(f);
     }
 

@@ -23,7 +23,7 @@ public sealed class PlaceTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        _database.CloseConnections(); // only this test's database: other test classes run at the same time
         Directory.Delete(_dir, recursive: true);
     }
 

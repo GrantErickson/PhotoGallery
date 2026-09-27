@@ -27,6 +27,13 @@ public sealed class GalleryDatabase
 
     public string Path { get; }
 
+    /// <summary>Closes this database's pooled connections (e.g. so its file can be deleted); other databases are left alone.</summary>
+    public void CloseConnections()
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        SqliteConnection.ClearPool(connection);
+    }
+
     public SqliteConnection Open()
     {
         var connection = new SqliteConnection(_connectionString);

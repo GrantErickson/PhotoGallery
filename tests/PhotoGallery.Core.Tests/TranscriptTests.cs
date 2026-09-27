@@ -24,7 +24,7 @@ public sealed class TranscriptTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        _database.CloseConnections(); // only this test's database: other test classes run at the same time
         Directory.Delete(_dir, recursive: true);
     }
 
@@ -190,7 +190,7 @@ public sealed class TranscriptTests : IDisposable
     {
         // A v8 database with an indexed file, then the v9 migration.
         var path = Path.Combine(_dir, "old.db");
-        using (var db = new SqliteConnection($"Data Source={path}"))
+        using (var db = new SqliteConnection($"Data Source={path};Pooling=False"))
         {
             db.Open();
             db.Execute("CREATE VIRTUAL TABLE MediaFts USING fts5(Name, Folder, Tags, Camera, tokenize = 'unicode61 remove_diacritics 2');");
@@ -198,7 +198,7 @@ public sealed class TranscriptTests : IDisposable
         }
         var migration = typeof(GalleryDatabase).GetField("Migrations", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
             .GetValue(null) as string[];
-        using (var db = new SqliteConnection($"Data Source={path}"))
+        using (var db = new SqliteConnection($"Data Source={path};Pooling=False"))
         {
             db.Open();
             db.Execute("CREATE TABLE Media (Id INTEGER PRIMARY KEY);");

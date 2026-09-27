@@ -13,7 +13,7 @@ public sealed class DuplicateTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        foreach (var db in Directory.GetFiles(_dir, "*.db")) new GalleryDatabase(db).CloseConnections(); // only this test's database: other test classes run at the same time
         Directory.Delete(_dir, recursive: true);
     }
 
