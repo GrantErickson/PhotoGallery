@@ -15,6 +15,8 @@
             <TextBlock x:Name="TitleText" Style="{StaticResource TitleTextBlockStyle}" />
             <TextBlock x:Name="SubtitleText" VerticalAlignment="Bottom" Margin="0,0,0,4" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <Button x:Name="NameButton" Content="Name…" Visibility="Collapsed" VerticalAlignment="Center" Click="OnNamePerson" />
+            <HyperlinkButton x:Name="LooksLikeButton" Visibility="Collapsed" VerticalAlignment="Center" Click="OnLooksLike"
+                             ToolTipService.ToolTip="Find photos by what's in them, not just by their words (AI)" />
         </StackPanel>
         <controls:GalleryView x:Name="Gallery" Grid.Row="1" />
     </Grid>

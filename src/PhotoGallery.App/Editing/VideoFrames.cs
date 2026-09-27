@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices.WindowsRuntime;
+using PhotoGallery.Core.Imaging;
 using PhotoGallery.Core.Media;
 using PhotoGallery.Core.Metadata;
 using Windows.Graphics.Imaging;
@@ -27,6 +29,66 @@ public static class VideoFrames
         using var frame = await composition.GetThumbnailAsync(at, width, height, VideoFramePrecision.NearestFrame);
         var decoder = await BitmapDecoder.CreateAsync(frame);
         return await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+    }
+
+    /// <summary>
+    /// Where the sharpest frame is (by <see cref="Sharpness"/>, on 360 px copies), e.g. to find a better picture in a
+    /// Live Photo's video than its blurry still: up to <paramref name="coarse"/> frames spread over the clip, then the
+    /// ones next to the best. Frames are grabbed one at a time the way <see cref="GetFrameAsync"/> does (the batch call
+    /// returns neighbouring frames), so the time returned gives exactly the frame that was judged.
+    /// </summary>
+    public static async Task<TimeSpan> FindSharpestAsync(string videoPath, int coarse = 30)
+    {
+        var file = await StorageFile.GetFileFromPathAsync(videoPath);
+        var clip = await MediaClip.CreateFromFileAsync(file);
+        var composition = new MediaComposition();
+        composition.Clips.Add(clip);
+        var (width, height) = DisplaySize(videoPath) ?? (1920, 1080);
+        var scale = 360.0 / Math.Max(width, height);
+        int w = Math.Max(8, (int)Math.Round(width * scale)), h = Math.Max(8, (int)Math.Round(height * scale));
+        var times = FrameTimes(videoPath, clip.OriginalDuration);
+
+        var scores = new Dictionary<int, double>();
+        async Task Score(int i)
+        {
+            if (i < 0 || i >= times.Count || scores.ContainsKey(i)) return;
+            using var frame = await composition.GetThumbnailAsync(times[i], w, h, VideoFramePrecision.NearestFrame);
+            var decoder = await BitmapDecoder.CreateAsync(frame);
+            using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+            var buffer = new Windows.Storage.Streams.Buffer((uint)(bitmap.PixelWidth * bitmap.PixelHeight * 4));
+            bitmap.CopyToBuffer(buffer);
+            scores[i] = Sharpness.Score(buffer.ToArray(), bitmap.PixelWidth, bitmap.PixelHeight);
+        }
+
+        var count = Math.Min(coarse, times.Count);
+        var stride = (double)times.Count / count;
+        for (var k = 0; k < count; k++) await Score((int)(k * stride));
+        var best = scores.MaxBy(s => s.Value).Key;
+        for (var i = best - (int)Math.Ceiling(stride) + 1; i < best + stride; i++) await Score(i);
+        return times[scores.MaxBy(s => s.Value).Key];
+    }
+
+    /// <summary>
+    /// A time just after each frame starts (frame rates vary: a Live Photo's video starts slower), or every 1/30 s for
+    /// containers whose frame times can't be read.
+    /// </summary>
+    private static List<TimeSpan> FrameTimes(string videoPath, TimeSpan duration)
+    {
+        List<TimeSpan>? starts = null;
+        if (MediaFormats.IsQuickTimeFamily(videoPath))
+        {
+            try
+            {
+                using var stream = File.OpenRead(videoPath);
+                starts = QuickTimeReader.ReadFrameTimes(stream);
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException or ArgumentException)
+            {
+            }
+        }
+        var last = duration - TimeSpan.FromMilliseconds(1);
+        starts = starts is { Count: > 0 } ? starts : [.. Enumerable.Range(0, (int)Math.Max(1, duration.TotalSeconds * 30)).Select(i => TimeSpan.FromSeconds(i / 30.0))];
+        return starts.Select(t => t + TimeSpan.FromMilliseconds(1)).Select(t => t > last ? last : t).ToList();
     }
 
     /// <summary>Display width × height (rotation applied) from a QuickTime/MP4 header; null for other containers.</summary>

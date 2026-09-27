@@ -6,8 +6,10 @@ namespace PhotoGallery.App.Pages;
 
 /// <summary>What a <see cref="GalleryPage"/> shows. Used for the timeline, search, on this day and albums.</summary>
 /// <param name="Section">The menu item this view belongs to (highlighted after Back/Forward).</param>
+/// <param name="Group">Month headers (date order), or <see cref="GroupMode.None"/> for the filter's own order.</param>
+/// <param name="LooksLike">A search whose results page offers "Photos that look like …" (by CLIP).</param>
 public sealed record GalleryRequest(string Title, MediaFilter Filter, string? Subtitle = null, long? AlbumId = null, string? EmptyMessage = null,
-    long? PersonId = null, string? Section = null);
+    long? PersonId = null, string? Section = null, GroupMode Group = GroupMode.Month, string? LooksLike = null);
 
 /// <summary>What a gallery looked like when it was left, restored when coming back to it.</summary>
 internal sealed class GalleryNavState
@@ -56,10 +58,18 @@ public sealed partial class GalleryPage : Page
         TitleText.Text = request.Title;
         SubtitleText.Text = request.Subtitle ?? "";
         Gallery.AlbumId = request.AlbumId;
+        Gallery.GroupMode = request.Group;
         Gallery.EmptyMessage = request.EmptyMessage ?? "Nothing here yet.";
         Gallery.BaseFilter = request.Filter;
         _personId = request.PersonId;
         NameButton.Visibility = request.PersonId is null ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+        LooksLikeButton.Content = $"Photos that look like “{request.LooksLike}”";
+        LooksLikeButton.Visibility = request.LooksLike is null ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    }
+
+    private void OnLooksLike(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (_request?.LooksLike is { } text) App.MainWindow.SearchLooksLike(text);
     }
 
     private long? _personId;

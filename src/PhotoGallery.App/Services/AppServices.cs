@@ -23,6 +23,7 @@ public sealed class AppServices
         People = new PeopleRepository(Database);
         Transcripts = new TranscriptRepository(Database);
         PhotoTexts = new PhotoTextRepository(Database);
+        Embeddings = new EmbeddingRepository(Database);
         Places = new PlaceRepository(Database);
         PlaceNames = new PlaceNameService(this);
         Faces = new Imaging.FaceCropper(Path.Combine(Paths.Root, "faces"));
@@ -40,6 +41,8 @@ public sealed class AppServices
         CloudSync = new CloudSyncService(this);
         Transcription = new TranscriptionService(this);
         PhotoText = new PhotoTextService(this);
+        Sharpness = new SharpnessService(this);
+        Similar = new EmbeddingService(this);
     }
 
     public AppPaths Paths { get; }
@@ -53,6 +56,10 @@ public sealed class AppServices
     public TranscriptionService Transcription { get; }
     public PhotoTextRepository PhotoTexts { get; }
     public PhotoTextService PhotoText { get; }
+    public SharpnessService Sharpness { get; }
+    public EmbeddingRepository Embeddings { get; }
+    /// <summary>Similar photos and searching by description (CLIP).</summary>
+    public EmbeddingService Similar { get; }
     public PlaceRepository Places { get; }
     public PlaceNameService PlaceNames { get; }
     public Imaging.FaceCropper Faces { get; }

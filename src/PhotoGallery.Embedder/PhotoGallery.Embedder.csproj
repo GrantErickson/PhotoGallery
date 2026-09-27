@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    CLIP embeddings for Photo Gallery, on the graphics card through DirectML. A separate process so its ONNX Runtime
+    (the DirectML build) doesn't clash with the CPU one the app loads for speaker detection (sherpa-onnx); the app
+    copies this project's output into its own "embedder" folder.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>$(WindowsTfm)</TargetFramework>
+    <RootNamespace>PhotoGallery.Embedder</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" />
+  </ItemGroup>
+</Project>

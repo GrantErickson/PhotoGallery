@@ -31,5 +31,14 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PhotoGallery.Core\PhotoGallery.Core.csproj" />
+    <!-- CLIP runs in its own process (its ONNX Runtime is the DirectML build); built first, copied to .\embedder. -->
+    <ProjectReference Include="..\PhotoGallery.Embedder\PhotoGallery.Embedder.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
+  <Target Name="CopyEmbedder" AfterTargets="Build">
+    <ItemGroup>
+      <EmbedderFiles Include="..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\**\*"
+                     Exclude="..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\**\*.pdb;..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\**\*.lib;..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\**\DirectML.Debug.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(EmbedderFiles)" DestinationFiles="@(EmbedderFiles->'$(OutDir)embedder\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

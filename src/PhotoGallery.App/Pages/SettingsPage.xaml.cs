@@ -16,6 +16,7 @@ public sealed partial class SettingsPage : Page
         App.Services.Transcription.Completed += _ => OnTranscriptionChanged();
         App.Services.PhotoText.StateChanged += OnTranscriptionChanged;
         App.Services.PhotoText.Completed += _ => OnTranscriptionChanged();
+        App.Services.Similar.StateChanged += OnTranscriptionChanged;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -25,6 +26,7 @@ public sealed partial class SettingsPage : Page
         _loadingSwitch = true;
         TranscribeSwitch.IsOn = App.Services.Settings.TranscribeInBackground;
         PhotoTextSwitch.IsOn = App.Services.Settings.ReadPhotoTextInBackground;
+        SimilarSwitch.IsOn = App.Services.Settings.FindSimilarInBackground;
         _loadingSwitch = false;
         await RefreshTranscriptsAsync();
         var services = App.Services;
@@ -60,6 +62,24 @@ public sealed partial class SettingsPage : Page
             ? "Windows has no OCR language installed for your languages (Settings › Time & language › Language)."
             : $"{read:N0} of {photos:N0} photos read, {withText:N0} with text · " +
               (!App.Services.Settings.ReadPhotoTextInBackground ? "background reading is off" : ocr.IsWorking ? "Reading…" : read == photos ? "Up to date" : "Waiting to start");
+
+        var similar = App.Services.Similar;
+        var (compared, all) = await Task.Run(App.Services.Embeddings.GetProgress);
+        var device = similar.Device is { } d ? $" · on {(d == "CPU" ? "the CPU" : $"the GPU ({d})")}" : "";
+        SimilarStatsText.Text = !similar.IsInstalled ? "The comparing part of the app is missing; rebuild it."
+            : similar.DownloadProgress is { } p ? $"Downloading the model… {p:P0}"
+            : $"{compared:N0} of {all:N0} photos and videos compared · " +
+              (similar.LastError is { } error ? error
+               : !App.Services.Settings.FindSimilarInBackground ? "background comparing is off"
+               : similar.IsWorking ? "Comparing…" : compared == all ? "Up to date" : "Waiting to start") + device;
+    }
+
+    private void OnSimilarToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingSwitch) return;
+        App.Services.Settings.FindSimilarInBackground = SimilarSwitch.IsOn;
+        App.Services.SaveSettings();
+        App.Services.Similar.Nudge();
     }
 
     private void OnPhotoTextToggled(object sender, RoutedEventArgs e)

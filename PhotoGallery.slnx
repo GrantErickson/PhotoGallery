@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/PhotoGallery.App/PhotoGallery.App.csproj" />
     <Project Path="src/PhotoGallery.Core/PhotoGallery.Core.csproj" />
+    <Project Path="src/PhotoGallery.Embedder/PhotoGallery.Embedder.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PhotoGallery.Core.Tests/PhotoGallery.Core.Tests.csproj" />

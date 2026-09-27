@@ -35,6 +35,7 @@ public partial class App : Application
         _window.Closed += (_, _) =>
         {
             _services.Transcription.Shutdown();
+            _services.Similar.Dispose();
             _services.Thumbnails.Dispose();
         };
         _window.Activate();
@@ -52,5 +53,7 @@ public partial class App : Application
         services.CloudSync.SyncIfStale();
         services.Transcription.Start();
         services.PhotoText.Start();
+        services.Sharpness.Start();
+        services.Similar.Start();
     }
 }

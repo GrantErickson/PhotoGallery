@@ -193,6 +193,95 @@ public static partial class QuickTimeReader
         }
     }
 
+    /// <summary>
+    /// When each frame of the (first) video track starts showing, in order, from its sample tables: durations (stts),
+    /// reordering offsets (ctts) and the edit list's shift. Frame rates vary (a Live Photo's video starts slower), so
+    /// this is how to land on an exact frame. Null if the file has no readable video track.
+    /// </summary>
+    public static List<TimeSpan>? ReadFrameTimes(Stream stream)
+    {
+        if (FindTopLevel(stream, "moov") is not var (offset, length) || length > MaxMoovBytes) return null;
+        var buffer = new byte[length];
+        stream.Seek(offset, SeekOrigin.Begin);
+        stream.ReadExactly(buffer);
+        return ParseFrameTimes(buffer);
+    }
+
+    internal static List<TimeSpan>? ParseFrameTimes(ReadOnlyMemory<byte> moov)
+    {
+        uint movieScale = 600;
+        foreach (var (type, body) in Children(moov))
+        {
+            if (type == "mvhd" && body.Length >= 20)
+                movieScale = BinaryPrimitives.ReadUInt32BigEndian(body.Span[(body.Span[0] == 1 ? 20 : 12)..]);
+            if (type != "trak") continue;
+            var children = Children(body);
+            if (children.FirstOrDefault(c => c.Type == "mdia").Body is not { Length: > 0 } mdia) continue;
+            var mdiaChildren = Children(mdia);
+            var hdlr = mdiaChildren.FirstOrDefault(c => c.Type == "hdlr").Body;
+            if (hdlr.Length < 12 || Encoding.ASCII.GetString(hdlr.Span.Slice(8, 4)) != "vide") continue;
+            var mdhd = mdiaChildren.FirstOrDefault(c => c.Type == "mdhd").Body.Span;
+            if (mdhd.Length < 20) return null;
+            var scale = BinaryPrimitives.ReadUInt32BigEndian(mdhd[(mdhd[0] == 1 ? 20 : 12)..]);
+            var stbl = Children(Children(mdiaChildren.FirstOrDefault(c => c.Type == "minf").Body).FirstOrDefault(c => c.Type == "stbl").Body);
+            var stts = stbl.FirstOrDefault(c => c.Type == "stts").Body.Span;
+            if (scale == 0 || stts.Length < 8) return null;
+
+            // Decode times from the durations, then presentation times with the reordering offsets.
+            var times = new List<long>();
+            long t = 0;
+            var entries = BinaryPrimitives.ReadUInt32BigEndian(stts[4..]);
+            for (var i = 0; i < entries && 8 + i * 8 + 8 <= stts.Length && times.Count < 100_000; i++)
+            {
+                var count = BinaryPrimitives.ReadUInt32BigEndian(stts[(8 + i * 8)..]);
+                var delta = BinaryPrimitives.ReadUInt32BigEndian(stts[(12 + i * 8)..]);
+                for (var k = 0; k < count && times.Count < 100_000; k++, t += delta) times.Add(t);
+            }
+            var ctts = stbl.FirstOrDefault(c => c.Type == "ctts").Body.Span;
+            if (ctts.Length >= 8)
+            {
+                var n = 0;
+                var cttsEntries = BinaryPrimitives.ReadUInt32BigEndian(ctts[4..]);
+                for (var i = 0; i < cttsEntries && 8 + i * 8 + 8 <= ctts.Length; i++)
+                {
+                    var count = BinaryPrimitives.ReadUInt32BigEndian(ctts[(8 + i * 8)..]);
+                    var shift = BinaryPrimitives.ReadInt32BigEndian(ctts[(12 + i * 8)..]); // signed in version 1; small either way
+                    for (var k = 0; k < count && n < times.Count; k++) times[n++] += shift;
+                }
+            }
+
+            // The edit list: an empty edit delays the start (movie timescale); the media edit says where in the media
+            // it begins, and frames before that aren't shown (except one already showing at that point).
+            double empty = 0;
+            long mediaStart = 0;
+            var edts = children.FirstOrDefault(c => c.Type == "edts").Body;
+            var elst = edts.Length > 0 ? Children(edts).FirstOrDefault(c => c.Type == "elst").Body.Span : default;
+            if (elst.Length >= 8)
+            {
+                var v1 = elst[0] == 1;
+                var entrySize = v1 ? 20 : 12;
+                var elstEntries = BinaryPrimitives.ReadUInt32BigEndian(elst[4..]);
+                for (var i = 0; i < elstEntries && 8 + (i + 1) * entrySize <= elst.Length; i++)
+                {
+                    var e = elst[(8 + i * entrySize)..];
+                    var duration = v1 ? (long)BinaryPrimitives.ReadUInt64BigEndian(e) : BinaryPrimitives.ReadUInt32BigEndian(e);
+                    var mediaTime = v1 ? BinaryPrimitives.ReadInt64BigEndian(e[8..]) : BinaryPrimitives.ReadInt32BigEndian(e[4..]);
+                    if (mediaTime == -1)
+                    {
+                        empty += duration / (double)movieScale;
+                        continue;
+                    }
+                    mediaStart = mediaTime;
+                    break;
+                }
+            }
+            times.Sort();
+            var first = Math.Max(0, times.FindLastIndex(x => x <= mediaStart));
+            return times.Skip(first).Select(x => TimeSpan.FromSeconds(Math.Max(0, (x - mediaStart) / (double)scale) + empty)).ToList();
+        }
+        return null;
+    }
+
     /// <summary>Child atoms of a container. With <paramref name="raw"/>, the type is the big-endian u32 as a number (ilst indexes).</summary>
     private static List<(string Type, ReadOnlyMemory<byte> Body)> Children(ReadOnlyMemory<byte> data, bool raw = false)
     {

@@ -9,6 +9,15 @@ public enum KindFilter
     Videos,
 }
 
+public enum MediaOrder
+{
+    Newest,
+    /// <summary>Least sharp first (only photos with a sharpness score).</summary>
+    Blurriest,
+    /// <summary>In the order of <see cref="MediaFilter.Ids"/> (e.g. most similar first).</summary>
+    Listed,
+}
+
 /// <summary>
 /// The shared query definition (the plan's FilterContext) used by the grid, folders, albums, search and
 /// later the map. Immutable so view models can compare/replace it.
@@ -22,6 +31,9 @@ public sealed record MediaFilter
     public bool MotionOnly { get; init; }
     /// <summary>Only items with edits kept in the gallery (not yet written to a file).</summary>
     public bool EditedOnly { get; init; }
+    /// <summary>Only photos measured as less sharp than this (<see cref="Imaging.Sharpness"/>).</summary>
+    public double? SharpnessBelow { get; init; }
+    public MediaOrder Order { get; init; }
     public int MinRating { get; init; }
     public long? FolderId { get; init; }
     public bool IncludeSubfolders { get; init; } = true;

@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PhotoGallery.App.Pages;
 using PhotoGallery.Core.Data;
+using PhotoGallery.Core.Imaging;
 using PhotoGallery.Core.Indexing;
 
 namespace PhotoGallery.App;
@@ -280,6 +281,9 @@ public sealed partial class MainWindow : Window
             case "duplicates":
                 ContentFrame.Navigate(typeof(DuplicatesPage));
                 break;
+            case "blurry":
+                ContentFrame.Navigate(typeof(GalleryPage), BlurryRequest());
+                break;
             case "albums":
                 ContentFrame.Navigate(typeof(AlbumsPage));
                 break;
@@ -288,6 +292,17 @@ public sealed partial class MainWindow : Window
 
     public void Navigate(Type page, object? parameter) => ContentFrame.Navigate(page, parameter);
 
+    /// <summary>Blurry photos, blurriest first (the Live switch narrows it to photos with a video to pick a frame from).</summary>
+    private static GalleryRequest BlurryRequest()
+    {
+        var (done, total, _) = App.Services.Media.GetSharpnessProgress();
+        var subtitle = "Blurriest first · turn on Live for photos whose video may have a sharper frame";
+        if (done < total) subtitle += $" · {done:N0} of {total:N0} photos checked so far";
+        return new GalleryRequest("Blurry photos", new MediaFilter { SharpnessBelow = Sharpness.BlurryBelow, Order = MediaOrder.Blurriest },
+            subtitle, EmptyMessage: done == 0 ? "Photos are being checked for blur in the background; blurry ones will show up here." : "No blurry photos found.",
+            Section: "blurry", Group: GroupMode.None);
+    }
+
     private void OnSearchSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) => Search(args.QueryText);
 
     public void Search(string text)
@@ -295,8 +310,37 @@ public sealed partial class MainWindow : Window
         text = text.Trim();
         if (text.Length == 0) return;
         SearchBox.Text = text;
+        var looksLike = App.Services.Similar.ModelsReady ? text : null;
         ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest($"“{text}”", new MediaFilter { Text = text, IncludeScreenshots = true },
-            "File and folder names, tags, people, cameras, text in photos and what's said in videos", EmptyMessage: "No matches."));
+            "File and folder names, tags, people, cameras, text in photos and what's said in videos",
+            EmptyMessage: looksLike is null ? "No matches." : "No words match. Try the photos that look like it (above).", LooksLike: looksLike));
+    }
+
+    /// <summary>Photos and videos that look like a description (CLIP), best matches first.</summary>
+    public async void SearchLooksLike(string text)
+    {
+        ShowStatus($"Looking for photos that look like “{text}”…");
+        try
+        {
+            var found = await App.Services.Similar.SearchAsync(text);
+            ShowStatus("");
+            ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest($"Looks like “{text}”",
+                new MediaFilter { Ids = found.Select(f => f.Id).ToList(), Order = MediaOrder.Listed, IncludeScreenshots = true },
+                "Best matches first, by what's in the picture", EmptyMessage: "Nothing looks like that.", Group: GroupMode.None));
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or InvalidDataException or TimeoutException or System.ComponentModel.Win32Exception)
+        {
+            PhotoGallery.Core.Log.Error($"Searching for photos that look like \"{text}\" failed", ex);
+            ShowStatus($"Couldn't search by description: {ex.Message}");
+        }
+    }
+
+    /// <summary>A photo followed by the ones most like it (most similar first).</summary>
+    public void ShowSimilar(PhotoGallery.Core.Media.MediaItem item, IEnumerable<long> similar)
+    {
+        ContentFrame.Navigate(typeof(GalleryPage), new GalleryRequest("Similar photos",
+            new MediaFilter { Ids = [item.Id, .. similar], Order = MediaOrder.Listed, IncludeScreenshots = true },
+            $"{item.FileName} first, then the most alike", Group: GroupMode.None));
     }
 
     // ---------- Viewer ----------

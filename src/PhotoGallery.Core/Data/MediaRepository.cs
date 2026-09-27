@@ -99,6 +99,7 @@ public sealed class MediaRepository(GalleryDatabase database)
             ON CONFLICT(Path) DO UPDATE SET
                 QuickHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.QuickHash END,
                 PerceptualHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.PerceptualHash END,
+                Sharpness = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.Sharpness END,
                 FolderId = excluded.FolderId, FileName = excluded.FileName, FileSize = excluded.FileSize,
                 FileModified = excluded.FileModified, Kind = excluded.Kind, DateTaken = excluded.DateTaken,
                 DateSource = excluded.DateSource, Width = excluded.Width, Height = excluded.Height,
@@ -116,6 +117,7 @@ public sealed class MediaRepository(GalleryDatabase database)
             """
             DELETE FROM Transcripts WHERE MediaId = @Id AND (FileSize <> @FileSize OR FileModified <> @FileModified);
             DELETE FROM PhotoText WHERE MediaId = @Id AND (FileSize <> @FileSize OR FileModified <> @FileModified);
+            DELETE FROM Embeddings WHERE MediaId = @Id AND (FileSize <> @FileSize OR FileModified <> @FileModified);
             DELETE FROM MediaFts WHERE rowid = @Id;
             INSERT INTO MediaFts (rowid, Name, Folder, Tags, Camera, Speech, PhotoText)
             VALUES (@Id, @FileName, @folderPath,
@@ -230,6 +232,11 @@ public sealed class MediaRepository(GalleryDatabase database)
         else if (!f.IncludeScreenshots && f.FolderId is null && f.AlbumId is null) sql.Append(" AND m.IsScreenshot = 0");
         if (f.MotionOnly) sql.Append(" AND m.Motion IN (1, 2, 3)");
         if (f.EditedOnly) sql.Append(" AND m.Id IN (SELECT MediaId FROM Edits)");
+        if (f.SharpnessBelow is { } sharpness)
+        {
+            sql.Append(" AND m.Sharpness >= 0 AND m.Sharpness < @sharpness");
+            p.Add("sharpness", sharpness);
+        }
         if (f.MinRating > 0)
         {
             sql.Append(" AND m.Rating >= @minRating");
@@ -295,7 +302,10 @@ public sealed class MediaRepository(GalleryDatabase database)
         }
 
         if (ordered)
-            sql.Append(f.AlbumId is null ? " ORDER BY m.DateTaken DESC, m.Id DESC" : " ORDER BY am.SortOrder, m.DateTaken");
+            sql.Append(f.AlbumId is not null ? " ORDER BY am.SortOrder, m.DateTaken"
+                : f.Order == MediaOrder.Blurriest ? " ORDER BY m.Sharpness, m.DateTaken DESC"
+                : f.Order == MediaOrder.Listed && f.Ids is not null ? " ORDER BY (SELECT key FROM json_each(@idsJson) WHERE value = m.Id)"
+                : " ORDER BY m.DateTaken DESC, m.Id DESC");
         return (sql.ToString(), p);
     }
 
@@ -369,6 +379,40 @@ public sealed class MediaRepository(GalleryDatabase database)
     {
         using var db = database.Open();
         db.Execute("UPDATE Media SET OneDriveItemId = @itemId WHERE Id = @id", new { id, itemId });
+    }
+
+    /// <summary>Photos whose sharpness hasn't been measured (newest first).</summary>
+    public List<(long Id, string Path)> GetSharpnessBacklog(int count)
+    {
+        using var db = database.Open();
+        return db.Query<(long, string)>(
+            """
+            SELECT Id, Path FROM Media
+            WHERE Sharpness IS NULL AND Kind IN (1, 3) AND IsHidden = 0 AND OnlineOnly = 0
+            ORDER BY DateTaken DESC LIMIT @count
+            """, new { count }).AsList();
+    }
+
+    /// <summary>Stores sharpness scores (-1 = couldn't be measured).</summary>
+    public void SetSharpness(IReadOnlyCollection<(long Id, double Score)> scores)
+    {
+        if (scores.Count == 0) return;
+        using var db = database.Open();
+        using var tx = db.BeginTransaction();
+        foreach (var (id, score) in scores)
+            db.Execute("UPDATE Media SET Sharpness = @score WHERE Id = @id", new { id, score = Math.Round(score, 2) }, tx);
+        tx.Commit();
+    }
+
+    /// <summary>Photos measured so far, how many there are to measure, and how many look blurry.</summary>
+    public (long Done, long Total, long Blurry) GetSharpnessProgress()
+    {
+        using var db = database.Open();
+        return db.QuerySingle<(long, long, long)>(
+            """
+            SELECT coalesce(sum(Sharpness IS NOT NULL), 0), count(*), coalesce(sum(Sharpness >= 0 AND Sharpness < @blurry), 0)
+            FROM Media WHERE Kind IN (1, 3) AND IsHidden = 0 AND OnlineOnly = 0
+            """, new { blurry = Imaging.Sharpness.BlurryBelow });
     }
 
     public void SetMotion(long id, MotionSource motion)

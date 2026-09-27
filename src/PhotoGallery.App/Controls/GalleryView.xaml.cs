@@ -91,7 +91,7 @@ public sealed partial class GalleryView : UserControl
     {
         _loaded = true;
         RemoveFromAlbumButton.Visibility = AlbumId is null ? Visibility.Collapsed : Visibility.Visible;
-        JumpList.Visibility = AlbumId is null ? Visibility.Visible : Visibility.Collapsed;
+        JumpList.Visibility = Flat ? Visibility.Collapsed : Visibility.Visible;
         S.Indexing.LibraryChanged += OnLibraryChanged;
         _scroller ??= FindDescendant<ScrollViewer>(Grid);
         if (!_wheelHooked)
@@ -135,7 +135,7 @@ public sealed partial class GalleryView : UserControl
         if (version != _loadVersion) return;
 
         _items = items;
-        MarkDayStarts(items, dateOrdered: AlbumId is null && GroupMode == GroupMode.Month);
+        MarkDayStarts(items, dateOrdered: !Flat && GroupMode == GroupMode.Month);
         _lastSelection.Clear();
         _previousSelection.Clear();
         if (AlbumId is not null)
@@ -149,7 +149,9 @@ public sealed partial class GalleryView : UserControl
         {
             // Timeline views are grouped by month (headers inside the grid); the jump list navigates between them.
             Grid.CanDragItems = Grid.CanReorderItems = Grid.AllowDrop = false;
-            Grid.ItemsSource = new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = MonthGroup.Split(items, GroupMode) }.View;
+            Grid.ItemsSource = GroupMode == GroupMode.None
+                ? items
+                : new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = MonthGroup.Split(items, GroupMode) }.View;
         }
         CountText.Text = items.Count == 1 ? "1 item" : $"{items.Count:N0} items";
         EmptyText.Text = EmptyMessage;
@@ -469,9 +471,12 @@ public sealed partial class GalleryView : UserControl
     private void UpdateCurrentDate()
     {
         var first = FirstVisibleItem();
-        CurrentDate.Text = AlbumId is null && first is { } item ? item.TakenLocal.ToString("MMMM yyyy", CultureInfo.CurrentCulture) : "";
-        if (AlbumId is null && first is { } top) UpdateCurrentJump(_items.IndexOf(top));
+        CurrentDate.Text = !Flat && first is { } item ? item.TakenLocal.ToString("MMMM yyyy", CultureInfo.CurrentCulture) : "";
+        if (!Flat && first is { } top) UpdateCurrentJump(_items.IndexOf(top));
     }
+
+    /// <summary>Not in date order: an album's own order, or <see cref="GroupMode.None"/>.</summary>
+    private bool Flat => AlbumId is not null || GroupMode == GroupMode.None;
 
     // ---------- Opening the viewer ----------
 

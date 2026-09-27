@@ -73,6 +73,14 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="Similar photos and searching by description" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Every photo and video is compared by what's in it, on this PC with OpenAI's CLIP (ViT-L/14) on the graphics card; nothing is uploaded. The model (about 860 MB) downloads once. Then the viewer can show similar photos, and searches offer photos that look like what you typed." />
+                <ToggleSwitch x:Name="SimilarSwitch" Header="Compare all photos in the background" Toggled="OnSimilarToggled" />
+                <TextBlock x:Name="SimilarStatsText" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="Library" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock x:Name="StatsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 <TextBlock x:Name="PathsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}"

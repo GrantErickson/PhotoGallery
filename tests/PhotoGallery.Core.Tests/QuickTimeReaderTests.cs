@@ -59,3 +59,48 @@ public class QuickTimeReaderTests
         Assert.Equal(lon, lo!.Value, 4);
     }
 }
+
+public class FrameTimeTests
+{
+    private static byte[] Full(string type, params byte[][] body) => Box(type, [U32(0), .. body]); // version 0, no flags
+
+    private static byte[] Track(string handler, uint scale, (uint Count, uint Delta)[] durations, byte[]? edits = null)
+    {
+        byte[] stts = [.. U32((uint)durations.Length), .. durations.SelectMany(d => U32(d.Count).Concat(U32(d.Delta)))];
+        var mdia = Box("mdia",
+            Full("mdhd", U32(0), U32(0), U32(scale), U32(0), U32(0)),
+            Full("hdlr", U32(0), Encoding.ASCII.GetBytes(handler), Bytes(12)),
+            Box("minf", Box("stbl", Full("stts", stts))));
+        return edits is null ? Box("trak", Tkhd(1080, 1440), mdia) : Box("trak", Tkhd(1080, 1440), Box("edts", edits), mdia);
+    }
+
+    [Fact]
+    public void A_live_photo_video_that_starts_slower_has_its_real_frame_times()
+    {
+        // As an iPhone 6s writes it: 4 frames at 7.5 fps, then 16 at 15 fps (timescale 600); the sound track comes first.
+        byte[] moov = Box("moov",
+            Mvhd(0, 600, 960),
+            Track("soun", 44100, [(70560, 1)]),
+            Track("vide", 600, [(4, 80), (16, 40)], Full("elst", U32(1), U32(960), U32(0), U32(0x10000))));
+
+        var times = QuickTimeReader.ParseFrameTimes(moov.AsMemory(8))!;
+
+        Assert.Equal(20, times.Count);
+        Assert.Equal([0, 0.133, 0.267, 0.4, 0.533, 0.6], times.Take(6).Select(t => Math.Round(t.TotalSeconds, 3)));
+        Assert.Equal(1.533, Math.Round(times[^1].TotalSeconds, 3));
+    }
+
+    [Fact]
+    public void An_edit_list_shifts_the_frames()
+    {
+        // Media starts at 0.5 s (300 of 600) and a 0.25 s empty edit comes first (movie timescale 1000).
+        var edits = Full("elst", U32(2), U32(250), U32(unchecked((uint)-1)), U32(0x10000), U32(1000), U32(300), U32(0x10000));
+        byte[] moov = Box("moov", Mvhd(0, 1000, 1250), Track("vide", 600, [(6, 100)], edits));
+
+        var times = QuickTimeReader.ParseFrameTimes(moov.AsMemory(8))!;
+
+        // Frames at 0, 1/6 … 5/6 s of media; the first three are before the edit starts, and the rest move by -0.5 + 0.25.
+        Assert.Equal([0.25, 0.417, 0.583], times.Select(t => Math.Round(t.TotalSeconds, 3)));
+        Assert.Null(QuickTimeReader.ParseFrameTimes(Box("moov", Mvhd(0, 600, 600), Track("soun", 44100, [(10, 1)])).AsMemory(8)));
+    }
+}

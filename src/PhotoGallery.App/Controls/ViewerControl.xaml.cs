@@ -78,6 +78,7 @@ public sealed partial class ViewerControl : UserControl
             if (_playingMotion && session.PlaybackState == MediaPlaybackState.Paused &&
                 session.Position < session.NaturalDuration - TimeSpan.FromMilliseconds(150))
                 _motionPinned = true;
+            if (session.PlaybackState == MediaPlaybackState.Playing) DispatcherQueue.TryEnqueue(HideFramePreview);
         };
         Unloaded += (_, _) => StopPlayback();
         var escape = new KeyboardAccelerator { Key = VirtualKey.Escape };
@@ -456,12 +457,14 @@ public sealed partial class ViewerControl : UserControl
         FrameBar.Visibility = Visibility.Visible;
         ShowPhotoButton.Visibility = isMotion ? Visibility.Visible : Visibility.Collapsed;
         SaveVideoButton.Visibility = isMotion ? Visibility.Visible : Visibility.Collapsed;
+        SharpestButton.Visibility = isMotion ? Visibility.Visible : Visibility.Collapsed;
         FrameTimeText.Text = FormatPosition(TimeSpan.Zero);
         _player.Source = MediaSource.CreateFromUri(new Uri(path));
     }
 
     private void StopPlayback()
     {
+        HideFramePreview();
         _playingMotion = false;
         _motionPinned = false;
         _videoPath = null;
@@ -480,6 +483,7 @@ public sealed partial class ViewerControl : UserControl
     private void StepFrame(bool forward)
     {
         if (_videoPath is null) return;
+        HideFramePreview();
         _motionPinned = true;
         if (forward) _player.StepForwardOneFrame();
         else _player.StepBackwardOneFrame();
@@ -546,6 +550,88 @@ public sealed partial class ViewerControl : UserControl
 
     private async void OnSaveFrame(object sender, RoutedEventArgs e) => await SaveFrameAsync();
 
+    /// <summary>Opens the photos and videos that look most like this one, most similar first.</summary>
+    private async void OnFindSimilar(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { } item) return;
+        if (!S.Similar.ModelsReady)
+        {
+            ShowToast("Similar photos needs its AI model, which downloads in the background (see Settings).");
+            return;
+        }
+        SimilarButton.IsEnabled = false;
+        List<(long Id, double Similarity)> similar;
+        try
+        {
+            similar = await S.Similar.FindSimilarAsync(item.Id);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or InvalidDataException or TimeoutException or System.ComponentModel.Win32Exception)
+        {
+            Log.Error($"Finding photos like {item.Path} failed", ex);
+            ShowToast($"Couldn't compare this photo: {ex.Message}");
+            return;
+        }
+        finally
+        {
+            SimilarButton.IsEnabled = true;
+        }
+        if (_current?.Id != item.Id) return;
+        if (similar.Count == 0)
+        {
+            ShowToast(S.Similar.Searchable < 100
+                ? "Few photos have been compared yet; the library is still being worked through in the background (see Settings)."
+                : "Nothing else looks much like this one.");
+            return;
+        }
+        App.MainWindow.NavigateFromViewer(() => App.MainWindow.ShowSimilar(item, similar.Select(s => s.Id)));
+    }
+
+    /// <summary>The frame shown over the player by Sharpest frame (what Save frame saves), until the video moves on.</summary>
+    private TimeSpan? _previewPosition;
+
+    private void HideFramePreview()
+    {
+        if (_previewPosition is null) return;
+        _previewPosition = null;
+        FramePreview.Visibility = Visibility.Collapsed;
+        FramePreview.Source = null;
+        Player.AreTransportControlsEnabled = true;
+    }
+
+    /// <summary>Stops the Live Photo's video on its sharpest frame, ready for Save frame.</summary>
+    private async void OnSharpestFrame(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { } item || _videoPath is not { } video) return;
+        _motionPinned = true; // stay on the video
+        _player.Pause();
+        SharpestButton.IsEnabled = false;
+        ShowToast("Looking through the video for its sharpest frame…");
+        try
+        {
+            var position = await VideoFrames.FindSharpestAsync(video);
+            using var frame = await VideoFrames.GetFrameAsync(video, position);
+            if (_current?.Id != item.Id || _videoPath != video) return;
+            var source = new SoftwareBitmapSource();
+            await source.SetBitmapAsync(frame);
+            _player.PlaybackSession.Position = position;
+            FramePreview.Source = source;
+            FramePreview.Visibility = Visibility.Visible;
+            Player.AreTransportControlsEnabled = false; // they'd be drawn under the still
+            _previewPosition = position;
+            FrameTimeText.Text = FormatPosition(position);
+            ShowToast($"Sharpest frame at {FormatPosition(position)} · Save frame (S) keeps it as a photo");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Looking for the sharpest frame of {video} failed", ex);
+            ShowToast($"Couldn't look through the video: {ex.Message}");
+        }
+        finally
+        {
+            SharpestButton.IsEnabled = true;
+        }
+    }
+
     /// <summary>Saves the frame on screen as a photo next to the video (or the Live Photo), and adds it to the library.</summary>
     private async Task SaveFrameAsync()
     {
@@ -554,7 +640,7 @@ public sealed partial class ViewerControl : UserControl
         _motionPinned = true;
         SaveFrameButton.IsEnabled = false;
         _player.Pause();
-        var position = _player.PlaybackSession.Position;
+        var position = _previewPosition ?? _player.PlaybackSession.Position;
         var isLivePhoto = item.Kind != MediaKind.Video;
         try
         {

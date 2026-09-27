@@ -81,6 +81,11 @@
                         <FontIcon Glyph="&#xE8C8;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Blurry photos" Tag="blurry">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE71E;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
 
             <Frame x:Name="ContentFrame" Navigated="OnFrameNavigated" Navigating="OnFrameNavigating" />

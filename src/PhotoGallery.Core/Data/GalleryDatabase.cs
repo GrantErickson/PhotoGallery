@@ -248,6 +248,20 @@ public sealed class GalleryDatabase
         ALTER TABLE Media ADD COLUMN CloudLive INTEGER;
         UPDATE SyncState SET Value = '2000-01-01T00:00:00.0000000Z' WHERE Key IN ('OneDriveFacesSynced', 'OneDriveFacesFullScan');
         """,
+        // v13: how sharp each photo looks (Imaging.Sharpness, from its thumbnail; -1 = couldn't tell), for Blurry photos.
+        """
+        ALTER TABLE Media ADD COLUMN Sharpness REAL;
+        CREATE INDEX IX_Media_Sharpness ON Media(Sharpness) WHERE Sharpness >= 0;
+        """,
+        // v14: CLIP embeddings (768 × int8, empty = couldn't be read) for Similar photos and searching by description.
+        """
+        CREATE TABLE Embeddings (
+            MediaId      INTEGER PRIMARY KEY REFERENCES Media(Id) ON DELETE CASCADE,
+            FileSize     INTEGER NOT NULL,
+            FileModified INTEGER NOT NULL,
+            Vector       BLOB NOT NULL
+        ) WITHOUT ROWID;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

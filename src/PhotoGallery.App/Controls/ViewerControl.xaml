@@ -40,6 +40,9 @@
                         <ProgressRing x:Name="LiveBusy" Width="14" Height="14" IsActive="False" />
                     </StackPanel>
                 </Button>
+                <Button x:Name="SimilarButton" Click="OnFindSimilar" ToolTipService.ToolTip="Similar photos" Style="{StaticResource SubtleButtonStyle}">
+                    <FontIcon Glyph="&#xE8A9;" FontSize="16" />
+                </Button>
                 <Button x:Name="EditButton" Click="OnEdit" ToolTipService.ToolTip="Edit (E)" Style="{StaticResource SubtleButtonStyle}">
                     <FontIcon Glyph="&#xE70F;" FontSize="16" />
                 </Button>
@@ -92,6 +95,8 @@
                 </Grid>
             </ScrollViewer>
             <MediaPlayerElement x:Name="Player" Visibility="Collapsed" AreTransportControlsEnabled="True" />
+            <!-- The frame "Sharpest frame" found, exactly as Save frame writes it (a paused player can show a neighbour) -->
+            <Image x:Name="FramePreview" Visibility="Collapsed" Stretch="Uniform" IsHitTestVisible="False" />
 
             <!-- Frame tools: shown whenever a video (or Live Photo motion) is on screen -->
             <Border x:Name="FrameBar" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,12,0,0"
@@ -105,6 +110,13 @@
                                FontFamily="Cascadia Mono, Consolas" Text="0:00.000" />
                     <Button Click="OnNextFrame" ToolTipService.ToolTip="Next frame ( . )" Style="{StaticResource SubtleButtonStyle}">
                         <FontIcon Glyph="&#xE893;" FontSize="14" />
+                    </Button>
+                    <Button x:Name="SharpestButton" Click="OnSharpestFrame" Visibility="Collapsed"
+                            ToolTipService.ToolTip="Go to the sharpest frame of the Live Photo's video; Save frame then keeps it as a photo">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE71E;" FontSize="14" />
+                            <TextBlock Text="Sharpest frame" />
+                        </StackPanel>
                     </Button>
                     <Button x:Name="SaveFrameButton" Click="OnSaveFrame" Style="{StaticResource AccentButtonStyle}"
                             ToolTipService.ToolTip="Save this frame as a photo in the same folder (S)">

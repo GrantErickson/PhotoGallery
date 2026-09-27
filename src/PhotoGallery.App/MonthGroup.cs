@@ -8,6 +8,8 @@ public enum GroupMode
     Month,
     /// <summary>One header per day with the full date (On this day: one day per year).</summary>
     Day,
+    /// <summary>No headers or jump list: the query's own order (e.g. blurriest first).</summary>
+    None,
 }
 
 /// <summary>A section of the date-ordered grid: its header and items.</summary>

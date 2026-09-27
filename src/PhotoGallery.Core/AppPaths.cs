@@ -40,6 +40,8 @@ public sealed class AppSettings
     public bool TranscribeInBackground { get; set; } = true;
     /// <summary>Read the text in every photo (OCR) in the background (the one being viewed is always read).</summary>
     public bool ReadPhotoTextInBackground { get; set; } = true;
+    /// <summary>Make CLIP embeddings of the whole library in the background (Similar photos, searching by description).</summary>
+    public bool FindSimilarInBackground { get; set; } = true;
     /// <summary>Grid tile edge in DIPs.</summary>
     public double TileSize { get; set; } = 220;
     /// <summary>Bumped when a default changes, so saved settings can move to it once.</summary>
