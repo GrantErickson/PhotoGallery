@@ -40,6 +40,8 @@ public sealed class AppSettings
     public bool TranscribeInBackground { get; set; } = true;
     /// <summary>Read the text in every photo (OCR) in the background (the one being viewed is always read).</summary>
     public bool ReadPhotoTextInBackground { get; set; } = true;
+    /// <summary>Look up park, school, restaurant… names from OpenStreetMap (sends the rough areas where photos were taken).</summary>
+    public bool NamePlacesFromOsm { get; set; }
     /// <summary>The last searches, most recent first (offered in the search box).</summary>
     public List<string> RecentSearches { get; set; } = [];
     /// <summary>Ask before deleting photos (they go to the Recycle Bin either way).</summary>

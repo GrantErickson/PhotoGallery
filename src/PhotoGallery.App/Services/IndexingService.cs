@@ -113,6 +113,7 @@ public sealed class IndexingService(AppServices services)
             var missing = items.Where(i => !services.Thumbnails.TryGetCached(i.Id, out _)).Select(i => i.Id).ToList();
             services.Sharpness.Nudge(); // new photos to measure and compare
             services.Similar.Nudge();
+            services.PlacesOnline.Nudge();
             if (missing.Count == 0) return;
             var done = 0;
             await Parallel.ForEachAsync(missing, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = ct }, async (id, token) =>

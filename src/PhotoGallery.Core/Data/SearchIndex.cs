@@ -3,7 +3,10 @@ using Dapper;
 
 namespace PhotoGallery.Core.Data;
 
-/// <summary>Keeps the FTS "Tags" column (tag names, named people, your places) in step with MediaTags/MediaFaces/MediaPlaces.</summary>
+/// <summary>
+/// Keeps the FTS "Tags" column (tag names, named people, your places, the OpenStreetMap place and its kind) in step with
+/// MediaTags, MediaFaces, MediaPlaces and Media.PoiId.
+/// </summary>
 internal static class SearchIndex
 {
     private const string TagsExpression =
@@ -12,7 +15,9 @@ internal static class SearchIndex
              || ' ' ||
              coalesce((SELECT group_concat(p.Name, ' ') FROM MediaFaces f JOIN People p ON p.Id = f.PersonId WHERE f.MediaId = MediaFts.rowid AND p.Name IS NOT NULL), '')
              || ' ' ||
-             coalesce((SELECT group_concat(pl.Name, ' ') FROM MediaPlaces mp JOIN Places pl ON pl.Id = mp.PlaceId WHERE mp.MediaId = MediaFts.rowid), ''))
+             coalesce((SELECT group_concat(pl.Name, ' ') FROM MediaPlaces mp JOIN Places pl ON pl.Id = mp.PlaceId WHERE mp.MediaId = MediaFts.rowid), '')
+             || ' ' ||
+             coalesce((SELECT po.Name || ' ' || po.Kind FROM Media mm JOIN Pois po ON po.Id = mm.PoiId WHERE mm.Id = MediaFts.rowid), ''))
         """;
 
     /// <summary>Recomputes tags for every row (after a OneDrive sync).</summary>

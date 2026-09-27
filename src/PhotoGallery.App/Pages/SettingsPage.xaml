@@ -75,6 +75,14 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="Place names" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Names the parks, schools, restaurants, cafés, churches, museums, beaches and other places your photos were taken at, and makes them searchable (“Manito Park”, “restaurant”). The names come from OpenStreetMap: looking them up sends the rough areas (squares of about 5 × 4 km) where your photos were taken to OpenStreetMap's Overpass service, once each. Nothing else is sent. Place data © OpenStreetMap contributors (ODbL)." />
+                <ToggleSwitch x:Name="PoiSwitch" Header="Look up place names online" Toggled="OnPoiToggled" />
+                <TextBlock x:Name="PoiStatsText" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="Similar photos and searching by description" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            Text="Every photo and video is compared by what's in it, on this PC with OpenAI's CLIP (ViT-L/14) on the graphics card; nothing is uploaded. The model (about 860 MB) downloads once. Then the viewer can show similar photos, and searches offer photos that look like what you typed." />

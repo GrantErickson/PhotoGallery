@@ -977,12 +977,12 @@ public sealed partial class ViewerControl : UserControl
         PlaceLink.Visibility = Visibility.Collapsed;
         NamePlaceLink.Visibility = item.Latitude is null ? Visibility.Collapsed : Visibility.Visible;
         if (item is not { Latitude: { } lat, Longitude: { } lon }) return;
-        var (place, area) = await S.PlaceNames.DescribeAsync(item.Id, lat, lon);
+        var (place, spot, area) = await S.PlaceNames.DescribeAsync(item.Id, lat, lon);
         if (_current?.Id != item.Id) return;
         _shownPlace = place;
-        var name = place is null ? area : area is null ? place.Name : $"{place.Name} · {area}";
-        PlaceLink.Content = name;
-        PlaceLink.Visibility = name is null ? Visibility.Collapsed : Visibility.Visible;
+        var names = new[] { place?.Name, spot?.Name, area }.OfType<string>().Distinct().ToList();
+        PlaceLink.Content = string.Join(" · ", names);
+        PlaceLink.Visibility = names.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         NamePlaceLink.Visibility = place is null ? Visibility.Visible : Visibility.Collapsed;
     }
 

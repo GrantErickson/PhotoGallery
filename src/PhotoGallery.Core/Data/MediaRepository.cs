@@ -100,6 +100,7 @@ public sealed class MediaRepository(GalleryDatabase database)
                 QuickHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.QuickHash END,
                 PerceptualHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.PerceptualHash END,
                 Sharpness = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.Sharpness END,
+                PoiId = CASE WHEN Media.Latitude IS excluded.Latitude AND Media.Longitude IS excluded.Longitude THEN Media.PoiId END,
                 FolderId = excluded.FolderId, FileName = excluded.FileName, FileSize = excluded.FileSize,
                 FileModified = excluded.FileModified, Kind = excluded.Kind, DateTaken = excluded.DateTaken,
                 DateSource = excluded.DateSource, Width = excluded.Width, Height = excluded.Height,
@@ -123,7 +124,8 @@ public sealed class MediaRepository(GalleryDatabase database)
             VALUES (@Id, @FileName, @folderPath,
                     trim(coalesce((SELECT group_concat(t.Name, ' ') FROM MediaTags mt JOIN Tags t ON t.Id = mt.TagId WHERE mt.MediaId = @Id), '') || ' ' ||
                          coalesce((SELECT group_concat(pp.Name, ' ') FROM MediaFaces f JOIN People pp ON pp.Id = f.PersonId WHERE f.MediaId = @Id AND pp.Name IS NOT NULL), '') || ' ' ||
-                         coalesce((SELECT group_concat(pl.Name, ' ') FROM MediaPlaces mp JOIN Places pl ON pl.Id = mp.PlaceId WHERE mp.MediaId = @Id), '')),
+                         coalesce((SELECT group_concat(pl.Name, ' ') FROM MediaPlaces mp JOIN Places pl ON pl.Id = mp.PlaceId WHERE mp.MediaId = @Id), '') || ' ' ||
+                         coalesce((SELECT po.Name || ' ' || po.Kind FROM Media mm JOIN Pois po ON po.Id = mm.PoiId WHERE mm.Id = @Id), '')),
                     trim(coalesce(@CameraMake, '') || ' ' || coalesce(@CameraModel, '')),
                     (SELECT Text FROM Transcripts WHERE MediaId = @Id),
                     (SELECT nullif(Text, '') FROM PhotoText WHERE MediaId = @Id));

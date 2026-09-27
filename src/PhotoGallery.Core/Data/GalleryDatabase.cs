@@ -262,6 +262,29 @@ public sealed class GalleryDatabase
             Vector       BLOB NOT NULL
         ) WITHOUT ROWID;
         """,
+        // v15: named places from OpenStreetMap (parks, schools, restaurants…), the tiles already looked up, and the
+        // place each photo was taken at (NULL = not looked at, 0 = none).
+        """
+        CREATE TABLE Pois (
+            Id        INTEGER PRIMARY KEY,
+            OsmKey    TEXT NOT NULL UNIQUE,
+            Name      TEXT NOT NULL,
+            Kind      TEXT NOT NULL,
+            Latitude  REAL NOT NULL,
+            Longitude REAL NOT NULL,
+            South     REAL,
+            West      REAL,
+            North     REAL,
+            East      REAL
+        );
+        CREATE INDEX IX_Pois_Location ON Pois(Latitude, Longitude);
+        CREATE TABLE PoiTiles (
+            Tile       TEXT PRIMARY KEY,
+            FetchedUtc TEXT NOT NULL,
+            Count      INTEGER NOT NULL
+        ) WITHOUT ROWID;
+        ALTER TABLE Media ADD COLUMN PoiId INTEGER;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

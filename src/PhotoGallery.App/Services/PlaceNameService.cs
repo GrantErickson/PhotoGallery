@@ -5,8 +5,9 @@ using PhotoGallery.Core.Places;
 namespace PhotoGallery.App.Services;
 
 /// <summary>
-/// Names for where a photo was taken: one of your places if it's inside one, else OneDrive's name for it, else the
-/// nearest town from GeoNames' city list (downloaded once, ~10 MB, kept in %LocalAppData%\PhotoGallery\places).
+/// Names for where a photo was taken: one of your places if it's inside one, the park, school, restaurant… from
+/// OpenStreetMap (when that's switched on), and OneDrive's name for the area, else the nearest town from GeoNames' city
+/// list (downloaded once, ~10 MB, kept in %LocalAppData%\PhotoGallery\places).
 /// </summary>
 public sealed class PlaceNameService(AppServices services)
 {
@@ -16,13 +17,14 @@ public sealed class PlaceNameService(AppServices services)
 
     private string Folder => Path.Combine(services.Paths.Root, "places");
 
-    /// <summary>(your place, the town or area), either may be null.</summary>
-    public async Task<(Place? Place, string? Area)> DescribeAsync(long mediaId, double latitude, double longitude)
+    /// <summary>(your place, the OpenStreetMap place it was taken at, the town or area); any may be null.</summary>
+    public async Task<(Place? Place, Poi? Spot, string? Area)> DescribeAsync(long mediaId, double latitude, double longitude)
     {
         var place = await Task.Run(() => services.Places.FindFor(latitude, longitude));
+        var spot = await Task.Run(() => services.Pois.GetFor(mediaId));
         var area = await Task.Run(() => services.Media.GetPlaceTag(mediaId));
         if (area is null && await CitiesAsync() is { } cities) area = cities.Nearest(latitude, longitude)?.DisplayName;
-        return (place, area);
+        return (place, spot, area);
     }
 
     private Task<CityIndex?> CitiesAsync() => _cities ??= Task.Run(LoadCitiesAsync);

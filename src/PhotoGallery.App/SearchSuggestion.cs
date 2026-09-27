@@ -19,16 +19,28 @@ public sealed record SearchSuggestion(string Query, string Kind, string Glyph)
         text = text.Trim();
         var recent = services.Settings.RecentSearches
             .Where(r => text.Length == 0 || r.Contains(text, StringComparison.CurrentCultureIgnoreCase))
-            .Select(r => new SearchSuggestion(r, "recent", ""));
+            .Select(r => new SearchSuggestion(r, "recent", "\uE81C"));
         if (text.Length == 0) return recent.Take(Max).ToList();
 
-        var names = services.People.GetPeople().Where(p => p.Name is not null).Select(p => new SearchSuggestion(p.Name!, "person", ""))
-            .Concat(services.Places.GetAll().Select(p => new SearchSuggestion(p.Name, "your place", "")))
+        var names = services.People.GetPeople().Where(p => p.Name is not null).Select(p => new SearchSuggestion(p.Name!, "person", "\uE77B"))
+            .Concat(services.Places.GetAll().Select(p => new SearchSuggestion(p.Name, "your place", "\uE707")))
+            .Concat(PlacesInUse(services).Select(name => new SearchSuggestion(name, "place", "\uE707")))
             .Concat(services.Collections.GetTags().Where(t => t.Count > 0 && t.TagType != TagType.Person)
-                .Select(t => new SearchSuggestion(t.Name, t.TagType == TagType.Place ? "place" : "tag", t.TagType == TagType.Place ? "" : "")))
+                .Select(t => new SearchSuggestion(t.Name, t.TagType == TagType.Place ? "place" : "tag", t.TagType == TagType.Place ? "\uE707" : "\uE8EC")))
             .Where(s => s.Query.Contains(text, StringComparison.CurrentCultureIgnoreCase))
             .OrderByDescending(s => s.Query.StartsWith(text, StringComparison.CurrentCultureIgnoreCase));
         return recent.Concat(names).DistinctBy(s => s.Query.ToLowerInvariant()).Take(Max).ToList();
+    }
+
+    private static (DateTime At, List<string> Names)? _placesInUse;
+
+    /// <summary>OpenStreetMap places photos were taken at (re-read at most once a minute; the list can be long).</summary>
+    private static List<string> PlacesInUse(AppServices services)
+    {
+        if (_placesInUse is { } cached && DateTime.UtcNow - cached.At < TimeSpan.FromMinutes(1)) return cached.Names;
+        var names = services.Pois.GetNamesInUse();
+        _placesInUse = (DateTime.UtcNow, names);
+        return names;
     }
 
     /// <summary>Remembers a search (most recent first, no repeats).</summary>

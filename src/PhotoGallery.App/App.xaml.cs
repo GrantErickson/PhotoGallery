@@ -55,5 +55,6 @@ public partial class App : Application
         services.PhotoText.Start();
         services.Sharpness.Start();
         services.Similar.Start();
+        services.PlacesOnline.Start();
     }
 }

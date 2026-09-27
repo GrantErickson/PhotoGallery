@@ -25,6 +25,7 @@ public sealed class AppServices
         PhotoTexts = new PhotoTextRepository(Database);
         Embeddings = new EmbeddingRepository(Database);
         Places = new PlaceRepository(Database);
+        Pois = new PoiRepository(Database);
         PlaceNames = new PlaceNameService(this);
         Faces = new Imaging.FaceCropper(Path.Combine(Paths.Root, "faces"));
         Thumbnails = new ThumbnailCache(Paths.Thumbnails);
@@ -43,6 +44,7 @@ public sealed class AppServices
         PhotoText = new PhotoTextService(this);
         Sharpness = new SharpnessService(this);
         Similar = new EmbeddingService(this);
+        PlacesOnline = new PoiService(this);
         Media.Removed += ForgetRemoved;
     }
 
@@ -83,6 +85,9 @@ public sealed class AppServices
     /// <summary>Similar photos and searching by description (CLIP).</summary>
     public EmbeddingService Similar { get; }
     public PlaceRepository Places { get; }
+    /// <summary>Named places from OpenStreetMap (parks, schools, restaurants…) and which photos were taken at them.</summary>
+    public PoiRepository Pois { get; }
+    public PoiService PlacesOnline { get; }
     public PlaceNameService PlaceNames { get; }
     public Imaging.FaceCropper Faces { get; }
     public CloudSyncService CloudSync { get; }

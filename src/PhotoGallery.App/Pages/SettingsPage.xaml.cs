@@ -17,6 +17,7 @@ public sealed partial class SettingsPage : Page
         App.Services.PhotoText.StateChanged += OnTranscriptionChanged;
         App.Services.PhotoText.Completed += _ => OnTranscriptionChanged();
         App.Services.Similar.StateChanged += OnTranscriptionChanged;
+        App.Services.PlacesOnline.StateChanged += OnTranscriptionChanged;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -28,6 +29,7 @@ public sealed partial class SettingsPage : Page
         PhotoTextSwitch.IsOn = App.Services.Settings.ReadPhotoTextInBackground;
         SimilarSwitch.IsOn = App.Services.Settings.FindSimilarInBackground;
         ConfirmDeleteSwitch.IsOn = App.Services.Settings.ConfirmDelete;
+        PoiSwitch.IsOn = App.Services.Settings.NamePlacesFromOsm;
         _loadingSwitch = false;
         await RefreshTranscriptsAsync();
         var services = App.Services;
@@ -64,6 +66,15 @@ public sealed partial class SettingsPage : Page
             : $"{read:N0} of {photos:N0} photos read, {withText:N0} with text · " +
               (!App.Services.Settings.ReadPhotoTextInBackground ? "background reading is off" : ocr.IsWorking ? "Reading…" : read == photos ? "Up to date" : "Waiting to start");
 
+        var poi = App.Services.PlacesOnline;
+        var (tilesDone, tiles, places, photosNamed) = await Task.Run(App.Services.Pois.GetProgress);
+        PoiStatsText.Text = !App.Services.Settings.NamePlacesFromOsm && tilesDone == 0
+            ? ""
+            : $"{tilesDone:N0} of {tiles:N0} areas looked up · {places:N0} places · {photosNamed:N0} photos named · " +
+              (poi.LastError is { } poiError ? poiError
+               : !App.Services.Settings.NamePlacesFromOsm ? "looking up is off"
+               : poi.IsWorking ? "Looking up…" : tilesDone == tiles ? "Up to date" : "Waiting to start");
+
         var similar = App.Services.Similar;
         var (compared, all) = await Task.Run(App.Services.Embeddings.GetProgress);
         var device = similar.Device is { } d ? $" · on {(d == "CPU" ? "the CPU" : $"the GPU ({d})")}" : "";
@@ -73,6 +84,14 @@ public sealed partial class SettingsPage : Page
               (similar.LastError is { } error ? error
                : !App.Services.Settings.FindSimilarInBackground ? "background comparing is off"
                : similar.IsWorking ? "Comparing…" : compared == all ? "Up to date" : "Waiting to start") + device;
+    }
+
+    private void OnPoiToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingSwitch) return;
+        App.Services.Settings.NamePlacesFromOsm = PoiSwitch.IsOn;
+        App.Services.SaveSettings();
+        App.Services.PlacesOnline.Nudge();
     }
 
     private void OnConfirmDeleteToggled(object sender, RoutedEventArgs e)
