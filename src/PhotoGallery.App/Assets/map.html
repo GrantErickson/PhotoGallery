@@ -20,6 +20,14 @@
     .place-label { background: rgba(0, 120, 212, .85); color: #fff; border: 0; border-radius: 10px; padding: 2px 8px;
                    font-weight: 600; box-shadow: none; }
     .place-label::before { display: none; }
+    /* Dark mode: the light OpenStreetMap tiles inverted (hue turned back so water stays blue), and dark controls. */
+    body.dark #map { background: #1b1b1b; }
+    body.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.9) saturate(.8); }
+    body.dark .leaflet-bar a { background: #2b2b2b; color: #e6e6e6; border-bottom-color: #444; }
+    body.dark .leaflet-bar a:hover { background: #3a3a3a; }
+    body.dark .leaflet-control-attribution { background: rgba(32, 32, 32, .8); color: #bbb; }
+    body.dark .leaflet-control-attribution a { color: #8ab4f8; }
+    body.dark .leaflet-tooltip:not(.place-label) { background: #2b2b2b; color: #e6e6e6; border-color: #444; }
   </style>
 </head>
 <body>
@@ -30,6 +38,9 @@
   <script>
     // Messages to the app: {type:"bounds", south, west, north, east} and {type:"open", id}.
     const post = m => window.chrome?.webview?.postMessage(m);
+    // The app's theme: from the address at load, then setTheme(true/false) when it changes.
+    document.body.classList.toggle("dark", new URLSearchParams(location.search).get("dark") === "1");
+    window.setTheme = dark => document.body.classList.toggle("dark", dark);
     const statusBox = document.getElementById("status");
     const map = L.map("map", { worldCopyJump: true, preferCanvas: true }).setView([20, 0], 2);
     // OSM has tiles to level 19; allow two more levels of over-zoom to separate photos taken close together.

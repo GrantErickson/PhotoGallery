@@ -57,7 +57,9 @@ public sealed partial class MapPage : Page
             core.WebMessageReceived += OnWebMessage;
             // Versioned by the file's date, so WebView2 never runs a cached copy of an older page.
             var page = Path.Combine(AppContext.BaseDirectory, "Assets", "map.html");
-            core.Navigate($"https://app.local/map.html?v={File.GetLastWriteTimeUtc(page).Ticks}");
+            core.Navigate($"https://app.local/map.html?v={File.GetLastWriteTimeUtc(page).Ticks}&dark={(App.MainWindow.IsDark ? 1 : 0)}");
+            // Follows the app's theme (and Windows', on "Use my Windows setting").
+            ActualThemeChanged += (_, _) => _ = core.ExecuteScriptAsync($"window.setTheme && window.setTheme({(ActualTheme == ElementTheme.Dark ? "true" : "false")})");
         }
         catch (Exception ex)
         {

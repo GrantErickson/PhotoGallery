@@ -29,6 +29,7 @@ public sealed partial class SettingsPage : Page
         PhotoTextSwitch.IsOn = App.Services.Settings.ReadPhotoTextInBackground;
         SimilarSwitch.IsOn = App.Services.Settings.FindSimilarInBackground;
         ConfirmDeleteSwitch.IsOn = App.Services.Settings.ConfirmDelete;
+        ThemeChoice.SelectedIndex = App.Services.Settings.Theme switch { "Light" => 1, "System" => 2, _ => 0 };
         PoiSwitch.IsOn = App.Services.Settings.NamePlacesFromOsm;
         _loadingSwitch = false;
         await RefreshTranscriptsAsync();
@@ -92,6 +93,23 @@ public sealed partial class SettingsPage : Page
         App.Services.Settings.NamePlacesFromOsm = PoiSwitch.IsOn;
         App.Services.SaveSettings();
         App.Services.PlacesOnline.Nudge();
+    }
+
+    private void OnThemeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingSwitch || ThemeChoice.SelectedIndex < 0) return;
+        var theme = ThemeChoice.SelectedIndex switch { 1 => "Light", 2 => "System", _ => "Dark" };
+        if (theme == App.Services.Settings.Theme) return;
+        App.Services.Settings.Theme = theme;
+        App.Services.SaveSettings();
+        App.MainWindow.ApplyTheme(theme);
+        ThemeRestart.Visibility = Visibility.Visible;
+    }
+
+    private void OnRestart(object sender, RoutedEventArgs e)
+    {
+        App.Services.SaveSettings();
+        Microsoft.Windows.AppLifecycle.AppInstance.Restart("");
     }
 
     private void OnConfirmDeleteToggled(object sender, RoutedEventArgs e)

@@ -11,6 +11,13 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        // Menus and dialogs only take the app's theme, which can only be set before any window exists.
+        switch (PhotoGallery.Core.AppSettings.Load(PhotoGallery.Core.AppPaths.Default).Theme)
+        {
+            case "Light": RequestedTheme = ApplicationTheme.Light; break;
+            case "System": break;
+            default: RequestedTheme = ApplicationTheme.Dark; break;
+        }
         // Exceptions on background threads end the process; at least leave a trace of why.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             PhotoGallery.Core.Log.Error("Fatal background exception", e.ExceptionObject as Exception);

@@ -9,6 +9,20 @@
             <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
 
             <StackPanel Spacing="8">
+                <TextBlock Text="Appearance" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <RadioButtons x:Name="ThemeChoice" SelectionChanged="OnThemeChanged" MaxColumns="3">
+                    <x:String>Dark</x:String>
+                    <x:String>Light</x:String>
+                    <x:String>Use my Windows setting</x:String>
+                </RadioButtons>
+                <StackPanel x:Name="ThemeRestart" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                    <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Menus and dialogs switch after the app restarts." />
+                    <Button Content="Restart now" Click="OnRestart" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="Library folders" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            Text="Photos and videos in these folders (and their subfolders) are indexed. Files are never modified." />

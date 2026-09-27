@@ -20,6 +20,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ExtendsContentIntoTitleBar = true; // the search box lives in the title bar
         SetTitleBar(AppTitleBar);
+        ApplyTheme(App.Services.Settings.Theme);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1500, 950));
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();
 
@@ -154,6 +155,21 @@ public sealed partial class MainWindow : Window
         }
         e.Handled = true;
     }
+
+    /// <summary>Dark, Light or System: the window (and the title bar's buttons) switch at once.</summary>
+    public void ApplyTheme(string theme)
+    {
+        Root.RequestedTheme = theme switch { "Light" => ElementTheme.Light, "System" => ElementTheme.Default, _ => ElementTheme.Dark };
+        AppWindow.TitleBar.PreferredTheme = theme switch
+        {
+            "Light" => Microsoft.UI.Windowing.TitleBarTheme.Light,
+            "System" => Microsoft.UI.Windowing.TitleBarTheme.UseDefaultAppMode,
+            _ => Microsoft.UI.Windowing.TitleBarTheme.Dark,
+        };
+    }
+
+    /// <summary>Whether the window is showing dark right now (System follows Windows).</summary>
+    public bool IsDark => Root.ActualTheme == ElementTheme.Dark;
 
     private void OnTitleBarBackRequested(TitleBar sender, object args) => GoBack();
 
