@@ -225,6 +225,7 @@ public sealed partial class ViewerControl : UserControl
         LocationLink.Content = item.Latitude is { } lat && item.Longitude is { } lon
             ? string.Create(CultureInfo.InvariantCulture, $"{lat:F5}, {lon:F5}")
             : null;
+        ShowPlaceName(item);
 
         LiveButton.Visibility = item.Motion is MotionSource.LocalPair or MotionSource.Embedded or MotionSource.Cloud
             ? Visibility.Visible
@@ -849,11 +850,47 @@ public sealed partial class ViewerControl : UserControl
         if (_current is not null) Clipboard.CopyPaths([_current.Path]);
     }
 
-    private async void OnOpenMap(object sender, RoutedEventArgs e)
+    private PhotoGallery.Core.Places.Place? _shownPlace;
+
+    /// <summary>The place's name (yours, OneDrive's, or the nearest town) above the coordinates.</summary>
+    private async void ShowPlaceName(MediaItem item)
+    {
+        _shownPlace = null;
+        PlaceLink.Visibility = Visibility.Collapsed;
+        NamePlaceLink.Visibility = item.Latitude is null ? Visibility.Collapsed : Visibility.Visible;
+        if (item is not { Latitude: { } lat, Longitude: { } lon }) return;
+        var (place, area) = await S.PlaceNames.DescribeAsync(item.Id, lat, lon);
+        if (_current?.Id != item.Id) return;
+        _shownPlace = place;
+        var name = place is null ? area : area is null ? place.Name : $"{place.Name} · {area}";
+        PlaceLink.Content = name;
+        PlaceLink.Visibility = name is null ? Visibility.Collapsed : Visibility.Visible;
+        NamePlaceLink.Visibility = place is null ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>The coordinates: the map zoomed right in on this photo, selected in the list beside it.</summary>
+    private void OnOpenMap(object sender, RoutedEventArgs e)
+    {
+        if (_current is { Latitude: { } lat, Longitude: { } lon } item)
+            App.MainWindow.NavigateFromViewer(() => App.MainWindow.Navigate(typeof(PhotoGallery.App.Pages.MapPage),
+                new PhotoGallery.App.Pages.MapRequest(lat, lon, 19, SelectId: item.Id)));
+    }
+
+    /// <summary>The place name: your place with its photos, or the area around the photo.</summary>
+    private void OnPlaceLinkClick(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { Latitude: { } lat, Longitude: { } lon }) return;
+        var request = _shownPlace is { } place
+            ? new PhotoGallery.App.Pages.MapRequest(lat, lon, 15, PlaceId: place.Id)
+            : new PhotoGallery.App.Pages.MapRequest(lat, lon, 13);
+        App.MainWindow.NavigateFromViewer(() => App.MainWindow.Navigate(typeof(PhotoGallery.App.Pages.MapPage), request));
+    }
+
+    private void OnNamePlace(object sender, RoutedEventArgs e)
     {
         if (_current is { Latitude: { } lat, Longitude: { } lon })
-            await Launcher.LaunchUriAsync(new Uri(string.Create(CultureInfo.InvariantCulture,
-                $"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=16/{lat}/{lon}")));
+            App.MainWindow.NavigateFromViewer(() => App.MainWindow.Navigate(typeof(PhotoGallery.App.Pages.MapPage),
+                new PhotoGallery.App.Pages.MapRequest(lat, lon, 17, NewPlace: true)));
     }
 
     // ---- Transcript ----

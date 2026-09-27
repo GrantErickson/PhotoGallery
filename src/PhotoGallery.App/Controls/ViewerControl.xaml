@@ -251,7 +251,12 @@
                 </StackPanel>
                 <StackPanel x:Name="LocationPanel" Spacing="2">
                     <TextBlock Text="Location" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <HyperlinkButton x:Name="LocationLink" Padding="0" Click="OnOpenMap" />
+                    <HyperlinkButton x:Name="PlaceLink" Padding="0" Click="OnPlaceLinkClick" Visibility="Collapsed"
+                                     ToolTipService.ToolTip="Show the area on the map" />
+                    <HyperlinkButton x:Name="LocationLink" Padding="0" FontSize="12" Click="OnOpenMap"
+                                     ToolTipService.ToolTip="Show this photo on the map" />
+                    <HyperlinkButton x:Name="NamePlaceLink" Padding="0" FontSize="12" Content="Name this place…" Click="OnNamePlace"
+                                     ToolTipService.ToolTip="Name the place (e.g. Home) with a radius; photos taken there get the name" />
                 </StackPanel>
                 <StackPanel x:Name="EditedPanel" Spacing="2" Visibility="Collapsed">
                     <TextBlock Text="Unsaved edits" Style="{StaticResource CaptionTextBlockStyle}" Foreground="#C75000" />

@@ -16,6 +16,10 @@
     .marker-cluster.selected { background-color: rgba(0, 120, 212, .4) !important; }
     .photo-pin { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
                  background: #ccc center/cover no-repeat; }
+    .photo-pin.focused { border-color: #ff9f1c; border-width: 3px; }
+    .place-label { background: rgba(0, 120, 212, .85); color: #fff; border: 0; border-radius: 10px; padding: 2px 8px;
+                   font-weight: 600; box-shadow: none; }
+    .place-label::before { display: none; }
   </style>
 </head>
 <body>
@@ -57,8 +61,56 @@
       post({ type: "clear" });
       sendBounds();
     }
-    map.on("click", clearSelection);
     window.clearSelection = clearSelection;
+
+    // Your places: labelled circles; click one to edit it and list its photos.
+    const placeLayer = L.layerGroup().addTo(map);
+    window.setPlaces = list => {
+      placeLayer.clearLayers();
+      for (const p of list) {
+        const circle = L.circle([p.lat, p.lon], { radius: p.r, color: "#0078d4", weight: 2, fillOpacity: 0.08 });
+        circle.bindTooltip(p.name, { permanent: true, direction: "center", className: "place-label" });
+        circle.on("click", e => { L.DomEvent.stopPropagation(e); post({ type: "place", id: p.id }); });
+        circle.addTo(placeLayer);
+      }
+    };
+
+    // Making a place: the next click on the map sets the centre; the pin can then be dragged; the app sets the radius.
+    let draft = null, draftPin = null, placing = false;
+    window.startPlacing = () => { placing = true; map.getContainer().style.cursor = "crosshair"; };
+    window.setDraft = (lat, lon, r) => {
+      if (!draft) {
+        draft = L.circle([lat, lon], { radius: r, color: "#ff9f1c", weight: 3, dashArray: "6 4", fillOpacity: 0.12 }).addTo(map);
+        draftPin = L.marker([lat, lon], { draggable: true }).addTo(map);
+        draftPin.on("dragend", () => { const ll = draftPin.getLatLng(); post({ type: "placeCenter", lat: ll.lat, lon: ll.lng }); });
+      } else {
+        draft.setLatLng([lat, lon]); draft.setRadius(r); draftPin.setLatLng([lat, lon]);
+      }
+    };
+    window.clearDraft = () => {
+      if (draft) { map.removeLayer(draft); map.removeLayer(draftPin); draft = draftPin = null; }
+      placing = false;
+      map.getContainer().style.cursor = "";
+    };
+    // A view asked for while Leaflet is still animating a zoom (the first fit to all photos) would be undone when that
+    // animation ends, so wait for it; then jump there without animating.
+    function whenSettled(action) {
+      if (map._animatingZoom) { map.once("zoomend", () => whenSettled(action)); return; }
+      map.stop();
+      action();
+    }
+    window.fitCircle = (lat, lon, r) => whenSettled(() => map.fitBounds(L.latLng(lat, lon).toBounds(r * 2.4), { animate: false }));
+    window.focusOn = (lat, lon, zoom) => whenSettled(() => map.setView([lat, lon], zoom, { animate: false }));
+
+    map.on("click", e => {
+      if (placing) {
+        placing = false;
+        map.getContainer().style.cursor = "";
+        post({ type: "placeCenter", lat: e.latlng.lat, lon: e.latlng.lng });
+        return;
+      }
+      clearSelection();
+    });
 
     // The map swallows mouse and keyboard input, so pass the app's back/forward gestures through.
     window.addEventListener("mouseup", e => {
@@ -79,6 +131,7 @@
       const b = map.getBounds();
       post({ type: "bounds", south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() });
     }
+    window.sendBounds = sendBounds;
     let timer;
     map.on("moveend", () => { clearTimeout(timer); timer = setTimeout(sendBounds, 250); });
 
@@ -98,6 +151,7 @@
           try { map.fitBounds(L.latLngBounds(points.map(p => [p[1], p[2]])), { maxZoom: 12 }); } catch (e) { console.warn(e); }
         }
         sendBounds();
+        post({ type: "ready" });
       })
       .catch(e => statusBox.textContent = "Couldn't load photo locations: " + e);
   </script>

@@ -224,6 +224,24 @@ public sealed class GalleryDatabase
         DROP TABLE MediaFts;
         ALTER TABLE MediaFtsNew RENAME TO MediaFts;
         """,
+        // v11: places you named (centre + radius) and the photos at each.
+        """
+        CREATE TABLE Places (
+            Id           INTEGER PRIMARY KEY,
+            Name         TEXT NOT NULL,
+            Latitude     REAL NOT NULL,
+            Longitude    REAL NOT NULL,
+            RadiusMeters REAL NOT NULL,
+            LonScale     REAL NOT NULL
+        );
+        CREATE TABLE MediaPlaces (
+            MediaId INTEGER NOT NULL REFERENCES Media(Id) ON DELETE CASCADE,
+            PlaceId INTEGER NOT NULL REFERENCES Places(Id) ON DELETE CASCADE,
+            PRIMARY KEY (MediaId, PlaceId)
+        ) WITHOUT ROWID;
+        CREATE INDEX IX_MediaPlaces_Place ON MediaPlaces(PlaceId);
+        CREATE INDEX IX_Media_Location ON Media(Latitude, Longitude) WHERE Latitude IS NOT NULL;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

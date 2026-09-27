@@ -29,6 +29,8 @@ public sealed record MediaFilter
     public long? TagId { get; init; }
     /// <summary>Photos OneDrive recognised this person in.</summary>
     public long? PersonId { get; init; }
+    /// <summary>Photos at one of your places.</summary>
+    public long? PlaceId { get; init; }
     public string? Text { get; init; }
     public DateTime? From { get; init; }
     public DateTime? To { get; init; }

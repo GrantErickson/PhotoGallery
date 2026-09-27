@@ -111,6 +111,7 @@ public sealed class MediaRepository(GalleryDatabase database)
             RETURNING Id
             """, item, tx);
 
+        PlaceRepository.Refile(db, tx, item.Id);
         db.Execute(
             """
             DELETE FROM Transcripts WHERE MediaId = @Id AND (FileSize <> @FileSize OR FileModified <> @FileModified);
@@ -119,7 +120,8 @@ public sealed class MediaRepository(GalleryDatabase database)
             INSERT INTO MediaFts (rowid, Name, Folder, Tags, Camera, Speech, PhotoText)
             VALUES (@Id, @FileName, @folderPath,
                     trim(coalesce((SELECT group_concat(t.Name, ' ') FROM MediaTags mt JOIN Tags t ON t.Id = mt.TagId WHERE mt.MediaId = @Id), '') || ' ' ||
-                         coalesce((SELECT group_concat(pp.Name, ' ') FROM MediaFaces f JOIN People pp ON pp.Id = f.PersonId WHERE f.MediaId = @Id AND pp.Name IS NOT NULL), '')),
+                         coalesce((SELECT group_concat(pp.Name, ' ') FROM MediaFaces f JOIN People pp ON pp.Id = f.PersonId WHERE f.MediaId = @Id AND pp.Name IS NOT NULL), '') || ' ' ||
+                         coalesce((SELECT group_concat(pl.Name, ' ') FROM MediaPlaces mp JOIN Places pl ON pl.Id = mp.PlaceId WHERE mp.MediaId = @Id), '')),
                     trim(coalesce(@CameraMake, '') || ' ' || coalesce(@CameraModel, '')),
                     (SELECT Text FROM Transcripts WHERE MediaId = @Id),
                     (SELECT nullif(Text, '') FROM PhotoText WHERE MediaId = @Id));
@@ -248,6 +250,11 @@ public sealed class MediaRepository(GalleryDatabase database)
             sql.Append(" AND m.Id IN (SELECT MediaId FROM MediaTags WHERE TagId = @tagId)");
             p.Add("tagId", tagId);
         }
+        if (f.PlaceId is { } placeId)
+        {
+            sql.Append(" AND m.Id IN (SELECT MediaId FROM MediaPlaces WHERE PlaceId = @placeId)");
+            p.Add("placeId", placeId);
+        }
         if (f.PersonId is { } personId)
         {
             sql.Append(" AND m.Id IN (SELECT MediaId FROM MediaFaces WHERE PersonId = @personId)");
@@ -309,6 +316,14 @@ public sealed class MediaRepository(GalleryDatabase database)
     {
         using var db = database.Open();
         return db.QuerySingleOrDefault<MediaItem>("SELECT * FROM Media WHERE Id = @id", new { id });
+    }
+
+    /// <summary>OneDrive's name for where the photo was taken ("Medical Lake, WA"), if it has one.</summary>
+    public string? GetPlaceTag(long id)
+    {
+        using var db = database.Open();
+        return db.ExecuteScalar<string?>(
+            "SELECT t.Name FROM MediaTags mt JOIN Tags t ON t.Id = mt.TagId WHERE mt.MediaId = @id AND t.TagType = 3 ORDER BY length(t.Name) DESC LIMIT 1", new { id });
     }
 
     public string? GetPath(long id)

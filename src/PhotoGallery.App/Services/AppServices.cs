@@ -23,6 +23,8 @@ public sealed class AppServices
         People = new PeopleRepository(Database);
         Transcripts = new TranscriptRepository(Database);
         PhotoTexts = new PhotoTextRepository(Database);
+        Places = new PlaceRepository(Database);
+        PlaceNames = new PlaceNameService(this);
         Faces = new Imaging.FaceCropper(Path.Combine(Paths.Root, "faces"));
         Thumbnails = new ThumbnailCache(Paths.Thumbnails);
         Thumbnails.Failed += (path, ex) => Log.Error($"Thumbnail failed for {path}", ex);
@@ -51,6 +53,8 @@ public sealed class AppServices
     public TranscriptionService Transcription { get; }
     public PhotoTextRepository PhotoTexts { get; }
     public PhotoTextService PhotoText { get; }
+    public PlaceRepository Places { get; }
+    public PlaceNameService PlaceNames { get; }
     public Imaging.FaceCropper Faces { get; }
     public CloudSyncService CloudSync { get; }
     public ThumbnailCache Thumbnails { get; }
