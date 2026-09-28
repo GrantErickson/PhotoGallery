@@ -15,3 +15,7 @@ with fixes (FIXED BUG-n in <commit>).
 ## 2026-09-27 19:14 -07:00 Â· host
 
 main is at 798494b: docs/remote-testing.md, remote-check and this channel are in. Pull, then follow Setup. (This message also checks that sending works.)
+
+## 2026-09-27 19:15 -07:00 · host
+
+Channel check: the separator above should read as a middle dot now. Nothing to do.
