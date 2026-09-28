@@ -8,6 +8,34 @@ using PhotoGallery.Core.Data;
 
 namespace PhotoGallery.App.Pages;
 
+/// <summary>
+/// Finding someone already named while a name is typed: naming someone with a name another person has joins them to
+/// that person instead (one name, one person). Used wherever people are named.
+/// </summary>
+public static class PeopleNames
+{
+    /// <summary>Everyone with a name, most photos first.</summary>
+    public static List<PersonRow> Named() =>
+        App.Services.People.GetPeople(includeHidden: true).Where(p => p.Name is not null).OrderByDescending(p => p.Count).ToList();
+
+    /// <summary>The person already called this (ignoring case), if any.</summary>
+    public static PersonRow? Match(IEnumerable<PersonRow> named, string text) =>
+        text.Length == 0 ? null : named.FirstOrDefault(p => string.Equals(p.Name, text, StringComparison.CurrentCultureIgnoreCase));
+
+    /// <summary>Names to offer as the text is typed: those starting with it first, then those containing it.</summary>
+    public static List<string>? Suggest(IEnumerable<PersonRow> named, string text) =>
+        text.Length == 0
+            ? null
+            : named.Where(p => p.Name!.Contains(text, StringComparison.CurrentCultureIgnoreCase))
+                .OrderBy(p => p.Name!.StartsWith(text, StringComparison.CurrentCultureIgnoreCase) ? 0 : 1)
+                .ThenByDescending(p => p.Count)
+                .Take(10)
+                .Select(p => p.Name!)
+                .ToList();
+
+    public static string Photos(long count) => count == 1 ? "1 photo" : $"{count:N0} photos";
+}
+
 public sealed class PersonTile(PersonRow row) : Observable
 {
     private ImageSource? _cover;
@@ -209,22 +237,96 @@ public sealed partial class PeoplePage : Page
     }
 
     /// <summary>
-    /// Asks for a name (here and in OneDrive); returns the updated person, or null if cancelled. A name someone else
-    /// already has offers to join the two instead: one name, one person.
+    /// Asks who someone is, as Who's this? does: a new name names them (here and in OneDrive); someone already named,
+    /// offered as you type, joins these photos to theirs instead (here and in OneDrive), and the button says so, with
+    /// their face. Returns the person as they are now (after a join, the one joined to), or null if cancelled.
     /// </summary>
     public static async Task<PersonRow?> NameAsync(XamlRoot root, PersonRow person)
     {
-        var name = await Dialogs.PromptAsync(root, person.Name is null ? "Who is this?" : "Rename person", "Name", person.Name ?? "", "Save");
-        if (name is null) return null;
-        name = name.Trim();
-        var other = name.Length == 0 ? null
-            : App.Services.People.GetPeople(includeHidden: true)
-                .FirstOrDefault(p => p.Id != person.Id && string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase));
-        if (other is not null)
+        var named = (await Task.Run(PeopleNames.Named)).Where(p => p.Id != person.Id).ToList();
+        var box = new AutoSuggestBox
         {
-            if (!await Dialogs.ConfirmAsync(root, $"Same person as {other.Name}?",
-                    $"{other.Name} is already someone. These photos will be joined to theirs, here and in OneDrive. OneDrive can't undo that.",
-                    "Join them")) return null;
+            Text = person.Name ?? "",
+            PlaceholderText = "Their name, or someone you've named",
+            QueryIcon = new SymbolIcon(Symbol.Contact),
+            Width = 360,
+        };
+        var face = new Image { Stretch = Stretch.UniformToFill };
+        var faceFrame = new Border
+        {
+            Width = 40, Height = 40, CornerRadius = new CornerRadius(20), Child = face, Visibility = Visibility.Collapsed,
+            Background = Application.Current.Resources["ControlAltFillColorSecondaryBrush"] as Brush,
+        };
+        var note = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 300, VerticalAlignment = VerticalAlignment.Center,
+            Style = Application.Current.Resources["CaptionTextBlockStyle"] as Style,
+            Foreground = Application.Current.Resources["TextFillColorSecondaryBrush"] as Brush,
+        };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = root,
+            Title = person.Name is null ? "Who is this?" : "Rename person",
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children = { box, new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { faceFrame, note } } },
+            },
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        long? shown = null;
+        async void Update()
+        {
+            var text = box.Text.Trim();
+            var match = PeopleNames.Match(named, text);
+            dialog.IsPrimaryButtonEnabled = match is not null || (text != (person.Name ?? "") && (text.Length > 0 || person.Name is not null));
+            dialog.PrimaryButtonText = match is not null ? $"Join to {match.Name}"
+                : text.Length == 0 && person.Name is not null ? "Remove the name"
+                : person.Name is null ? "Name" : "Rename";
+            note.Text = match is not null
+                ? $"{match.Name} is already someone ({PeopleNames.Photos(match.Count)}). These photos will be joined to theirs, here and in OneDrive. OneDrive can't undo that."
+                : "A new name names them here and in OneDrive. Type someone you've named to join these photos to theirs.";
+            faceFrame.Visibility = match is null ? Visibility.Collapsed : Visibility.Visible;
+            if (match is null)
+            {
+                shown = null;
+                return;
+            }
+            if (shown == match.Id) return;
+            shown = match.Id;
+            face.Source = null;
+            var tile = new PersonTile(match);
+            await tile.EnsureCoverAsync();
+            if (shown == match.Id) face.Source = tile.Cover;
+        }
+
+        var accepted = false;
+        box.TextChanged += (sender, args) =>
+        {
+            if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput) sender.ItemsSource = PeopleNames.Suggest(named, sender.Text.Trim());
+            Update();
+        };
+        box.QuerySubmitted += (sender, args) =>
+        {
+            // Choosing someone from the list only fills in their name; the button then says who they'd be joined to.
+            if (args.ChosenSuggestion is string chosen)
+            {
+                sender.Text = chosen;
+                return;
+            }
+            if (!dialog.IsPrimaryButtonEnabled) return;
+            accepted = true;
+            dialog.Hide();
+        };
+        dialog.Opened += (_, _) => box.Focus(FocusState.Programmatic);
+        Update();
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary && !accepted) return null;
+
+        var name = box.Text.Trim();
+        if (PeopleNames.Match(named, name) is { } other)
+        {
             await Task.Run(() => App.Services.People.Merge(person.Id, other.Id));
             App.MainWindow.ShowStatus($"Joined to {other.Name}");
             return App.Services.People.Get(other.Id);

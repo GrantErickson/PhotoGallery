@@ -540,7 +540,12 @@
 
   function personActions(person) {
     const rename = button(person.name ? "Rename" : "Name", null, async () => {
-      const name = await ask({ title: person.name ? "Rename" : "Who is this?", input: "Name", value: person.name || "", ok: "Save" });
+      const named = (await getPeople().catch(() => [])).filter(x => x.name && x.id !== person.id).sort((a, b) => b.count - a.count);
+      const name = await ask({
+        title: person.name ? "Rename" : "Who is this?",
+        text: "A new name names them here and in OneDrive. Choose someone you've named to join these photos to theirs.",
+        input: "Their name, or someone you've named", value: person.name || "", options: named.map(x => x.name), ok: "Save",
+      });
       if (name == null) return;
       try {
         const result = await post(`/api/people/${person.id}/rename`, { name });

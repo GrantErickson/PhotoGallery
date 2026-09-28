@@ -79,8 +79,7 @@ public sealed partial class WhoPage : Page
         Show(0);
     }
 
-    private static List<PersonRow> NamedPeople() =>
-        S.People.GetPeople(includeHidden: true).Where(p => p.Name is not null).OrderByDescending(p => p.Count).ToList();
+    private static List<PersonRow> NamedPeople() => PeopleNames.Named();
 
     // ---------- Showing one person ----------
 
@@ -169,24 +168,15 @@ public sealed partial class WhoPage : Page
 
     // ---------- Naming, or joining to someone named ----------
 
+    /// <summary>Everyone named but the person shown.</summary>
+    private IEnumerable<PersonRow> Others => _named.Where(p => p.Id != _current?.Id);
+
     /// <summary>Someone else already named this (ignoring case): naming would join them.</summary>
-    private PersonRow? Match(string text) =>
-        _named.FirstOrDefault(p => p.Id != _current?.Id && string.Equals(p.Name, text, StringComparison.CurrentCultureIgnoreCase));
+    private PersonRow? Match(string text) => PeopleNames.Match(Others, text);
 
     private void OnNameChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
-        {
-            var text = sender.Text.Trim();
-            sender.ItemsSource = text.Length == 0
-                ? null
-                : _named.Where(p => p.Id != _current?.Id && p.Name!.Contains(text, StringComparison.CurrentCultureIgnoreCase))
-                    .OrderBy(p => p.Name!.StartsWith(text, StringComparison.CurrentCultureIgnoreCase) ? 0 : 1)
-                    .ThenByDescending(p => p.Count)
-                    .Take(10)
-                    .Select(p => p.Name!)
-                    .ToList();
-        }
+        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput) sender.ItemsSource = PeopleNames.Suggest(Others, sender.Text.Trim());
         UpdateSave();
     }
 
