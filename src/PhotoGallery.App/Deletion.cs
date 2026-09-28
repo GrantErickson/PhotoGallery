@@ -31,6 +31,10 @@ public static class Deletion
         return gone;
     }
 
+    /// <summary>Deletes without asking (another computer asked, through remote access): what went, and what couldn't.</summary>
+    public static Task<(List<long> Gone, List<string> Failed)> DeleteWithoutAskingAsync(IReadOnlyCollection<long> ids) =>
+        Task.Run(() => Recycle(ids.Select(S.Media.Get).OfType<MediaItem>().ToList()));
+
     private static async Task<bool> ConfirmAsync(XamlRoot root, List<MediaItem> items)
     {
         var videos = items.Count(i => i.Kind == MediaKind.Video);

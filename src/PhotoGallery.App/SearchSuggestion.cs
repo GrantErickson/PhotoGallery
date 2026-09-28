@@ -14,10 +14,10 @@ public sealed record SearchSuggestion(string Query, string Kind, string Glyph)
     /// Recent searches first (all of them while nothing is typed), then people, places and tags whose names contain
     /// the text, the ones starting with it first.
     /// </summary>
-    public static List<SearchSuggestion> For(string text, AppServices services)
+    public static List<SearchSuggestion> For(string text, AppServices services, bool includeRecent = true)
     {
         text = text.Trim();
-        var recent = services.Settings.RecentSearches
+        var recent = (includeRecent ? services.Settings.RecentSearches : [])
             .Where(r => text.Length == 0 || r.Contains(text, StringComparison.CurrentCultureIgnoreCase))
             .Select(r => new SearchSuggestion(r, "recent", "\uE81C"));
         if (text.Length == 0) return recent.Take(Max).ToList();

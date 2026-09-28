@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using PhotoGallery.Core.Data;
+using PhotoGallery.Core.Duplicates;
 using PhotoGallery.Core.Media;
+using PhotoGallery.Core.Ocr;
 using PhotoGallery.Core.Transcripts;
 using PhotoGallery.Remote;
 
@@ -308,15 +310,169 @@ public sealed class RemoteServerTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, after.StatusCode);
     }
 
+    [Fact]
+    public async Task Changes_wait_for_the_hosts_permission()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        var hello = await _client.GetFromJsonAsync<JsonElement>("api/hello", ct);
+        Assert.False(hello.GetProperty("changes").GetBoolean());
+
+        using var refused = await _client.SendAsync(Post("api/media/delete", new { ids = new[] { 2 } }), ct);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        Assert.Contains("turned off", await refused.Content.ReadAsStringAsync(ct));
+        Assert.Empty(_library.Changes);
+
+        // Ratings don't need it.
+        using var rated = await _client.SendAsync(Post("api/media/rating", new { ids = new[] { 1, 2 }, rating = 2 }), ct);
+        Assert.Equal(HttpStatusCode.OK, rated.StatusCode);
+        Assert.Contains("rate 1,2 2", _library.Changes);
+
+        _library.AllowChanges = true;
+        using var deleted = await _client.SendAsync(Post("api/media/delete", new { ids = new[] { 2 } }), ct);
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        Assert.Equal(2, (await deleted.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("deleted")[0].GetInt64());
+        Assert.Contains("delete 2", _library.Changes);
+    }
+
+    [Fact]
+    public async Task Tags_albums_and_people_change_when_allowed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        _library.AllowChanges = true;
+        async Task<HttpStatusCode> SendAsync(string path, object body)
+        {
+            using var response = await _client.SendAsync(Post(path, body), ct);
+            return response.StatusCode;
+        }
+
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/tags/add", new { ids = new[] { 1 }, name = " holiday " }));
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/tags/remove", new { ids = new[] { 1 }, tagId = 9 }));
+        Assert.Equal(HttpStatusCode.BadRequest, await SendAsync("api/tags/add", new { ids = new[] { 1 }, name = "" }));
+        using (var created = await _client.SendAsync(Post("api/albums", new { name = "Trip" }), ct))
+            Assert.Equal(40, (await created.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetInt64());
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/albums/40/add", new { ids = new[] { 1, 2 } }));
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/albums/40/remove", new { ids = new[] { 2 } }));
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/albums/40/rename", new { name = "Road trip" }));
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/albums/40/delete", new { }));
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/people/7/rename", new { name = "Pat" }));
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/people/7/hide", new { hidden = true }));
+        Assert.Equal(HttpStatusCode.BadRequest, await SendAsync("api/people/7/merge", new { into = 7 }));
+        Assert.Equal(HttpStatusCode.OK, await SendAsync("api/people/7/merge", new { into = 8 }));
+
+        Assert.Equal(["tag 1 holiday", "untag 1 9", "album Trip", "album 40 add 1,2", "album 40 remove 2", "album 40 name Road trip",
+            "album 40 delete", "person 7 name Pat", "person 7 hidden True", "person 7 into 8"], _library.Changes);
+    }
+
+    [Fact]
+    public async Task Sections_and_filters_become_the_right_query()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        async Task<MediaFilter> FilterAsync(string query)
+        {
+            using var response = await _client.GetAsync("api/items?" + query, ct);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return _library.LastFilter!;
+        }
+
+        var folder = await FilterAsync("section=folder&id=5&sub=0");
+        Assert.Equal((5L, false), (folder.FolderId, folder.IncludeSubfolders));
+        Assert.Equal(9, (await FilterAsync("section=tag&id=9")).TagId);
+        var blurry = await FilterAsync("section=blurry&live=1");
+        Assert.Equal((MediaOrder.Blurriest, true), (blurry.Order, blurry.MotionOnly));
+        Assert.NotNull(blurry.SharpnessBelow);
+        Assert.Equal((47.5, -117.6, 47.8, -117.2), (await FilterAsync("section=area&s=47.5&w=-117.6&n=47.8&e=-117.2")).Bounds);
+        var filtered = await FilterAsync("rating=3&screenshots=only&kind=videos");
+        Assert.Equal((3, true, true, KindFilter.Videos), (filtered.MinRating, filtered.ScreenshotsOnly, filtered.IncludeScreenshots, filtered.Kinds));
+        Assert.Equal(4, (await FilterAsync("section=favorites&rating=2")).MinRating);
+
+        using var unknown = await _client.GetAsync("api/items?section=nowhere", ct);
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+
+        using var list = await _client.PostAsync("api/items/list", JsonContent.Create(new { ids = new[] { 2, 1 }, sort = "listed" }), ct);
+        Assert.Equal(HttpStatusCode.Forbidden, list.StatusCode); // a POST needs the web app's header
+        using var listed = await _client.SendAsync(Post("api/items/list", new { ids = new[] { 2, 1 }, sort = "listed" }), ct);
+        Assert.Equal([2L, 1L], (await listed.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("ids").EnumerateArray().Select(e => e.GetInt64()));
+        Assert.Equal(MediaOrder.Listed, _library.LastFilter!.Order);
+    }
+
+    [Fact]
+    public async Task Serves_the_map_folders_tags_suggestions_and_rich_details()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        var map = await _client.GetFromJsonAsync<JsonElement>("api/map", ct);
+        Assert.Equal(47.65881, map.GetProperty("lat")[0].GetDouble());
+        Assert.Equal("Pictures", (await _client.GetFromJsonAsync<JsonElement>("api/folders", ct))[0].GetProperty("name").GetString());
+        var tags = await _client.GetFromJsonAsync<JsonElement>("api/tags", ct);
+        Assert.Equal(1, tags.GetArrayLength()); // empty tags are left out
+        Assert.Equal("person", (await _client.GetFromJsonAsync<JsonElement>("api/suggest?q=gra", ct))[0].GetProperty("kind").GetString());
+
+        var details = await _client.GetFromJsonAsync<JsonElement>("api/media/1", ct);
+        Assert.Equal(0.25, details.GetProperty("faces")[0].GetProperty("x").GetDouble());
+        Assert.Equal("EXIT", details.GetProperty("textLines")[0][0].GetProperty("t").GetString());
+        Assert.True(details.GetProperty("tags")[0].GetProperty("yours").GetBoolean());
+        Assert.Equal(3, details.GetProperty("albums")[0].GetInt64());
+
+        var similar = await _client.GetFromJsonAsync<JsonElement>("api/media/1/similar", ct);
+        Assert.Equal([1L, 2L], similar.GetProperty("ids").EnumerateArray().Select(e => e.GetInt64()));
+
+        // The web app's own files, and nothing else.
+        using var css = await _client.GetAsync("app.css", ct);
+        Assert.Equal("text/css", css.Content.Headers.ContentType!.MediaType);
+        using var missing = await _client.GetAsync("secrets.txt", ct);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        using var sneaky = await _client.GetAsync("..%2F..%2Fsettings.json", ct);
+        Assert.Equal(HttpStatusCode.NotFound, sneaky.StatusCode);
+    }
+
+    [Fact]
+    public async Task Finds_duplicates_in_the_background()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        var before = await _client.GetFromJsonAsync<JsonElement>("api/duplicates", ct);
+        Assert.Equal(JsonValueKind.Null, before.GetProperty("groups").ValueKind);
+        using (await _client.SendAsync(Post("api/duplicates/scan", new { }), ct)) { }
+        JsonElement after = default;
+        for (var i = 0; i < 50; i++)
+        {
+            after = await _client.GetFromJsonAsync<JsonElement>("api/duplicates", ct);
+            if (!after.GetProperty("running").GetBoolean()) break;
+            await Task.Delay(50, ct);
+        }
+        var group = after.GetProperty("groups")[0];
+        Assert.Equal("exact", group.GetProperty("kind").GetString());
+        Assert.Equal(2, group.GetProperty("members").GetArrayLength());
+    }
+
     private sealed class FakeLibrary : IRemoteLibrary
     {
+        public FakeLibrary() => Duplicates = new DuplicateScan((progress, ct) =>
+        {
+            progress.Report(new DuplicateScanProgress("Comparing", 1, 2));
+            return Task.FromResult<IReadOnlyList<DuplicateGroup>>(
+            [
+                new(DuplicateKind.Exact,
+                [
+                    new DuplicateMember { Id = 1, FileName = "a.jpg", FileSize = 10, IsSuggestedKeep = true },
+                    new DuplicateMember { Id = 2, FileName = "a (1).jpg", FileSize = 10 },
+                ]),
+            ]);
+        });
+
         public List<MediaItem> Items { get; } = [];
         public string Thumbnail { get; set; } = "";
         public MediaFilter? LastFilter { get; private set; }
         public (string Text, bool Exact)? LastSearch { get; private set; }
         public (long Id, int Rating)? LastRating { get; private set; }
+        public List<string> Changes { get; } = [];
 
         public string Name => "TEST-PC";
+        public bool AllowChanges { get; set; }
+        public DuplicateScan Duplicates { get; }
 
         public List<MediaSummary> Query(MediaFilter filter)
         {
@@ -331,16 +487,28 @@ public sealed class RemoteServerTests : IAsyncLifetime
             return Task.FromResult<(List<long>, bool)>(([2, 1], !exact));
         }
 
+        public List<(string Text, string Kind)> Suggest(string text) => [("Grant", "person")];
+
         public MediaItem? Get(long id) => Items.FirstOrDefault(i => i.Id == id);
 
         public Task<MediaDetails> GetDetailsAsync(MediaItem item, CancellationToken ct) => Task.FromResult(new MediaDetails(
-            "Spokane · Manito Park", [(7, "Grant")], null, [new TranscriptParagraph(1.5, 3, "Happy birthday", null)]));
+            "Spokane · Manito Park", [(7, "Grant")], "EXIT", [new TranscriptParagraph(1.5, 3, "Happy birthday", null)],
+            Faces: [new FaceInPhoto(7, "Grant", 0.25, 0.1, 0.2, 0.2)],
+            TextLines: [new OcrLine([new OcrWord("EXIT", 0.5, 0.5, 0.1, 0.05)])],
+            Tags: [new TagOnPhoto(9, "holiday", true)],
+            Albums: [3]));
 
-        public List<PersonRow> GetPeople() => [new PersonRow { Id = 7, Name = "Grant", Count = 12 }];
+        public List<PersonRow> GetPeople(bool includeHidden) => [new PersonRow { Id = 7, Name = "Grant", Count = 12 }];
 
         public List<AlbumRow> GetAlbums() => [];
 
-        public void SetRating(long id, int rating) => LastRating = (id, rating);
+        public List<TagRow> GetTags() => [new TagRow { Id = 9, Name = "holiday", Count = 3 }, new TagRow { Id = 10, Name = "unused", Count = 0 }];
+
+        public List<FolderRow> GetFolders() => [new FolderRow { Id = 5, Name = "Pictures", Path = @"C:\Pictures" }];
+
+        public List<(long Id, double Latitude, double Longitude)> GetGeoPoints() => [(1, 47.658812, -117.4260)];
+
+        public Task<List<long>> FindSimilarAsync(long id, CancellationToken ct) => Task.FromResult(new List<long> { 2 });
 
         public Task<string?> GetThumbnailAsync(MediaItem item, CancellationToken ct) => Task.FromResult<string?>(Thumbnail);
 
@@ -350,6 +518,42 @@ public sealed class RemoteServerTests : IAsyncLifetime
 
         public Task<(MotionResult Result, string? Path)> GetMotionAsync(MediaItem item, CancellationToken ct) =>
             Task.FromResult<(MotionResult, string?)>((MotionResult.NeedsSignIn, null));
+
+        public void SetRating(IReadOnlyCollection<long> ids, int rating)
+        {
+            if (ids.Count == 1) LastRating = (ids.First(), rating);
+            Changes.Add($"rate {string.Join(",", ids)} {rating}");
+        }
+
+        public Task<(List<long> Deleted, List<string> Failed)> DeleteAsync(IReadOnlyCollection<long> ids)
+        {
+            Changes.Add($"delete {string.Join(",", ids)}");
+            return Task.FromResult((ids.ToList(), new List<string>()));
+        }
+
+        public void AddTag(IReadOnlyCollection<long> ids, string name) => Changes.Add($"tag {string.Join(",", ids)} {name}");
+
+        public void RemoveTag(IReadOnlyCollection<long> ids, long tagId) => Changes.Add($"untag {string.Join(",", ids)} {tagId}");
+
+        public long CreateAlbum(string name)
+        {
+            Changes.Add($"album {name}");
+            return 40;
+        }
+
+        public void RenameAlbum(long albumId, string name) => Changes.Add($"album {albumId} name {name}");
+
+        public void DeleteAlbum(long albumId) => Changes.Add($"album {albumId} delete");
+
+        public void AddToAlbum(long albumId, IReadOnlyCollection<long> ids) => Changes.Add($"album {albumId} add {string.Join(",", ids)}");
+
+        public void RemoveFromAlbum(long albumId, IReadOnlyCollection<long> ids) => Changes.Add($"album {albumId} remove {string.Join(",", ids)}");
+
+        public void RenamePerson(long personId, string? name) => Changes.Add($"person {personId} name {name}");
+
+        public void HidePerson(long personId, bool hidden) => Changes.Add($"person {personId} hidden {hidden}");
+
+        public void MergePeople(long sourceId, long targetId) => Changes.Add($"person {sourceId} into {targetId}");
     }
 }
 

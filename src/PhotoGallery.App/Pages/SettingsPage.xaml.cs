@@ -33,6 +33,7 @@ public sealed partial class SettingsPage : Page
         ThemeChoice.SelectedIndex = App.Services.Settings.Theme switch { "Light" => 1, "System" => 2, _ => 0 };
         PoiSwitch.IsOn = App.Services.Settings.NamePlacesFromOsm;
         RemoteSwitch.IsOn = App.Services.Settings.RemoteEnabled;
+        RemoteChangesSwitch.IsOn = App.Services.Settings.RemoteAllowChanges;
         RemotePortBox.Value = App.Services.Settings.RemotePort;
         RefreshRemote();
         _loadingSwitch = false;
@@ -184,6 +185,13 @@ public sealed partial class SettingsPage : Page
         App.Services.SaveSettings();
         RemoteStatusText.Text = RemoteSwitch.IsOn ? "Starting…" : "";
         await App.Services.Remote.ApplyAsync();
+    }
+
+    private void OnRemoteChangesToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingSwitch) return;
+        App.Services.Settings.RemoteAllowChanges = RemoteChangesSwitch.IsOn; // the server reads it on every request
+        App.Services.SaveSettings();
     }
 
     private async void OnRemotePortChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)

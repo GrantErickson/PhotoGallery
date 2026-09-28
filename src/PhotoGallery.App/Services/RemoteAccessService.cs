@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using PhotoGallery.Core;
 using PhotoGallery.Core.Data;
+using PhotoGallery.Core.Duplicates;
 using PhotoGallery.Core.Media;
 using PhotoGallery.Core.Transcripts;
 using PhotoGallery.Remote;
@@ -15,6 +16,7 @@ namespace PhotoGallery.App.Services;
 public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 {
     private readonly SemaphoreSlim _gate = new(1);
+    private DuplicateScan? _duplicates;
     private RemoteServer? _server;
 
     /// <summary>Raised (on any thread) after it starts, stops or fails to start.</summary>
@@ -97,7 +99,24 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 
     public string Name => Environment.MachineName;
 
+    public bool AllowChanges => services.Settings.RemoteAllowChanges;
+
     public List<MediaSummary> Query(MediaFilter filter) => services.Media.Query(filter);
+
+    public List<(string Text, string Kind)> Suggest(string text) =>
+        text.Length == 0 ? [] : SearchSuggestion.For(text, services, includeRecent: false).Select(s => (s.Query, s.Kind)).ToList();
+
+    public List<TagRow> GetTags() => services.Collections.GetTags();
+
+    public List<FolderRow> GetFolders() => services.Media.GetFolders();
+
+    public List<(long Id, double Latitude, double Longitude)> GetGeoPoints() => services.Media.GetGeoPoints();
+
+    public async Task<List<long>> FindSimilarAsync(long id, CancellationToken ct) =>
+        (await services.Similar.FindSimilarAsync(id)).Select(s => s.Id).ToList();
+
+    public DuplicateScan Duplicates => _duplicates ??= new DuplicateScan((progress, ct) =>
+        new DuplicateFinder(services.Database, (id, path, c) => services.Thumbnails.GetOrCreateAsync(id, path, c, background: true)).FindAsync(progress, ct));
 
     public async Task<(List<long> Ids, bool Pictures)> SearchAsync(string text, bool exact, CancellationToken ct)
     {
@@ -128,22 +147,49 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
         }
         return await Task.Run(() =>
         {
-            var people = services.People.GetFacesIn(item.Id)
-                .Where(f => !f.Hidden)
-                .GroupBy(f => f.PersonId)
-                .Select(g => (g.Key, g.First().DisplayName))
+            var faces = services.People.GetFacesIn(item.Id).Where(f => !f.Hidden).ToList();
+            var people = faces.GroupBy(f => f.PersonId).Select(g => (g.Key, g.First().DisplayName)).ToList();
+            var boxes = faces.Where(f => f.Box is not null)
+                .Select(f => new FaceInPhoto(f.PersonId, f.DisplayName, f.Box!.Value.X, f.Box.Value.Y, f.Box.Value.Width, f.Box.Value.Height))
                 .ToList();
-            var text = services.PhotoTexts.Get(item.Id) is { HasText: true } found ? found.Text : null;
+            var photoText = services.PhotoTexts.Get(item.Id) is { HasText: true } found ? found : null;
             var transcript = services.Transcripts.Get(item.Id) is { HasSpeech: true } said ? TranscriptFormatter.Paragraphs(said.Segments) : null;
-            return new MediaDetails(place, people, text, transcript, services.Edits.Get(item.Id) is not null);
+            var tags = services.Collections.GetTagsFor(item.Id).Select(t => new TagOnPhoto(t.Id, t.Name, t.IsUserTag)).ToList();
+            return new MediaDetails(place, people, photoText?.Text, transcript, services.Edits.Get(item.Id) is not null,
+                boxes, photoText?.Lines, tags, services.Collections.GetAlbumsContaining(item.Id));
         }, ct);
     }
 
-    public List<PersonRow> GetPeople() => services.People.GetPeople();
+    public List<PersonRow> GetPeople(bool includeHidden) => services.People.GetPeople(includeHidden);
 
     public List<AlbumRow> GetAlbums() => services.Collections.GetAlbums();
 
-    public void SetRating(long id, int rating) => services.Media.SetRating([id], rating);
+    // ---------- Changes from another computer (the server checks AllowChanges first; ratings are always allowed) ----------
+
+    public void SetRating(IReadOnlyCollection<long> ids, int rating) => services.Media.SetRating(ids, rating);
+
+    public async Task<(List<long> Deleted, List<string> Failed)> DeleteAsync(IReadOnlyCollection<long> ids) =>
+        await Deletion.DeleteWithoutAskingAsync(ids);
+
+    public void AddTag(IReadOnlyCollection<long> ids, string name) => services.Collections.AddTag(ids, name);
+
+    public void RemoveTag(IReadOnlyCollection<long> ids, long tagId) => services.Collections.RemoveTag(ids, tagId);
+
+    public long CreateAlbum(string name) => services.Collections.CreateAlbum(name);
+
+    public void RenameAlbum(long albumId, string name) => services.Collections.RenameAlbum(albumId, name);
+
+    public void DeleteAlbum(long albumId) => services.Collections.DeleteAlbum(albumId);
+
+    public void AddToAlbum(long albumId, IReadOnlyCollection<long> ids) => services.Collections.AddToAlbum(albumId, ids);
+
+    public void RemoveFromAlbum(long albumId, IReadOnlyCollection<long> ids) => services.Collections.RemoveFromAlbum(albumId, ids);
+
+    public void RenamePerson(long personId, string? name) => services.People.Rename(personId, name);
+
+    public void HidePerson(long personId, bool hidden) => services.People.SetHidden(personId, hidden);
+
+    public void MergePeople(long sourceId, long targetId) => services.People.Merge(sourceId, targetId);
 
     public Task<string?> GetThumbnailAsync(MediaItem item, CancellationToken ct) => services.Thumbnails.GetOrCreateAsync(item.Id, item.Path, ct);
 

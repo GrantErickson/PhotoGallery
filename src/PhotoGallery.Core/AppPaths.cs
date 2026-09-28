@@ -53,6 +53,8 @@ public sealed class AppSettings
     /// <summary>Remote access (host): other computers on the network may open this library, with the passphrase.</summary>
     public bool RemoteEnabled { get; set; }
     public int RemotePort { get; set; } = 47813;
+    /// <summary>Other computers may delete (to this PC's Recycle Bin), tag, and manage albums and people, not only look and rate.</summary>
+    public bool RemoteAllowChanges { get; set; }
     /// <summary>The passphrase as a salted PBKDF2 key (see PhotoGallery.Remote.RemoteSecret); never the passphrase itself.</summary>
     public string? RemotePassphraseSalt { get; set; }
     public int RemotePassphraseIterations { get; set; }

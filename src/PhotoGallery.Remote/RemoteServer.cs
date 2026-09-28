@@ -8,10 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Primitives;
 using PhotoGallery.Core;
-using PhotoGallery.Core.Data;
-using PhotoGallery.Core.Media;
 
 namespace PhotoGallery.Remote;
 
@@ -33,7 +30,7 @@ public sealed class RemoteServerOptions
 /// and files behind it. Only local-network addresses are answered, everything but the sign-in needs a signed-in
 /// session, and nothing about OneDrive's sign-in ever leaves this computer.
 /// </summary>
-public sealed class RemoteServer : IAsyncDisposable
+public sealed partial class RemoteServer : IAsyncDisposable
 {
     public const string CookieName = "pg_session";
     /// <summary>Requests that change something must carry this header: the web app adds it, a form on another site can't.</summary>
@@ -131,8 +128,9 @@ public sealed class RemoteServer : IAsyncDisposable
         headers.XContentTypeOptions = "nosniff";
         headers.XFrameOptions = "DENY";
         headers["Referrer-Policy"] = "no-referrer";
-        headers.ContentSecurityPolicy = "default-src 'self'; img-src 'self' blob: data:; media-src 'self'; style-src 'self'; " +
-                                        "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+        // Map tiles come straight from OpenStreetMap to the browser, as they do in the app.
+        headers.ContentSecurityPolicy = "default-src 'self'; img-src 'self' blob: data: https://tile.openstreetmap.org; media-src 'self'; " +
+                                        "style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
         var method = ctx.Request.Method;
         if (!HttpMethods.IsGet(method) && !HttpMethods.IsHead(method) && ctx.Request.Headers[ScriptHeader] != "1")
@@ -243,12 +241,13 @@ public sealed class RemoteServer : IAsyncDisposable
 
     private void Map(WebApplication app)
     {
-        app.MapGet("/", ctx => ResourceAsync(ctx, "index.html", "text/html; charset=utf-8"));
-        app.MapGet("/app.js", ctx => ResourceAsync(ctx, "app.js", "text/javascript; charset=utf-8"));
-        app.MapGet("/app.css", ctx => ResourceAsync(ctx, "app.css", "text/css; charset=utf-8"));
-        app.MapGet("/icon.svg", ctx => ResourceAsync(ctx, "icon.svg", "image/svg+xml"));
-
-        app.MapGet("/api/hello", ctx => WriteJsonAsync(ctx, new { name = _library.Name, signedIn = _sessions.Check(TokenOf(ctx)) }));
+        app.MapGet("/", ctx => ResourceAsync(ctx, "index.html"));
+        app.MapGet("/api/hello", ctx => WriteJsonAsync(ctx, new
+        {
+            name = _library.Name,
+            signedIn = _sessions.Check(TokenOf(ctx)),
+            changes = _library.AllowChanges,
+        }));
         app.MapPost("/api/login", LoginAsync);
         app.MapPost("/api/logout", async ctx =>
         {
@@ -256,224 +255,11 @@ public sealed class RemoteServer : IAsyncDisposable
             ctx.Response.Cookies.Delete(CookieName, new CookieOptions { Secure = true, SameSite = SameSiteMode.Strict, Path = "/" });
             await WriteJsonAsync(ctx, new { });
         });
-
-        app.MapGet("/api/items", ItemsAsync);
-        app.MapGet("/api/people", ctx => WriteJsonAsync(ctx, _library.GetPeople()
-            .Select(p => new { id = p.Id, name = p.Name, count = p.Count })));
-        app.MapGet("/api/albums", ctx => WriteJsonAsync(ctx, _library.GetAlbums()
-            .Select(a => new { id = a.Id, name = a.Name, count = a.Count, cover = a.CoverMediaId })));
-        app.MapGet("/api/people/{id:long}/face", async ctx =>
-        {
-            var path = await _library.GetFaceAsync(IdOf(ctx), ctx.RequestAborted);
-            await SendFileAsync(ctx, path, "image/jpeg", "private, max-age=3600");
-        });
-
-        app.MapGet("/api/media/{id:long}", async ctx =>
-        {
-            if (await ItemOrNotFoundAsync(ctx) is not { } item) return;
-            var details = await _library.GetDetailsAsync(item, ctx.RequestAborted);
-            await WriteJsonAsync(ctx, new
-            {
-                id = item.Id,
-                name = item.FileName,
-                video = item.Kind == MediaKind.Video,
-                taken = item.TakenLocal.ToString("s"),
-                size = item.FileSize,
-                width = item.Width,
-                height = item.Height,
-                durationMs = item.DurationMs,
-                camera = string.Join(" ", new[] { item.CameraMake, item.CameraModel }.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct()),
-                rating = item.Rating,
-                live = HasMotion(item.Motion),
-                latitude = item.Latitude,
-                longitude = item.Longitude,
-                place = details.Place,
-                people = details.People?.Select(p => new { id = p.Id, name = p.Name }),
-                text = details.Text,
-                transcript = details.Transcript?.Select(p => new { start = p.Start, text = p.Text, speaker = p.Speaker }),
-                edited = details.Edited,
-            });
-        });
-        app.MapGet("/api/media/{id:long}/thumb", async ctx =>
-        {
-            if (await ItemOrNotFoundAsync(ctx) is not { } item) return;
-            await SendFileAsync(ctx, await _library.GetThumbnailAsync(item, ctx.RequestAborted), "image/jpeg", "private, max-age=3600");
-        });
-        app.MapGet("/api/media/{id:long}/display", DisplayAsync);
-        app.MapGet("/api/media/{id:long}/video", async ctx =>
-        {
-            if (await ItemOrNotFoundAsync(ctx) is not { } item) return;
-            if (item.Kind != MediaKind.Video)
-            {
-                ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-                return;
-            }
-            await SendFileAsync(ctx, item.Path, VideoType(item.Path), "private, max-age=3600");
-        });
-        app.MapGet("/api/media/{id:long}/motion", MotionAsync);
-        app.MapGet("/api/media/{id:long}/original", async ctx =>
-        {
-            if (await ItemOrNotFoundAsync(ctx) is not { } item) return;
-            await SendFileAsync(ctx, item.Path, "application/octet-stream", "private, no-store", item.FileName);
-        });
-        app.MapPost("/api/media/{id:long}/rating", async ctx =>
-        {
-            if (await ItemOrNotFoundAsync(ctx) is not { } item) return;
-            var body = await JsonSerializer.DeserializeAsync<JsonElement>(ctx.Request.Body, Json, ctx.RequestAborted);
-            if (!body.TryGetProperty("rating", out var value) || !value.TryGetInt32(out var rating) || rating is < 0 or > 5)
-            {
-                await WriteJsonAsync(ctx, new { error = "A rating is 0 to 5." }, StatusCodes.Status400BadRequest);
-                return;
-            }
-            _library.SetRating(item.Id, rating);
-            await WriteJsonAsync(ctx, new { rating });
-        });
+        MapReading(app);
+        MapChanging(app);
+        // The web app's own files (scripts, styles, icons, the map library).
+        app.MapGet("/{*path}", ctx => ResourceAsync(ctx, ctx.Request.RouteValues["path"]?.ToString() ?? ""));
     }
-
-    private static long IdOf(HttpContext ctx) => long.TryParse(ctx.Request.RouteValues["id"]?.ToString(), out var id) ? id : 0;
-
-    private async Task<MediaItem?> ItemOrNotFoundAsync(HttpContext ctx)
-    {
-        var item = await Task.Run(() => _library.Get(IdOf(ctx)));
-        if (item is null) ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-        return item;
-    }
-
-    private static bool HasMotion(MotionSource motion) => motion is MotionSource.LocalPair or MotionSource.Embedded or MotionSource.Cloud;
-
-    /// <summary>
-    /// A section of the library as three parallel lists (ids, dates and flags), small enough for the whole timeline:
-    /// flags are 1 = video, 2 = Live Photo, 4·rating, and 32·seconds for a video's length.
-    /// </summary>
-    private async Task ItemsAsync(HttpContext ctx)
-    {
-        var q = ctx.Request.Query;
-        var filter = new MediaFilter
-        {
-            Kinds = q["kind"].ToString() switch { "photos" => KindFilter.Photos, "videos" => KindFilter.Videos, _ => KindFilter.All },
-            People = ParseIds(q["people"]) is { Count: > 0 } people ? people : null,
-        };
-        bool? pictures = null;
-        switch (q["section"].ToString())
-        {
-            case "favorites":
-                filter = filter with { MinRating = 4, IncludeScreenshots = true };
-                break;
-            case "live":
-                filter = filter with { MotionOnly = true };
-                break;
-            case "videos":
-                filter = filter with { Kinds = KindFilter.Videos };
-                break;
-            case "onthisday":
-                var day = q["day"].ToString().Split('-');
-                if (day.Length != 2 || !int.TryParse(day[0], out var month) || !int.TryParse(day[1], out var date) || month is < 1 or > 12 || date is < 1 or > 31)
-                {
-                    await WriteJsonAsync(ctx, new { error = "Which day? (month-day)" }, StatusCodes.Status400BadRequest);
-                    return;
-                }
-                filter = filter with { MonthDay = (month, date), To = DateTime.Today.AddDays(2) };
-                break;
-            case "person" when long.TryParse(q["id"], out var personId):
-                filter = filter with { PersonId = personId, IncludeScreenshots = true };
-                break;
-            case "album" when long.TryParse(q["id"], out var albumId):
-                filter = filter with { AlbumId = albumId };
-                break;
-            case "search":
-                var text = q["q"].ToString().Trim();
-                if (text.Length is 0 or > 500)
-                {
-                    await WriteJsonAsync(ctx, new { error = "What to search for?" }, StatusCodes.Status400BadRequest);
-                    return;
-                }
-                var (ids, matchedPictures) = await _library.SearchAsync(text, q["exact"] == "1", ctx.RequestAborted);
-                pictures = matchedPictures;
-                filter = filter with
-                {
-                    Ids = ids,
-                    IncludeScreenshots = true,
-                    Order = q["sort"].ToString() switch { "newest" => MediaOrder.Newest, "oldest" => MediaOrder.Oldest, _ => MediaOrder.Listed },
-                };
-                break;
-            default:
-                filter = filter with { IncludeScreenshots = MediaFilter.Timeline.IncludeScreenshots };
-                break;
-        }
-        var items = await Task.Run(() => _library.Query(filter), ctx.RequestAborted);
-        var list = new long[items.Count];
-        var dates = new long[items.Count];
-        var flags = new long[items.Count];
-        for (var i = 0; i < items.Count; i++)
-        {
-            var item = items[i];
-            list[i] = item.Id;
-            dates[i] = item.DateTaken;
-            var video = item.Kind == MediaKind.Video;
-            flags[i] = (video ? 1L : 0L) + (HasMotion(item.Motion) ? 2L : 0L) + (Math.Clamp(item.Rating, 0, 5) << 2)
-                       + (video ? (long)Math.Round(item.DurationMs / 1000.0) << 5 : 0L);
-        }
-        await WriteJsonAsync(ctx, new { ids = list, dates, flags, pictures });
-    }
-
-    private static List<long> ParseIds(StringValues value) =>
-        value.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => long.TryParse(s, out var id) ? id : 0).Where(id => id > 0).Distinct().Take(20).ToList();
-
-    private async Task DisplayAsync(HttpContext ctx)
-    {
-        if (await ItemOrNotFoundAsync(ctx) is not { } item) return;
-        var size = int.TryParse(ctx.Request.Query["size"], out var asked) ? Math.Clamp(asked, 256, 4096) : 2560;
-        byte[]? jpeg;
-        await _renderGate.WaitAsync(ctx.RequestAborted);
-        try
-        {
-            jpeg = await _library.RenderAsync(item, size, ctx.RequestAborted);
-        }
-        finally
-        {
-            _renderGate.Release();
-        }
-        if (jpeg is null)
-        {
-            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-            return;
-        }
-        ctx.Response.ContentType = "image/jpeg";
-        ctx.Response.Headers.CacheControl = "private, max-age=3600";
-        ctx.Response.ContentLength = jpeg.Length;
-        await ctx.Response.Body.WriteAsync(jpeg, ctx.RequestAborted);
-    }
-
-    private async Task MotionAsync(HttpContext ctx)
-    {
-        if (await ItemOrNotFoundAsync(ctx) is not { } item) return;
-        var (result, path) = await _library.GetMotionAsync(item, ctx.RequestAborted);
-        switch (result)
-        {
-            case MotionResult.Ready when path is not null:
-                await SendFileAsync(ctx, path, VideoType(path), "private, max-age=3600");
-                break;
-            case MotionResult.NeedsSignIn:
-                await WriteJsonAsync(ctx, new { error = $"This Live Photo's video is only in OneDrive. On {_library.Name}, connect OneDrive in Settings to play it." },
-                    StatusCodes.Status409Conflict);
-                break;
-            case MotionResult.Unavailable:
-                await WriteJsonAsync(ctx, new { error = "The video can't be fetched right now." }, StatusCodes.Status503ServiceUnavailable);
-                break;
-            default:
-                await WriteJsonAsync(ctx, new { error = "This photo has no video." }, StatusCodes.Status404NotFound);
-                break;
-        }
-    }
-
-    /// <summary>What browsers play: QuickTime files are labelled MP4 (the same format, near enough, and Chromium plays them as such).</summary>
-    private static string VideoType(string path) => Path.GetExtension(path).ToLowerInvariant() switch
-    {
-        ".webm" => "video/webm",
-        ".avi" => "video/x-msvideo",
-        ".wmv" => "video/x-ms-wmv",
-        _ => "video/mp4",
-    };
 
     // ---------- Responses ----------
 
@@ -499,16 +285,46 @@ public sealed class RemoteServer : IAsyncDisposable
         await TypedResults.PhysicalFile(path, contentType, downloadName, info.LastWriteTimeUtc, tag, enableRangeProcessing: true).ExecuteAsync(ctx);
     }
 
-    private static async Task ResourceAsync(HttpContext ctx, string name, string contentType)
+    /// <summary>A request's JSON body, or null if it isn't what was expected.</summary>
+    private static async Task<T?> ReadAsync<T>(HttpContext ctx) where T : class
     {
-        await using var stream = typeof(RemoteServer).Assembly.GetManifestResourceStream("web/" + name);
-        if (stream is null)
+        try
+        {
+            return await JsonSerializer.DeserializeAsync<T>(ctx.Request.Body, Json, ctx.RequestAborted);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The web app's files, embedded in this assembly as web/... (folders with forward slashes).</summary>
+    private static readonly Dictionary<string, string> Resources = typeof(RemoteServer).Assembly.GetManifestResourceNames()
+        .Where(n => n.StartsWith("web/", StringComparison.Ordinal))
+        .ToDictionary(n => n["web/".Length..].Replace('\\', '/'), n => n, StringComparer.OrdinalIgnoreCase);
+
+    private static async Task ResourceAsync(HttpContext ctx, string path)
+    {
+        var contentType = Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".html" => "text/html; charset=utf-8",
+            ".js" => "text/javascript; charset=utf-8",
+            ".css" => "text/css; charset=utf-8",
+            ".svg" => "image/svg+xml",
+            ".png" => "image/png",
+            _ => null,
+        };
+        if (contentType is null || !Resources.TryGetValue(path, out var name) ||
+            typeof(RemoteServer).Assembly.GetManifestResourceStream(name) is not { } stream)
         {
             ctx.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
         }
-        ctx.Response.ContentType = contentType;
-        ctx.Response.Headers.CacheControl = "no-cache";
-        await stream.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
+        await using (stream)
+        {
+            ctx.Response.ContentType = contentType;
+            ctx.Response.Headers.CacheControl = "no-cache";
+            await stream.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
+        }
     }
 }
