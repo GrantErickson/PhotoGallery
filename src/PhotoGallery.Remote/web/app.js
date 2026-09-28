@@ -605,7 +605,10 @@
     const width = Math.max(100, scroller.clientWidth - side * 2);
     const cols = Math.max(2, Math.floor((width + GAP) / (state.tileSize + GAP)));
     const tile = (width - GAP * (cols - 1)) / cols;
-    const anchor = reset ? -1 : firstVisibleItem();
+    // Keeps the first photo on screen where it was (at the very top, the top stays: its heading included).
+    const atTop = scroller.scrollTop < 1;
+    const anchor = reset || atTop ? -1 : firstVisibleItem();
+    const anchorOffset = anchor >= 0 ? rowTopOf(anchor) - scroller.scrollTop : 0;
 
     const { ids, dates } = state.items;
     const rows = [];
@@ -642,11 +645,14 @@
     for (const node of state.rendered.values()) node.remove();
     state.rendered.clear();
     sizer.style.height = top + 24 + "px";
-    if (anchor >= 0) {
-      const row = rows.find(r => r.start != null && anchor >= r.start && anchor < r.end);
-      if (row) scroller.scrollTop = row.top - TOP;
-    }
+    if (anchor >= 0) scroller.scrollTop = Math.max(0, rowTopOf(anchor) - anchorOffset);
+    else if (atTop) scroller.scrollTop = 0;
     render();
+  }
+
+  function rowTopOf(index) {
+    const row = state.rows.find(r => r.start != null && index >= r.start && index < r.end);
+    return row ? row.top : 0;
   }
 
   function rowIndexAt(y) {
@@ -1096,7 +1102,7 @@
   });
 
   document.addEventListener("keydown", event => {
-    if (event.target.closest("input, select, textarea")) {
+    if (event.target instanceof Element && event.target.closest("input, select, textarea")) {
       if (event.key === "Escape") event.target.blur();
       return;
     }

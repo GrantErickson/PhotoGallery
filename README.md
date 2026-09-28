@@ -85,6 +85,28 @@ works out live in its own database.
   people, names and faces.
 - Files On-Demand placeholders (cloud-only files) are never downloaded just to index them.
 
+### Remote access (another computer on your network)
+- **Open the library from another computer** on the same network: the timeline, best-match and exact-word search
+  (sorted and grouped), On this day, Favorites, Live Photos, Videos, People and Albums, with the people and
+  photo/video filters.
+- **The viewer**: photos at screen size, videos and Live Photos, details (place, people, text in the photo, what's
+  said in a video), star ratings, and downloading the original.
+- **In a browser** (any computer, tablet or phone) at `https://<computer name>:47813`, or in **Photo Gallery on the
+  other computer**: *Another computer* at the bottom of the menu. There, the title bar's search box searches the
+  other computer's photos.
+- **The main PC does the work**: searching by description on its graphics card, decoding HEIC for browsers,
+  fetching Live Photo videos from OneDrive. The other computer needs nothing installed but a browser.
+- **Off until you turn it on** (Settings › Remote access, with a passphrase). Other computers can browse, search,
+  view, download and rate, but not edit, move or delete anything. OneDrive's sign-in never leaves the main PC.
+- **Secured for a home network**:
+  - it only answers computers on the local network;
+  - the connection is encrypted (HTTPS, with a certificate the main PC makes for itself);
+  - the passphrase is stored only as a salted PBKDF2 key, and wrong guesses lock the guesser out for longer each time.
+
+  Photo Gallery on the other computer shows the main PC's **security code** the first time, to compare with the one
+  in its Settings; after that it only accepts that certificate. Browsers warn once that the connection isn't private,
+  because nothing vouches for a certificate the PC made itself.
+
 ### What stays on your PC and what doesn't
 - Indexing, thumbnails, transcripts, text recognition, sharpness, similar photos and description search all run
   locally. Nothing is uploaded.
@@ -94,12 +116,15 @@ works out live in its own database.
 - Place names from OpenStreetMap are **off until you turn them on**. When on, they send the rough areas (squares of
   about 5 × 4 km) where your photos were taken to OpenStreetMap's Overpass service, once each.
 - The map shows OpenStreetMap tiles.
+- Remote access is **off until you turn it on**. When on, it serves your library only to computers on your local
+  network that have the passphrase.
 
 ## Getting started
 
 ### Requirements
 - Windows 10 (19041) or later, or Windows 11, x64.
-- The [.NET 10 SDK](https://dotnet.microsoft.com/download).
+- The [.NET 10 SDK](https://dotnet.microsoft.com/download). To run a build without the SDK, install the .NET 10
+  Runtime and the ASP.NET Core 10 Runtime (the web server behind remote access).
 - The WebView2 runtime (built into Windows 11). It's used by the map and the OneDrive connection.
 - For iPhone and camera formats: *HEIF Image Extensions*, *HEVC Video Extensions* and *Raw Image Extension* from the
   Microsoft Store.
@@ -134,6 +159,18 @@ dotnet run --project src/PhotoGallery.App
    - **Connect** the web session, for people and cloud Live Photos;
    - turn on **Place names**.
 
+### Remote access
+1. On the computer with the library: **Settings › Remote access**. Set a passphrase (a few words work well), then
+   turn it on. Settings shows the address and a **security code**. If Windows asks whether Photo Gallery may use the
+   network, allow it on **private** networks. The network itself has to be set to *Private* in Windows.
+2. On the other computer, either:
+   - open `https://<computer name>:47813` in a browser, accept the warning about the certificate, and enter the
+     passphrase; or
+   - in Photo Gallery, choose **Another computer** (bottom of the menu), enter the computer's name and the
+     passphrase, and check that the security code matches. It can remember the passphrase (in Windows' Credential
+     Manager) and open the other computer's photos at start.
+3. The main PC has to be on and awake, with Photo Gallery running.
+
 ### Keyboard
 | Where | Keys |
 |---|---|
@@ -143,6 +180,7 @@ dotnet run --project src/PhotoGallery.App
 | Viewer, video | **,** / **.** previous/next frame · **S** save frame |
 | Photo editor | **[** / **]** rotate · **Ctrl+S** save as copy · **Esc** close |
 | Video editor | **Space** play/pause · **I** / **O** set start/end · **Ctrl+S** save · **Esc** close |
+| Remote (web) | **/** or **Ctrl+E** search · viewer: **←/→**, **Space** play Live Photo, **1–5** rate, **0** clear, **I** info, **Esc** close |
 
 ### Your data
 The database, thumbnail and video caches, AI models, settings and `app.log` live in `%LocalAppData%\PhotoGallery`.
@@ -155,6 +193,7 @@ Deleting that folder resets the app; your photos aren't touched. Caches are neve
 | `src/PhotoGallery.App` | WinUI 3 app (Windows App SDK, unpackaged) |
 | `src/PhotoGallery.Core` | Indexing, metadata, SQLite data layer, search, thumbnails, OneDrive clients, places, similarity |
 | `src/PhotoGallery.Embedder` | CLIP on the graphics card (DirectML), a separate process so its ONNX Runtime doesn't clash with the app's |
+| `src/PhotoGallery.Remote` | Remote access: the HTTPS server (Kestrel) and the web app it serves (`web/`) |
 | `tests/PhotoGallery.Core.Tests` | xUnit v3 tests (`dotnet test --project tests/PhotoGallery.Core.Tests`) |
 | `tools/PhotoGallery.Cli` | Headless indexing, stats and a thumbnail benchmark (`dotnet run --project tools/PhotoGallery.Cli -- stats`) |
 | `spikes/` | Early experiments (OneDrive Live Photo video) |

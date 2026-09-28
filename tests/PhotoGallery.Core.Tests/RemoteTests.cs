@@ -173,6 +173,23 @@ public sealed class RemoteServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Answers_only_to_its_own_names()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/hello");
+        request.Headers.Host = "photos.example.com";
+        using var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        var machine = Environment.MachineName;
+        Assert.True(RemoteServer.IsOwnName(machine.ToLowerInvariant()));
+        Assert.True(RemoteServer.IsOwnName(machine + ".local"));
+        Assert.True(RemoteServer.IsOwnName("192.168.1.20"));
+        Assert.True(RemoteServer.IsOwnName("[fe80::1]"));
+        Assert.False(RemoteServer.IsOwnName(machine + "x.example.com"));
+        Assert.False(RemoteServer.IsOwnName(""));
+    }
+
+    [Fact]
     public async Task Signs_in_with_the_right_passphrase_only()
     {
         var ct = TestContext.Current.CancellationToken;

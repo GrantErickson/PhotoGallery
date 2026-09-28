@@ -168,7 +168,7 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
   flex-direction: column;
   gap: 8px;
 }
-.popover input { width: 100%; }
+.popover input[type=search] { width: 100%; }
 .people-list { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; }
 .people-list label { display: flex; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
 .people-list label:hover { background: var(--surface-2); }

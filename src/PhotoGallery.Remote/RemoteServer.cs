@@ -122,7 +122,7 @@ public sealed class RemoteServer : IAsyncDisposable
 
     private async Task GuardAsync(HttpContext ctx, RequestDelegate next)
     {
-        if (!LocalNetwork.IsLocal(ctx.Connection.RemoteIpAddress))
+        if (!LocalNetwork.IsLocal(ctx.Connection.RemoteIpAddress) || !IsOwnName(ctx.Request.Host.Host))
         {
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
@@ -155,6 +155,18 @@ public sealed class RemoteServer : IAsyncDisposable
             Log.Error($"Remote access: {method} {path} failed", ex);
             if (!ctx.Response.HasStarted) ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
         }
+    }
+
+    /// <summary>
+    /// Asked for by this computer's name, an address, or localhost: a page on some other site can't point its own
+    /// name at this computer ("DNS rebinding") and reach the API.
+    /// </summary>
+    internal static bool IsOwnName(string host)
+    {
+        if (host.Length == 0) return false;
+        if (IPAddress.TryParse(host.Trim('[', ']'), out _) || host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return true;
+        var label = host.Split('.')[0];
+        return label.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? TokenOf(HttpContext ctx)

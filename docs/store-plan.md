@@ -143,7 +143,27 @@ The rest is ordinary packaging and polish:
 - **GPU:** Vulkan (transcripts) and DirectML (similarity) are optional, with a CPU fallback. Recommend a GPU in the
   system requirements.
 
-### 2.8 First run and certification testing
+### 2.8 Remote access (manageable)
+- **What it does:** when turned on, the app runs an HTTPS server (Kestrel, port 47813) that other computers on the
+  local network open in a browser or in the app.
+- **Packaging:**
+  - a full-trust desktop MSIX can listen on the network;
+  - declare the port with a `desktop2:FirewallRules` extension, so Windows doesn't prompt and the rule goes away with
+    the app;
+  - the self-contained build must include the ASP.NET Core shared framework, which adds about 20 MB.
+- **Certificate:** the app makes a self-signed certificate and keeps it in the user's certificate store
+  (`CurrentUser\My`). Uninstalling an MSIX doesn't remove it, so offer "Remove remote access certificate" in
+  Settings.
+- **Policy 10.2 (security):** it's opt-in, and:
+  - it only answers local-network addresses;
+  - it requires a passphrase, and slows down guessing;
+  - it never exposes the OneDrive sign-in;
+  - other computers get read access plus ratings only.
+
+  Say so in the certification notes, and in the privacy policy (§2.6): photos are served only to your own network.
+- **Reviewers:** test it with a browser on the same machine (`https://localhost:47813`).
+
+### 2.9 First run and certification testing
 - **Policy 10.1.1:** "the value proposition … must be clear during the first run". The app currently assumes
   `%OneDrive%\Pictures`. It needs a welcome page that:
   - picks folders;
@@ -185,7 +205,7 @@ The rest is ordinary packaging and polish:
    - uninstalling removes about 6 GB of thumbnails, a 1 GB database and 2.5 GB of models. Say so in the listing and
      the FAQ;
    - "Reset" in Windows Settings clears everything.
-5. **First-run experience** (§2.8), plus a way to rerun it from Settings.
+5. **First-run experience** (§2.9), plus a way to rerun it from Settings.
 6. **Download consent, metered-network handling and SHA-256 checks** for the models (§2.5).
 7. **Map tile provider** with key handling (§2.3).
 8. **Place names**: pre-built tiles, your own instance, or off (§2.4).
