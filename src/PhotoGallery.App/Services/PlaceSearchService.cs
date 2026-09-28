@@ -13,6 +13,7 @@ public sealed class PlaceSearchService(AppServices services)
     private static readonly HttpClient Http = CreateClient();
     private readonly SemaphoreSlim _online = new(1);
     private DateTime _lastOnline;
+    private (DateTime At, HashSet<(int, int)> Cells)? _photoCells;
 
     private static HttpClient CreateClient()
     {
@@ -28,7 +29,33 @@ public sealed class PlaceSearchService(AppServices services)
         if (query.Length < 2 || query.Length > 200) return [];
         if (online) return await OnlineAsync(query, ct);
         var cities = await services.PlaceNames.CitiesAsync();
-        return await Task.Run(() => PlaceSearch.Local(query, services.Places.GetAll(), services.Pois.Search(PlaceSearch.Split(query).Name), cities), ct);
+        return await Task.Run(() =>
+        {
+            var cells = PhotoCells();
+            return PlaceSearch.Local(query, services.Places.GetAll(), services.Pois.Search(PlaceSearch.Split(query).Name), cities,
+                (lat, lon) => NearPhotos(cells, lat, lon));
+        }, ct);
+    }
+
+    /// <summary>Where photos were taken, in cells of a quarter degree (about 25 km), re-read every ten minutes.</summary>
+    private HashSet<(int, int)> PhotoCells()
+    {
+        if (_photoCells is { } known && DateTime.UtcNow - known.At < TimeSpan.FromMinutes(10)) return known.Cells;
+        var cells = services.Media.GetGeoPoints().Select(p => Cell(p.Latitude, p.Longitude)).ToHashSet();
+        _photoCells = (DateTime.UtcNow, cells);
+        return cells;
+    }
+
+    private static (int, int) Cell(double lat, double lon) => ((int)Math.Floor(lat * 4), (int)Math.Floor(lon * 4));
+
+    /// <summary>Photos were taken in the town's cell or one next to it.</summary>
+    private static bool NearPhotos(HashSet<(int, int)> cells, double lat, double lon)
+    {
+        var (row, column) = Cell(lat, lon);
+        for (var dy = -1; dy <= 1; dy++)
+            for (var dx = -1; dx <= 1; dx++)
+                if (cells.Contains((row + dy, column + dx))) return true;
+        return false;
     }
 
     private async Task<List<PlaceHit>> OnlineAsync(string query, CancellationToken ct)

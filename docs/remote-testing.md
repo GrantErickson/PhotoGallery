@@ -35,7 +35,7 @@ Grant: open Claude Code on the tester, in a clone of this repo, and paste:
    Grant where they are if he needs to see one.
 2. **The host's library is real.** Anything that changes things happens only in the host's test folder,
    `C:\PhotoGalleryRemoteTest`. It holds copies of about 25 photos and a video, outside OneDrive. In the web app it
-   shows under **Folders** as *PhotoGalleryRemoteTest*.
+   shows under **Folders** as *C:\PhotoGalleryRemoteTest* (folders the library starts from show their full path).
    - **Delete, tag, rate, add to albums:** only items in that folder.
    - **Albums:** only an album you create, named "Remote test…". Delete it at the end.
    - **Tags:** only "remote-test…" tags, and only on test-folder items. Remove them at the end.
@@ -203,7 +203,7 @@ These need host step 6. Follow rule 2: change nothing outside the test folder.
 | Id | Do | Expect |
 |---|---|---|
 | F1 | With changes off on the host, select a photo | Only Rate shows. Add to album, Tag and Delete are gone, and in the viewer the album and delete buttons too. |
-| F2 | Changes on. Folders › PhotoGalleryRemoteTest. Hover a tile, click its circle; Shift-click another; Ctrl+A; Esc | Selection bar with the count; a run selected; everything; cleared. |
+| F2 | Changes on. Folders › C:\PhotoGalleryRemoteTest. Hover a tile, click its circle; Shift-click another; Ctrl+A; Esc | Selection bar with the count; a run selected; everything; cleared. |
 | F3 | Select 3 test photos › Rate › ★★★ | Stars on the tiles; still there after reloading the page. |
 | F4 | Select 2 › Add to album › New album… "Remote test" | "Added 2 items…". Albums lists it with a cover. In the album: select one › Remove from album; Rename; Delete album (the photos stay). |
 | F5 | Select 2 › Tag "remote-test" | Tags lists it; the tag's page shows the 2. In the viewer's details the tag has an ×; remove it there. |

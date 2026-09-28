@@ -365,6 +365,7 @@
     $("cards-page").hidden = name !== "cards";
     $("page").hidden = name !== "page";
     $("controls").hidden = !(name === "grid" || name === "map");
+    $("main").classList.toggle("map-mode", name === "map");
     if (name !== "grid" && name !== "map") $("chips").replaceChildren();
   }
 

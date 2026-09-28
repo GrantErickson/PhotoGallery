@@ -289,18 +289,41 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 
     public Task<string?> GetThumbnailAsync(MediaItem item, CancellationToken ct) => services.Thumbnails.GetOrCreateAsync(item.Id, item.Path, ct);
 
-    /// <summary>Their face as OneDrive found it (or the clearest among a few photos), else their cover photo's thumbnail.</summary>
-    public async Task<string?> GetFaceAsync(long personId, CancellationToken ct)
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, Task> _faces = new();
+
+    /// <summary>
+    /// Their face as OneDrive found it (or the clearest among a few photos). Making one means decoding whole photos, two
+    /// at a time, so a face not made yet is made in the background and their cover photo answers meanwhile: a page of
+    /// people shows at once, and has faces next time.
+    /// </summary>
+    public async Task<(string? Path, bool Final)> GetFaceAsync(long personId, CancellationToken ct)
     {
-        var candidates = services.People.GetCoverCandidates(personId, 8)
-            .Select(c => (Path: services.Media.GetPath(c.MediaId), c.Box))
-            .Where(c => c.Path is not null)
-            .Select(c => (c.Path!, c.Box))
-            .ToList();
-        if (await services.Faces.GetOrCreateAsync(personId, candidates) is { } face) return face;
-        return services.People.Get(personId)?.CoverMediaId is { } cover && services.Media.GetPath(cover) is { } path
-            ? await services.Thumbnails.GetOrCreateAsync(cover, path, ct)
+        var tried = services.Faces.TryGetCached(personId, out var face);
+        if (face is not null) return (face, true);
+        if (!tried) _faces.GetOrAdd(personId, id => Task.Run(async () =>
+        {
+            try
+            {
+                var candidates = services.People.GetCoverCandidates(id, 8)
+                    .Select(c => (Path: services.Media.GetPath(c.MediaId), c.Box))
+                    .Where(c => c.Path is not null)
+                    .Select(c => (c.Path!, c.Box))
+                    .ToList();
+                await services.Faces.GetOrCreateAsync(id, candidates);
+            }
+            catch (Exception ex) when (ex is COMException or ArgumentException or IOException or UnauthorizedAccessException)
+            {
+                Log.Error($"Remote access: couldn't make a face for person {id}", ex);
+            }
+            finally
+            {
+                _faces.TryRemove(id, out _);
+            }
+        }));
+        var cover = services.People.Get(personId)?.CoverMediaId is { } coverId && services.Media.GetPath(coverId) is { } path
+            ? await services.Thumbnails.GetOrCreateAsync(coverId, path, ct)
             : null;
+        return (cover, tried); // tried and no face: the cover is their picture for good
     }
 
     public async Task<byte[]?> RenderAsync(MediaItem item, int maxSize, CancellationToken ct)

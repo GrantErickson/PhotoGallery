@@ -410,7 +410,18 @@ button.danger { color: var(--error); }
 .tile.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ---------- Map ---------- */
-.map-pane { position: relative; flex: 0 0 55%; min-height: 220px; margin: 0 20px 10px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+/* isolation: Leaflet's own layers (z-index up to 1000) stay inside the map, under the viewer and dialogs. */
+.map-pane { position: relative; isolation: isolate; flex: 0 0 55%; min-height: 220px; margin: 0 20px 10px; border-radius: 8px; overflow: hidden;
+            border: 1px solid var(--line); }
+/* The map on the left and the photos there on the right (stacked on narrow screens). */
+.main.map-mode { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: auto auto minmax(0, 1fr); }
+.main.map-mode > #selbar, .main.map-mode > #bar, .main.map-mode > #chips { grid-column: 1 / -1; }
+.main.map-mode > .map-pane { grid-column: 1; grid-row: 3; margin: 0 0 14px 20px; min-height: 0; }
+.main.map-mode > #scroller { grid-column: 2; grid-row: 3; }
+@media (max-width: 900px) {
+  .main.map-mode { display: flex; }
+  .main.map-mode > .map-pane { margin: 0 16px 8px; }
+}
 .map-pane #map { position: absolute; inset: 0; background: var(--tile); }
 .map-status { position: absolute; z-index: 1000; left: 50%; top: 10px; transform: translateX(-50%); background: rgba(0, 0, 0, .65); color: #fff;
               padding: 3px 12px; border-radius: 12px; font-size: 13px; pointer-events: none; }

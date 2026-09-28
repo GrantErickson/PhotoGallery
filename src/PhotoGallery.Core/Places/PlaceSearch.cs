@@ -57,28 +57,42 @@ public static class PlaceSearch
         return comma < 0 ? (Fold(query), null) : (Fold(query[..comma]), Fold(query[(comma + 1)..]) is { Length: > 0 } q ? q : null);
     }
 
-    /// <summary>Your places first, then places photos were taken near, then towns (the biggest first), best matches first in each.</summary>
-    public static List<PlaceHit> Local(string query, IEnumerable<Place> yours, IEnumerable<Poi> spots, CityIndex? cities, int max = MaxResults)
+    /// <summary>
+    /// Places near your photos first (your places, OpenStreetMap places photos were taken near, and towns where you took
+    /// photos), then how well the name matches, then your places before others, then the biggest towns: "Spokane"
+    /// finds the town you took thousands of photos in before its fairgrounds, and those before Spokane, Missouri.
+    /// </summary>
+    public static List<PlaceHit> Local(string query, IEnumerable<Place> yours, IEnumerable<Poi> spots, CityIndex? cities,
+        Func<double, double, bool>? nearPhotos = null, int max = MaxResults)
     {
         var (name, _) = Split(query);
         if (name.Length < 2) return [];
-        var hits = new List<PlaceHit>();
-        hits.AddRange(yours
+        var candidates = new List<(PlaceHit Hit, bool Near, int Score, int Order, long Population)>();
+        candidates.AddRange(yours
             .Select(p => (Place: p, Score: Score(Fold(p.Name), name)))
             .Where(x => x.Score > 0)
-            .OrderByDescending(x => x.Score)
-            .Select(x => Around(x.Place)));
-        hits.AddRange(spots
+            .Select(x => (Around(x.Place), true, x.Score, 0, 0L)));
+        candidates.AddRange(spots
             .Select(p => (Spot: p, Score: Score(Fold(p.Name), name)))
             .Where(x => x.Score > 0)
-            .OrderByDescending(x => x.Score)
             .DistinctBy(x => (x.Spot.Name, Math.Round(x.Spot.Latitude, 2), Math.Round(x.Spot.Longitude, 2)))
-            .Take(max)
-            .Select(x => new PlaceHit(x.Spot.Name, x.Spot.Kind, "place near your photos",
-                x.Spot.Latitude, x.Spot.Longitude, x.Spot.South, x.Spot.West, x.Spot.North, x.Spot.East)));
+            .Select(x => (new PlaceHit(x.Spot.Name, x.Spot.Kind, "place near your photos",
+                x.Spot.Latitude, x.Spot.Longitude, x.Spot.South, x.Spot.West, x.Spot.North, x.Spot.East), true, x.Score, 1, 0L)));
         if (cities is not null)
-            hits.AddRange(cities.Search(query, max).Select(c => new PlaceHit(c.Name, c.DisplayName, "town", c.Latitude, c.Longitude)));
-        return hits.Take(max).ToList();
+            candidates.AddRange(cities.Search(query, max * 3).Select(c => (
+                new PlaceHit(c.Name, c.DisplayName, "town", c.Latitude, c.Longitude),
+                nearPhotos?.Invoke(c.Latitude, c.Longitude) ?? false,
+                Score(Fold(c.Name), name),
+                2,
+                c.Population)));
+        return candidates
+            .OrderByDescending(c => c.Near)
+            .ThenByDescending(c => c.Score)
+            .ThenBy(c => c.Order)
+            .ThenByDescending(c => c.Population)
+            .Take(max)
+            .Select(c => c.Hit)
+            .ToList();
     }
 
     /// <summary>A named place of yours, with a box around its circle.</summary>

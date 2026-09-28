@@ -54,8 +54,10 @@ public interface IRemoteLibrary
     /// <summary>The grid thumbnail's file (JPEG), made if needed.</summary>
     Task<string?> GetThumbnailAsync(MediaItem item, CancellationToken ct);
 
-    /// <summary>A square crop of a person's face (JPEG), or null.</summary>
-    Task<string?> GetFaceAsync(long personId, CancellationToken ct);
+    /// <summary>
+    /// A square crop of a person's face (JPEG); until it's been made, their cover photo (Final false: ask again later).
+    /// </summary>
+    Task<(string? Path, bool Final)> GetFaceAsync(long personId, CancellationToken ct);
 
     /// <summary>The photo as a JPEG no bigger than this (upright, colours in sRGB, edits applied), or null.</summary>
     Task<byte[]?> RenderAsync(MediaItem item, int maxSize, CancellationToken ct);

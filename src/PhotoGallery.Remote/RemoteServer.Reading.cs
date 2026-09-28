@@ -82,8 +82,8 @@ public sealed partial class RemoteServer
 
         app.MapGet("/api/people/{id:long}/face", async ctx =>
         {
-            var path = await _library.GetFaceAsync(IdOf(ctx), ctx.RequestAborted);
-            await SendFileAsync(ctx, path, "image/jpeg", "private, max-age=3600");
+            var (path, final) = await _library.GetFaceAsync(IdOf(ctx), ctx.RequestAborted);
+            await SendFileAsync(ctx, path, "image/jpeg", final ? "private, max-age=3600" : "no-store");
         });
 
         app.MapGet("/api/media/{id:long}", async ctx =>

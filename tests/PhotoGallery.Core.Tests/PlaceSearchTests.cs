@@ -76,6 +76,16 @@ public class PlaceSearchTests
     }
 
     [Fact]
+    public void Places_near_your_photos_come_before_better_matches_far_away()
+    {
+        Poi[] spots = [new(1, "w1", "Spokane Arena", "stadium", 47.66, -117.42), new(2, "w2", "Spokane Valley Mall", "mall", 47.66, -117.20)];
+        static bool NearSpokane(double lat, double lon) => Math.Abs(lat - 47.66) < 1 && Math.Abs(lon + 117.3) < 1;
+        var hits = PlaceSearch.Local("spokane", [], spots, Towns(), NearSpokane);
+        Assert.Equal(["town Spokane, WA", "place near your photos Spokane Arena", "place near your photos Spokane Valley Mall",
+            "town Spokane Valley, WA", "town Spokane, MO"], hits.Select(h => $"{h.Kind} {(h.Kind == "town" ? h.Detail : h.Name)}"));
+    }
+
+    [Fact]
     public void Reads_nominatims_answers()
     {
         const string json = """

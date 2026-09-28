@@ -39,6 +39,17 @@ public sealed class FaceCropper(string cacheDirectory)
     }
 
     /// <summary>
+    /// A crop made before, without making one: true if the person has been tried (<paramref name="path"/> is their face,
+    /// or null if none of their photos had a usable one); false if not yet.
+    /// </summary>
+    public bool TryGetCached(long personId, out string? path)
+    {
+        var target = Path.Combine(cacheDirectory, $"{personId}.jpg");
+        path = File.Exists(target) ? target : null;
+        return path is not null || File.Exists(target + ".none");
+    }
+
+    /// <summary>
     /// Path of a square face crop for the person, or null if none of the candidates has a usable face. Candidates
     /// with a face box (fractions of the upright photo) are cropped to it directly.
     /// </summary>

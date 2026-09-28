@@ -5,6 +5,7 @@
 //   dotnet run --project tools/PhotoGallery.Cli -- thumbs [count] [skip]
 //   dotnet run --project tools/PhotoGallery.Cli -- motion <mediaId>
 //   dotnet run --project tools/PhotoGallery.Cli -- remote-check <computer> [--code "XXXX XXXX XXXX XXXX"]
+//   dotnet run --project tools/PhotoGallery.Cli -- remove-root <folder>
 using System.Diagnostics;
 using PhotoGallery.Core;
 using PhotoGallery.Core.Cloud;
@@ -46,6 +47,23 @@ switch (args.FirstOrDefault())
     case "stats":
         PrintStats();
         break;
+    case "remove-root":
+    {
+        // As Settings › Remove: the folder's items leave the library (their files stay), and what's cached for them goes.
+        var root = args.Length > 1 ? args[1] : throw new ArgumentException("Which folder?");
+        media.Removed += ids =>
+        {
+            thumbs.Invalidate(ids);
+            foreach (var id in ids)
+                foreach (var extension in new[] { ".mov", ".mp4" })
+                    File.Delete(Path.Combine(paths.MotionCache, id + extension));
+        };
+        var before = media.GetStats();
+        media.RemoveRoot(root);
+        var after = media.GetStats();
+        Console.WriteLine($"Removed {before.Photos + before.Videos - after.Photos - after.Videos:N0} items under {root}");
+        break;
+    }
     case "thumbs":
     {
         var count = args.Length > 1 ? int.Parse(args[1]) : 500;
@@ -110,7 +128,7 @@ switch (args.FirstOrDefault())
         break;
     }
     default:
-        Console.WriteLine("Commands: index [root...] | stats | thumbs [count] | motion <mediaId> | remote-check <computer> [--code ...]");
+        Console.WriteLine("Commands: index [root...] | stats | thumbs [count] | motion <mediaId> | remote-check <computer> [--code ...] | remove-root <folder>");
         break;
 }
 

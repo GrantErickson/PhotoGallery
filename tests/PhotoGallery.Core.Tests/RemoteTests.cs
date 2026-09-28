@@ -595,7 +595,7 @@ public sealed class RemoteServerTests : IAsyncLifetime
 
         public Task<string?> GetThumbnailAsync(MediaItem item, CancellationToken ct) => Task.FromResult<string?>(Thumbnail);
 
-        public Task<string?> GetFaceAsync(long personId, CancellationToken ct) => Task.FromResult<string?>(null);
+        public Task<(string? Path, bool Final)> GetFaceAsync(long personId, CancellationToken ct) => Task.FromResult<(string?, bool)>((null, true));
 
         public Task<byte[]?> RenderAsync(MediaItem item, int maxSize, CancellationToken ct) => Task.FromResult<byte[]?>(null);
 

@@ -36,6 +36,7 @@ internal static class RemoteCheck
         using var handler = new HttpClientHandler
         {
             UseCookies = false,
+            AutomaticDecompression = DecompressionMethods.All, // as browsers do, so the sizes are what they'd get
             ServerCertificateCustomValidationCallback = (_, certificate, _, _) =>
             {
                 if (certificate is null) return false;
@@ -151,8 +152,7 @@ internal static class RemoteCheck
         List<long> Read(string property) => root.GetProperty(property).EnumerateArray().Select(e => e.GetInt64()).ToList();
         var ids = Read("ids");
         var pictures = root.TryGetProperty("pictures", out var p) && p.ValueKind == JsonValueKind.True ? " (pictures matched too)" : "";
-        var encoding = response.Content.Headers.ContentEncoding.FirstOrDefault() ?? "not compressed";
-        Pass(name, $"{ids.Count:N0} items in {clock.ElapsedMilliseconds} ms, {bytes.Length / 1024.0:N0} KB after decompression ({encoding}){pictures}");
+        Pass(name, $"{ids.Count:N0} items in {clock.ElapsedMilliseconds} ms, {bytes.Length / 1024.0:N0} KB of JSON{pictures}");
         return (ids, Read("dates"), Read("flags"));
     }
 
