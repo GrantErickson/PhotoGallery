@@ -1,6 +1,7 @@
 "use strict";
-// Photo Gallery, opened from another computer: the library's timeline, search, people and albums, and a viewer.
-// Talks only to the computer it was loaded from (see RemoteServer.cs for the API).
+// Photo Gallery, opened from another computer: the library's timeline, search, people, albums, tags, folders, the map,
+// duplicates and blurry photos, with selecting, organizing and a viewer. Talks only to the computer it was loaded from
+// (see RemoteServer*.cs for the API).
 (() => {
   const $ = id => document.getElementById(id);
   const el = (tag, className, text) => {
@@ -15,6 +16,14 @@
     use.setAttribute("href", "#i-" + name);
     svg.append(use);
     return svg;
+  };
+  const button = (text, iconName, onClick, className) => {
+    const b = el("button", className);
+    b.type = "button";
+    if (iconName) b.append(icon(iconName));
+    b.append(document.createTextNode(text));
+    b.addEventListener("click", onClick);
+    return b;
   };
   const store = {
     get(key, fallback) {
@@ -42,11 +51,14 @@
     if (embedded) window.chrome?.webview?.postMessage(message);
   };
 
+  const EMPTY = { ids: [], dates: [], flags: [] };
   const state = {
     name: "",
+    changes: false,
     listKey: null,
+    route: null,
     loadToken: 0,
-    items: { ids: [], dates: [], flags: [] },
+    items: EMPTY,
     group: "month",
     yearsAgo: false,
     rows: [],
@@ -56,8 +68,12 @@
     tileSize: store.get("tileSize", window.innerWidth < 700 ? 110 : 180),
     people: null,
     albums: null,
+    tags: null,
+    folders: null,
     scrollMemory: new Map(),
     lastList: "#/",
+    selected: new Set(),
+    anchor: null,
   };
 
   // ---------- Server ----------
@@ -88,27 +104,25 @@
     return body;
   }
 
+  const post = (path, body = {}) => json(path, { method: "POST", body });
+
   const thumbUrl = id => `/api/media/${id}/thumb`;
   const displaySize = () => {
     const pixels = Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1);
     return Math.min(4096, Math.max(1024, Math.ceil(pixels / 512) * 512));
   };
 
-  async function getPeople() {
-    state.people ??= await json("/api/people");
-    return state.people;
-  }
-
-  async function getAlbums() {
-    state.albums ??= await json("/api/albums");
-    return state.albums;
-  }
+  const getPeople = async () => (state.people ??= await json("/api/people"));
+  const getAlbums = async () => (state.albums ??= await json("/api/albums"));
+  const getTags = async () => (state.tags ??= await json("/api/tags"));
+  const getFolders = async () => (state.folders ??= await json("/api/folders"));
 
   // ---------- Formatting (dates are the local time the photo was taken, sent as if UTC) ----------
 
   const formats = {
     month: new Intl.DateTimeFormat(undefined, { timeZone: "UTC", month: "long", year: "numeric" }),
     day: new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" }),
+    date: new Intl.DateTimeFormat(undefined, { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }),
     full: new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }),
     long: new Intl.DateTimeFormat(undefined, { timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }),
   };
@@ -122,6 +136,8 @@
   const fileSize = bytes => bytes >= 1 << 30 ? `${(bytes / (1 << 30)).toFixed(1)} GB`
     : bytes >= 1 << 20 ? `${(bytes / (1 << 20)).toFixed(1)} MB`
       : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`;
+  const describe = (count, videos) => videos === 0 ? plural(count, "photo", "photos")
+    : videos === count ? plural(count, "video", "videos") : `${number(count)} photos and videos`;
 
   function toast(message) {
     const node = $("toast");
@@ -131,12 +147,94 @@
     toast.timer = setTimeout(() => (node.hidden = true), 5000);
   }
 
+  const fail = error => {
+    if (error?.message !== "Signed out.") toast(error?.message || String(error));
+  };
+
+  // ---------- Questions: a name, a choice or a yes ----------
+
+  /**
+   * Asks something. With input: resolves to the text (or null). With choices ({label, hint, value}): resolves to the
+   * value chosen (or null). Otherwise it's a yes-or-no question: resolves to true or false.
+   */
+  function ask({ title, text = "", input = null, value = "", options = [], choices = null, ok = "OK", danger = false }) {
+    return new Promise(resolve => {
+      const back = $("dialog"), form = $("dialog-form"), field = $("dialog-input");
+      $("dialog-title").textContent = title;
+      $("dialog-text").textContent = text;
+      field.hidden = input === null;
+      field.placeholder = input || "";
+      field.value = value;
+      $("dialog-options").replaceChildren(...options.map(o => Object.assign(el("option"), { value: o })));
+      const list = $("dialog-choices");
+      list.hidden = !choices;
+      list.replaceChildren();
+      $("dialog-ok").hidden = !!choices && input === null;
+      $("dialog-ok").textContent = ok;
+      $("dialog-ok").classList.toggle("danger-ok", danger);
+      let done = false;
+      const finish = result => {
+        if (done) return;
+        done = true;
+        back.hidden = true;
+        form.onsubmit = null;
+        document.removeEventListener("keydown", onKey, true);
+        resolve(result);
+      };
+      const onKey = e => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          finish(input !== null || choices ? null : false);
+        }
+      };
+      for (const choice of choices || []) {
+        const b = button(choice.label, choice.icon, () => finish(choice.value));
+        if (choice.hint) b.append(el("span", "muted", choice.hint));
+        list.append(b);
+      }
+      form.onsubmit = e => {
+        e.preventDefault();
+        if (input !== null) {
+          const answer = field.value.trim();
+          finish(answer || null);
+        } else finish(true);
+      };
+      $("dialog-cancel").onclick = () => finish(input !== null || choices ? null : false);
+      back.onclick = e => {
+        if (e.target === back) finish(input !== null || choices ? null : false);
+      };
+      document.addEventListener("keydown", onKey, true);
+      back.hidden = false;
+      (input !== null ? field : choices ? list.querySelector("button") : $("dialog-ok"))?.focus();
+      if (input !== null) field.select();
+    });
+  }
+
+  /** Picks an album (or makes one): resolves to {id, name} or null. */
+  async function chooseAlbum(title) {
+    const albums = await getAlbums().catch(() => []);
+    const choice = await ask({
+      title,
+      choices: [{ label: "New album…", icon: "plus", value: "new" },
+        ...albums.map(a => ({ label: a.name, hint: number(a.count), value: a.id }))],
+    });
+    if (choice == null) return null;
+    if (choice !== "new") return albums.find(a => a.id === choice);
+    const name = await ask({ title: "New album", input: "Album name", ok: "Create" });
+    if (!name) return null;
+    const created = await post("/api/albums", { name });
+    state.albums = null;
+    return { id: created.id, name };
+  }
+
   // ---------- Sign in ----------
 
   async function start() {
     try {
       const hello = await json("/api/hello");
       state.name = hello.name;
+      setChanges(hello.changes);
       document.title = `Photos on ${hello.name}`;
       $("brand-name").textContent = `Photos on ${hello.name}`;
       if (hello.signedIn) showApp();
@@ -146,12 +244,17 @@
     }
   }
 
+  function setChanges(allowed) {
+    state.changes = !!allowed;
+    document.body.classList.toggle("read-only", !state.changes);
+  }
+
   function showLogin(message) {
     closeViewer(true);
     $("app").hidden = true;
     $("login").hidden = false;
     state.listKey = null;
-    state.people = state.albums = null;
+    state.people = state.albums = state.tags = state.folders = null;
     $("login-host").textContent = state.name ? `on ${state.name}` : "";
     $("login-error").textContent = message || "";
     $("passphrase").focus();
@@ -160,18 +263,18 @@
 
   $("login-form").addEventListener("submit", async event => {
     event.preventDefault();
-    const button = event.submitter;
-    if (button) button.disabled = true;
+    const submit = event.submitter;
+    if (submit) submit.disabled = true;
     $("login-error").textContent = "";
     try {
-      await json("/api/login", { method: "POST", body: { passphrase: $("passphrase").value } });
+      await post("/api/login", { passphrase: $("passphrase").value });
       $("passphrase").value = "";
       showApp();
     } catch (error) {
       $("login-error").textContent = error.message;
       $("passphrase").select();
     } finally {
-      if (button) button.disabled = false;
+      if (submit) submit.disabled = false;
     }
   });
 
@@ -180,10 +283,12 @@
     showLogin();
   });
 
-  function showApp() {
+  async function showApp() {
     $("login").hidden = true;
     $("app").hidden = false;
-    updateSuggestions();
+    // Whether changes are allowed can change on the host while signed in.
+    json("/api/hello").then(hello => setChanges(hello.changes)).catch(() => {});
+    updateSuggestions("");
     routeNow();
   }
 
@@ -213,6 +318,8 @@
     routeNow();
   }
 
+  const go = hash => (location.hash = hash);
+
   window.addEventListener("hashchange", routeNow);
 
   async function routeNow() {
@@ -222,6 +329,7 @@
     if (key !== state.listKey) {
       if (state.listKey != null && !$("scroller").hidden) state.scrollMemory.set(state.listKey, $("scroller").scrollTop);
       state.listKey = key;
+      state.route = current;
       if (current.section !== "search") state.lastList = key;
       $("app").classList.remove("nav-open");
       await showSection(current, key);
@@ -233,100 +341,176 @@
 
   // ---------- Sections ----------
 
-  const sections = {
+  const lists = {
     photos: { title: "Photos", query: { section: "timeline" }, empty: "No photos yet. They're indexed on the photo computer; check back soon." },
     onthisday: { title: "On this day", group: "year" },
     favorites: { title: "Favorites", query: { section: "favorites" }, subtitle: "Rated 4 stars or more", empty: "Rate photos with the stars in the viewer (or keys 1–5), and your 4 and 5 star photos show up here." },
     live: { title: "Live Photos", query: { section: "live" }, subtitle: "iPhone Live Photos and Android motion photos", empty: "No Live Photos found." },
     videos: { title: "Videos", query: { section: "videos" }, empty: "No videos found." },
+    blurry: { title: "Blurry photos", query: { section: "blurry" }, group: "none", subtitle: "Blurriest first · Filters › Live Photos only finds the ones whose video may have a sharper frame", empty: "No blurry photos (or they haven't all been measured yet on the photo computer)." },
   };
+  const pages = new Set(["people", "albums", "tags", "folders", "duplicates"]);
 
   function setNav(section) {
-    const selected = section === "person" ? "people" : section === "album" ? "albums" : section;
+    const selected = { person: "people", album: "albums", tag: "tags", folder: "folders", area: "map", similar: null }[section] ?? section;
     for (const link of document.querySelectorAll(".nav a")) link.classList.toggle("selected", link.dataset.section === selected);
+  }
+
+  function showPane(name) {
+    $("scroller").hidden = !(name === "grid" || name === "map");
+    $("map-pane").hidden = name !== "map";
+    $("cards-page").hidden = name !== "cards";
+    $("page").hidden = name !== "page";
+    $("controls").hidden = !(name === "grid" || name === "map");
+    if (name !== "grid" && name !== "map") $("chips").replaceChildren();
   }
 
   async function showSection(route, key) {
     const token = ++state.loadToken;
     setNav(route.section);
-    closePeoplePop();
-    const p = route.params;
+    closePopovers();
+    clearSelection();
+    $("section-actions").replaceChildren();
     if (route.section !== "search") setSearchText("");
-    if (route.section === "people" || route.section === "albums") return showCards(route.section, token);
+    if (pages.has(route.section)) {
+      showPane(route.section === "folders" || route.section === "duplicates" ? "page" : "cards");
+      if (route.section === "folders") return showFolders(token);
+      if (route.section === "duplicates") return showDuplicates(token);
+      return showCards(route.section, route.params.get("hidden") === "1", token);
+    }
+    if (route.section === "map") {
+      showPane("map");
+      return showMap(route, token);
+    }
+    showPane("grid");
 
-    $("cards-page").hidden = true;
-    $("scroller").hidden = false;
+    const p = route.params;
     const query = new URLSearchParams();
-    const known = sections[route.section] || sections.photos;
+    const known = lists[route.section] || lists.photos;
     let title = known.title, subtitle = known.subtitle || "", empty = known.empty || "Nothing here.";
     let group = p.get("group") || known.group || "month";
+    let path = null; // a list of its own rather than /api/items
     const search = route.section === "search";
     Object.entries(known.query || {}).forEach(([k, v]) => query.set(k, v));
 
-    if (search) {
-      const text = p.get("q") || "";
-      const sort = p.get("sort") || "best";
-      query.set("section", "search");
-      query.set("q", text);
-      if (p.get("exact") === "1") query.set("exact", "1");
-      if (sort !== "best") query.set("sort", sort);
-      title = `“${text}”`;
-      group = sort === "best" ? "none" : p.get("group") || "month";
-      empty = p.get("exact") === "1"
-        ? "No exact matches. Try “Best matches” for photos that look like it, or loosen the filters."
-        : "No matches. Try other words, or loosen the filters.";
-      setSearchText(text);
-      remember(text);
-    } else if (route.section === "onthisday") {
-      const today = new Date();
-      query.set("section", "onthisday");
-      query.set("day", `${today.getMonth() + 1}-${today.getDate()}`);
-      subtitle = today.toLocaleDateString(undefined, { month: "long", day: "numeric" }) + " in years past";
-      empty = "Nothing from this day in other years.";
-    } else if (route.section === "person") {
-      query.set("section", "person");
-      query.set("id", route.id);
-      const person = (await getPeople().catch(() => [])).find(x => String(x.id) === route.id);
-      title = person?.name || "Unnamed person";
-      subtitle = person ? plural(person.count, "photo", "photos") : "";
-    } else if (route.section === "album") {
-      query.set("section", "album");
-      query.set("id", route.id);
-      const album = (await getAlbums().catch(() => [])).find(x => String(x.id) === route.id);
-      title = album?.name || "Album";
-      group = p.get("group") || "none";
-      empty = "This album is empty.";
+    switch (route.section) {
+      case "search": {
+        const text = p.get("q") || "";
+        const sort = p.get("sort") || "best";
+        query.set("section", "search");
+        query.set("q", text);
+        if (p.get("exact") === "1") query.set("exact", "1");
+        if (sort !== "best") query.set("sort", sort);
+        title = `“${text}”`;
+        group = sort === "best" ? "none" : p.get("group") || "month";
+        empty = p.get("exact") === "1"
+          ? "No exact matches. Try “Best matches” for photos that look like it, or loosen the filters."
+          : "No matches. Try other words, or loosen the filters.";
+        setSearchText(text);
+        remember(text);
+        break;
+      }
+      case "onthisday": {
+        const today = new Date();
+        query.set("section", "onthisday");
+        query.set("day", `${today.getMonth() + 1}-${today.getDate()}`);
+        subtitle = today.toLocaleDateString(undefined, { month: "long", day: "numeric" }) + " in years past";
+        empty = "Nothing from this day in other years.";
+        break;
+      }
+      case "person": {
+        query.set("section", "person");
+        query.set("id", route.id);
+        const person = (await getPeople().catch(() => [])).find(x => String(x.id) === route.id)
+          || (await json("/api/people?hidden=1").catch(() => [])).find(x => String(x.id) === route.id);
+        title = person?.name || "Unnamed person";
+        subtitle = person?.hidden ? "Hidden from People" : "";
+        personActions(person || { id: Number(route.id) });
+        break;
+      }
+      case "album": {
+        query.set("section", "album");
+        query.set("id", route.id);
+        const album = (await getAlbums().catch(() => [])).find(x => String(x.id) === route.id);
+        title = album?.name || "Album";
+        group = p.get("group") || "none";
+        empty = "This album is empty. Select photos anywhere and choose “Add to album”.";
+        albumActions(album || { id: Number(route.id), name: title });
+        break;
+      }
+      case "tag": {
+        query.set("section", "tag");
+        query.set("id", route.id);
+        const tag = (await getTags().catch(() => [])).find(x => String(x.id) === route.id);
+        title = tag?.name || "Tag";
+        subtitle = tag ? (tag.yours ? "Your tag" : "Tag from OneDrive") : "";
+        break;
+      }
+      case "folder": {
+        query.set("section", "folder");
+        query.set("id", route.id);
+        if (p.get("sub") === "0") query.set("sub", "0");
+        const folders = await getFolders().catch(() => []);
+        const folder = folders.find(x => String(x.id) === route.id);
+        title = folder?.name || "Folder";
+        subtitle = folder ? folderPath(folder, folders) : "";
+        folderActions(p);
+        break;
+      }
+      case "similar":
+        path = `/api/media/${route.id}/similar`;
+        title = "Similar photos";
+        subtitle = "The first is the one you started from; the rest look most like it, most alike first";
+        group = "none";
+        empty = "Nothing looks much like it (or the photo computer hasn't compared it yet).";
+        break;
+      case "area":
+        ["s", "w", "n", "e"].forEach(k => query.set(k, p.get(k) || ""));
+        query.set("section", "area");
+        title = "Photos in this area";
+        break;
     }
-    if (p.get("kind") && route.section !== "videos") query.set("kind", p.get("kind"));
-    if (p.get("people")) query.set("people", p.get("people"));
+    if (!path) addFilters(query, p, route.section);
     if (token !== state.loadToken) return;
 
     state.group = group;
     state.yearsAgo = route.section === "onthisday";
     $("title").textContent = title;
-    $("subtitle").textContent = subtitle || "Loading…";
     updateControls(route, group);
-    showItems({ ids: [], dates: [], flags: [] }, "");
+    await loadItems(() => json(path || "/api/items?" + query), { subtitle, empty, search, exact: p.get("exact") === "1", key }, token);
+  }
+
+  function addFilters(query, p, section) {
+    if (p.get("kind") && section !== "videos") query.set("kind", p.get("kind"));
+    for (const name of ["people", "rating", "screenshots"]) if (p.get(name)) query.set(name, p.get(name));
+    if (p.get("live") === "1") query.set("live", "1");
+  }
+
+  /** Loads a list into the grid (keeping where it was, when coming back to it). */
+  async function loadItems(fetcher, { subtitle = "", empty = "Nothing here.", search = false, exact = false, key = null, keepPosition = false }, token) {
+    $("subtitle").textContent = [subtitle, "Loading…"].filter(Boolean).join(" · ");
+    if (!keepPosition) showItems(EMPTY, "");
     try {
-      const data = await json("/api/items?" + query);
+      const data = await fetcher();
       if (token !== state.loadToken) return;
-      if (search) {
-        $("subtitle").textContent = (p.get("exact") === "1"
+      const lead = search
+        ? (exact
           ? "Exact words in names, folders, tags, people, places, text in photos and what's said in videos"
           : data.pictures
             ? "Best matches: what's in the picture, and the words in names, tags, people, places and text"
-            : "Words in names, tags, people, places and text") + " · " + countText(data);
-      } else {
-        $("subtitle").textContent = [subtitle, countText(data)].filter(Boolean).join(" · ");
-      }
+            : "Words in names, tags, people, places and text")
+        : subtitle;
+      // Kept, so the counts can follow deletions.
+      state.describeList = list => [lead, countText(list)].filter(Boolean).join(" · ");
+      $("subtitle").textContent = state.describeList(data);
+      const scrollTop = $("scroller").scrollTop;
       showItems(data, empty);
-      const remembered = state.scrollMemory.get(key);
-      $("scroller").scrollTop = remembered || 0;
+      $("scroller").scrollTop = keepPosition ? scrollTop : (key && state.scrollMemory.get(key)) || 0;
       render();
     } catch (error) {
       if (token === state.loadToken && error.status !== 401) {
         $("subtitle").textContent = "";
-        showItems({ ids: [], dates: [], flags: [] }, error.message);
+        showItems(EMPTY, error.message);
       }
     }
   }
@@ -339,37 +523,147 @@
     return [photos ? plural(photos, "photo", "photos") : "", videos ? plural(videos, "video", "videos") : ""].filter(Boolean).join(" and ");
   }
 
-  // ---------- Controls: match, sort, group, kind, people, tile size ----------
+  function folderPath(folder, folders) {
+    const names = [];
+    for (let f = folder; f; f = folders.find(x => x.id === f.parent)) names.unshift(f.name);
+    return names.join(" › ");
+  }
+
+  // ---------- A section's own actions: a person, an album, a folder ----------
+
+  const actions = (...nodes) => $("section-actions").replaceChildren(...nodes);
+
+  function personActions(person) {
+    const rename = button(person.name ? "Rename" : "Name", null, async () => {
+      const name = await ask({ title: person.name ? "Rename" : "Who is this?", input: "Name", value: person.name || "", ok: "Save" });
+      if (name == null) return;
+      try {
+        await post(`/api/people/${person.id}/rename`, { name });
+        state.people = null;
+        $("title").textContent = name;
+        person.name = name;
+        toast(`Named ${name}.`);
+      } catch (error) {
+        fail(error);
+      }
+    });
+    const hide = button(person.hidden ? "Show in People" : "Hide from People", null, async () => {
+      try {
+        await post(`/api/people/${person.id}/hide`, { hidden: !person.hidden });
+        state.people = null;
+        person.hidden = !person.hidden;
+        hide.lastChild.textContent = person.hidden ? "Show in People" : "Hide from People";
+        toast(person.hidden ? "Hidden from People." : "Shown in People again.");
+      } catch (error) {
+        fail(error);
+      }
+    });
+    const merge = button("Merge into…", null, async () => {
+      const people = (await getPeople().catch(() => [])).filter(x => x.id !== person.id && x.name);
+      const into = await ask({
+        title: `Merge ${person.name || "this person"} into…`,
+        text: "Their photos go to the person you choose. This can't be undone here.",
+        choices: people.map(x => ({ label: x.name, hint: number(x.count), value: x.id })),
+      });
+      if (into == null) return;
+      const target = people.find(x => x.id === into);
+      if (!await ask({ title: `Merge into ${target.name}?`, text: `${person.name || "This person"} becomes ${target.name}.`, ok: "Merge", danger: true })) return;
+      try {
+        await post(`/api/people/${person.id}/merge`, { into });
+        state.people = null;
+        toast(`Merged into ${target.name}.`);
+        go(`#/person/${into}`);
+      } catch (error) {
+        fail(error);
+      }
+    });
+    [rename, hide, merge].forEach(b => b.setAttribute("data-change", ""));
+    actions(rename, hide, merge);
+  }
+
+  function albumActions(album) {
+    const rename = button("Rename", null, async () => {
+      const name = await ask({ title: "Rename album", input: "Album name", value: album.name, ok: "Save" });
+      if (!name) return;
+      try {
+        await post(`/api/albums/${album.id}/rename`, { name });
+        state.albums = null;
+        album.name = name;
+        $("title").textContent = name;
+      } catch (error) {
+        fail(error);
+      }
+    });
+    const remove = button("Delete album", null, async () => {
+      if (!await ask({ title: `Delete “${album.name}”?`, text: "Only the album goes; its photos stay in the library.", ok: "Delete album", danger: true })) return;
+      try {
+        await post(`/api/albums/${album.id}/delete`);
+        state.albums = null;
+        go("#/albums");
+      } catch (error) {
+        fail(error);
+      }
+    });
+    [rename, remove].forEach(b => b.setAttribute("data-change", ""));
+    actions(rename, remove);
+  }
+
+  function folderActions(p) {
+    const label = el("label", "check-inline");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = p.get("sub") !== "0";
+    box.addEventListener("change", () => changeParam("sub", box.checked ? null : "0"));
+    label.append(box, document.createTextNode(" Include subfolders"));
+    actions(label);
+  }
+
+  // ---------- Controls: match, sort, group, filters, people, tile size ----------
 
   function updateControls(route, group) {
     const p = route.params;
     const search = route.section === "search";
-    $("controls").hidden = false;
+    const fixed = route.section === "similar";
     $("exact").hidden = !search;
     $("sort").hidden = !search;
     for (const b of $("exact").children) b.classList.toggle("on", (p.get("exact") === "1") === (b.dataset.exact === "1"));
     $("sort").value = p.get("sort") || "best";
     $("group").value = group;
-    $("group").disabled = search && $("sort").value === "best";
-    $("kind").hidden = route.section === "videos";
+    $("group").disabled = (search && $("sort").value === "best") || route.section === "blurry";
+    $("filters-button").parentElement.hidden = fixed;
+    $("people-button").parentElement.hidden = fixed;
     $("kind").value = p.get("kind") || "";
+    $("kind").disabled = route.section === "videos";
+    $("rating").value = p.get("rating") || "0";
+    $("screenshots").value = p.get("screenshots") || "";
+    $("live-only").checked = p.get("live") === "1";
+    const active = ["kind", "screenshots"].filter(k => p.get(k)).length + (Number(p.get("rating")) > 0 ? 1 : 0) + (p.get("live") === "1" ? 1 : 0);
+    $("filters-button").classList.toggle("on", active > 0);
+    $("filters-button").querySelector("span").textContent = active ? `Filters (${active})` : "Filters";
     renderChips(route);
   }
 
   function changeParam(name, value, extra) {
     const current = parseHash();
     current.params.delete("view");
-    if (value == null || value === "") current.params.delete(name);
+    if (value == null || value === "" || value === "0" && name === "rating") current.params.delete(name);
     else current.params.set(name, value);
     if (extra) extra(current.params);
     replaceRoute(current);
   }
 
-  for (const button of $("exact").children)
-    button.addEventListener("click", () => changeParam("exact", button.dataset.exact === "1" ? "1" : null));
+  for (const b of $("exact").children)
+    b.addEventListener("click", () => changeParam("exact", b.dataset.exact === "1" ? "1" : null));
   $("sort").addEventListener("change", () => changeParam("sort", $("sort").value === "best" ? null : $("sort").value));
   $("group").addEventListener("change", () => changeParam("group", $("group").value));
   $("kind").addEventListener("change", () => changeParam("kind", $("kind").value));
+  $("rating").addEventListener("change", () => changeParam("rating", $("rating").value));
+  $("screenshots").addEventListener("change", () => changeParam("screenshots", $("screenshots").value));
+  $("live-only").addEventListener("change", () => changeParam("live", $("live-only").checked ? "1" : null));
+  $("filters-clear").addEventListener("click", () => {
+    closePopovers();
+    changeParam("kind", null, p => ["rating", "screenshots", "live"].forEach(k => p.delete(k)));
+  });
 
   function zoom(factor) {
     state.tileSize = Math.round(Math.min(400, Math.max(72, state.tileSize * factor)));
@@ -378,6 +672,35 @@
   }
   $("zoom-in").addEventListener("click", () => zoom(1.25));
   $("zoom-out").addEventListener("click", () => zoom(0.8));
+
+  // Popovers: filters and the people filter.
+  function togglePopover(id, onOpen) {
+    const pop = $(id);
+    const open = pop.hidden;
+    closePopovers();
+    if (open) {
+      pop.hidden = false;
+      onOpen?.();
+    }
+  }
+  function closePopovers() {
+    $("filters-pop").hidden = true;
+    $("people-pop").hidden = true;
+  }
+  $("filters-button").addEventListener("click", event => {
+    event.stopPropagation();
+    togglePopover("filters-pop");
+  });
+  $("people-button").addEventListener("click", event => {
+    event.stopPropagation();
+    togglePopover("people-pop", async () => {
+      $("people-find").value = "";
+      await fillPeopleList();
+      $("people-find").focus();
+    });
+  });
+  for (const id of ["filters-pop", "people-pop"]) $(id).addEventListener("click", event => event.stopPropagation());
+  document.addEventListener("click", closePopovers);
 
   // People filter: photos with all of the chosen people in them.
   const chosenPeople = () => (parseHash().params.get("people") || "").split(",").filter(Boolean);
@@ -401,17 +724,6 @@
       chip.append(remove);
       chips.append(chip);
     }
-  }
-
-  async function openPeoplePop() {
-    $("people-pop").hidden = false;
-    $("people-find").value = "";
-    await fillPeopleList();
-    $("people-find").focus();
-  }
-
-  function closePeoplePop() {
-    $("people-pop").hidden = true;
   }
 
   async function fillPeopleList() {
@@ -442,19 +754,11 @@
       list.append(label);
     }
   }
-
-  $("people-button").addEventListener("click", event => {
-    event.stopPropagation();
-    if ($("people-pop").hidden) openPeoplePop();
-    else closePeoplePop();
-  });
   $("people-find").addEventListener("input", fillPeopleList);
   $("people-clear").addEventListener("click", () => {
-    closePeoplePop();
+    closePopovers();
     changeParam("people", null);
   });
-  $("people-pop").addEventListener("click", event => event.stopPropagation());
-  document.addEventListener("click", closePeoplePop);
 
   // ---------- Search ----------
 
@@ -467,22 +771,22 @@
     const recent = store.get("recent", []).filter(x => x.toLowerCase() !== text.toLowerCase());
     recent.unshift(text);
     store.set("recent", recent.slice(0, 12));
-    updateSuggestions();
   }
 
-  async function updateSuggestions() {
-    const list = $("suggestions");
-    const values = [...store.get("recent", [])];
-    try {
-      for (const person of await getPeople()) if (person.name && values.length < 400) values.push(person.name);
-    } catch {
-      // suggestions are optional
+  /** The search box's list: recent searches, then people, places and tags whose names contain what's typed. */
+  async function updateSuggestions(text) {
+    const recent = store.get("recent", []).filter(r => !text || r.toLowerCase().includes(text.toLowerCase()));
+    let found = [];
+    if (text.length >= 2) {
+      try {
+        found = (await json("/api/suggest?q=" + encodeURIComponent(text))).map(s => s.text);
+      } catch {
+        // suggestions are optional
+      }
+      if ($("search").value.trim() !== text) return; // typed on meanwhile
     }
-    list.replaceChildren(...[...new Set(values)].map(v => {
-      const option = el("option");
-      option.value = v;
-      return option;
-    }));
+    const values = [...new Set([...recent, ...found])].slice(0, 12);
+    $("suggestions").replaceChildren(...values.map(v => Object.assign(el("option"), { value: v })));
   }
 
   /** Runs a search, keeping the current match, sort and filters if already searching. */
@@ -492,15 +796,16 @@
     const current = parseHash();
     const next = new URLSearchParams();
     if (current.section === "search") {
-      for (const key of ["exact", "sort", "group", "kind", "people"]) if (current.params.get(key)) next.set(key, current.params.get(key));
+      for (const key of ["exact", "sort", "group", "kind", "people", "rating", "screenshots", "live"])
+        if (current.params.get(key)) next.set(key, current.params.get(key));
     }
     next.set("q", text);
-    location.hash = hashOf({ section: "search", id: null, params: next });
+    go(hashOf({ section: "search", id: null, params: next }));
   }
 
   function clearSearch() {
     setSearchText("");
-    if (parseHash().section === "search") location.hash = state.lastList || "#/";
+    if (parseHash().section === "search") go(state.lastList || "#/");
   }
 
   $("search-form").addEventListener("submit", event => {
@@ -508,7 +813,11 @@
     $("search").blur();
     search($("search").value);
   });
-  $("search").addEventListener("input", () => ($("search-clear").hidden = !$("search").value));
+  $("search").addEventListener("input", () => {
+    $("search-clear").hidden = !$("search").value;
+    clearTimeout(updateSuggestions.timer);
+    updateSuggestions.timer = setTimeout(() => updateSuggestions($("search").value.trim()), 180);
+  });
   $("search-clear").addEventListener("click", () => {
     clearSearch();
     $("search").focus();
@@ -519,30 +828,47 @@
   });
   $("main").addEventListener("click", () => $("app").classList.remove("nav-open"));
 
-  // ---------- People and albums ----------
+  // ---------- People, albums and tags ----------
 
-  async function showCards(kind, token) {
-    $("scroller").hidden = true;
-    $("controls").hidden = true;
-    $("chips").replaceChildren();
-    $("cards-page").hidden = false;
-    $("title").textContent = kind === "people" ? "People" : "Albums";
+  async function showCards(kind, showHidden, token) {
+    $("title").textContent = { people: "People", albums: "Albums", tags: "Tags" }[kind];
     $("subtitle").textContent = "Loading…";
     $("cards").replaceChildren();
     $("cards-find").value = "";
-    $("cards-find").placeholder = kind === "people" ? "Find a person" : "Find an album";
+    $("cards-find").placeholder = { people: "Find a person", albums: "Find an album", tags: "Find a tag" }[kind];
+    if (kind === "albums") {
+      const create = button("New album", "plus", async () => {
+        const name = await ask({ title: "New album", input: "Album name", ok: "Create" });
+        if (!name) return;
+        try {
+          const created = await post("/api/albums", { name });
+          state.albums = null;
+          go(`#/album/${created.id}`);
+        } catch (error) {
+          fail(error);
+        }
+      });
+      create.setAttribute("data-change", "");
+      actions(create);
+    } else if (kind === "people") {
+      const link = el("a", null, showHidden ? "Hide the hidden people" : "Show hidden people");
+      link.href = showHidden ? "#/people" : "#/people?hidden=1";
+      actions(link);
+    }
     try {
-      const rows = kind === "people" ? await getPeople() : await getAlbums();
+      const rows = kind === "people" ? (showHidden ? await json("/api/people?hidden=1") : await getPeople())
+        : kind === "albums" ? await getAlbums() : await getTags();
       if (token !== state.loadToken) return;
       $("subtitle").textContent = kind === "people"
         ? `${plural(rows.length, "person", "people")} OneDrive recognised in your photos`
-        : plural(rows.length, "album", "albums");
-      const cards = rows.map(row => {
-        const card = el("a", "card" + (kind === "people" ? " person" : ""));
-        card.href = `#/${kind === "people" ? "person" : "album"}/${row.id}`;
+        : kind === "albums" ? plural(rows.length, "album", "albums")
+          : `${plural(rows.filter(t => t.yours).length, "tag", "tags")} of yours, ${number(rows.filter(t => !t.yours).length)} from OneDrive`;
+      const cards = (kind === "tags" ? [...rows].sort((a, b) => (b.yours - a.yours) || b.count - a.count) : rows).map(row => {
+        const card = el("a", "card" + (kind === "people" ? " person" : kind === "tags" ? " tag" : ""));
+        card.href = `#/${{ people: "person", albums: "album", tags: "tag" }[kind]}/${row.id}`;
         card.dataset.name = (row.name || "").toLowerCase();
         const cover = el("div", "cover");
-        const src = kind === "people" ? `/api/people/${row.id}/face` : row.cover ? thumbUrl(row.cover) : null;
+        const src = kind === "people" ? `/api/people/${row.id}/face` : kind === "albums" && row.cover ? thumbUrl(row.cover) : null;
         const initials = (row.name || "?").split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
         if (src) {
           const img = el("img");
@@ -551,15 +877,18 @@
           img.src = src;
           img.addEventListener("error", () => img.replaceWith(document.createTextNode(initials)));
           cover.append(img);
+        } else if (kind === "tags") {
+          cover.append(icon("tag"));
         } else {
           cover.textContent = initials;
         }
-        card.append(cover, el("span", "name", row.name || (kind === "people" ? "Unnamed person" : "Untitled")),
-          el("span", "muted", plural(row.count, "photo", "photos")));
+        const note = kind === "tags" ? `${plural(row.count, "photo", "photos")} · ${row.yours ? "yours" : "OneDrive"}`
+          : plural(row.count, "photo", "photos") + (row.hidden ? " · hidden" : "");
+        card.append(cover, el("span", "name", row.name || (kind === "people" ? "Unnamed person" : "Untitled")), el("span", "muted", note));
         return card;
       });
       $("cards").replaceChildren(...cards);
-      if (!cards.length) $("cards").append(el("p", "muted", kind === "people" ? "No people yet." : "No albums yet."));
+      if (!cards.length) $("cards").append(el("p", "muted", { people: "No people yet.", albums: "No albums yet.", tags: "No tags yet." }[kind]));
     } catch (error) {
       if (token === state.loadToken && error.status !== 401) $("subtitle").textContent = error.message;
     }
@@ -569,6 +898,292 @@
     const find = $("cards-find").value.trim().toLowerCase();
     for (const card of $("cards").children) card.hidden = !!find && !(card.dataset.name || "").includes(find);
   });
+
+  // ---------- Folders ----------
+
+  async function showFolders(token) {
+    $("title").textContent = "Folders";
+    $("subtitle").textContent = "Loading…";
+    const page = $("page");
+    page.replaceChildren();
+    try {
+      const folders = await getFolders();
+      if (token !== state.loadToken) return;
+      $("subtitle").textContent = plural(folders.length, "folder", "folders") + " on " + state.name;
+      const find = el("input");
+      find.type = "search";
+      find.placeholder = "Find a folder";
+      find.className = "page-find";
+      const tree = el("div", "tree");
+      const children = new Map();
+      for (const f of folders) {
+        const list = children.get(f.parent ?? 0) || [];
+        list.push(f);
+        children.set(f.parent ?? 0, list);
+      }
+      const ids = new Set(folders.map(f => f.id));
+      const roots = folders.filter(f => f.parent == null || !ids.has(f.parent));
+      const add = (folder, depth) => {
+        const link = el("a");
+        link.href = `#/folder/${folder.id}`;
+        link.style.paddingLeft = 8 + depth * 20 + "px";
+        link.dataset.name = folder.name.toLowerCase();
+        link.append(icon("folder"), document.createTextNode(folder.name));
+        tree.append(link);
+        for (const child of (children.get(folder.id) || []).sort((a, b) => a.name.localeCompare(b.name))) add(child, depth + 1);
+      };
+      roots.sort((a, b) => a.name.localeCompare(b.name)).forEach(f => add(f, 0));
+      find.addEventListener("input", () => {
+        const text = find.value.trim().toLowerCase();
+        for (const link of tree.children) link.hidden = !!text && !link.dataset.name.includes(text);
+      });
+      page.append(find, tree);
+    } catch (error) {
+      if (token === state.loadToken) $("subtitle").textContent = error.message;
+    }
+  }
+
+  // ---------- Duplicates ----------
+
+  async function showDuplicates(token) {
+    $("title").textContent = "Duplicates";
+    $("subtitle").textContent = "Exact copies, and re-saved or resized versions of the same shot. Found on the photo computer.";
+    const page = $("page");
+    page.replaceChildren();
+    const toolbar = el("div", "dup-toolbar");
+    const scan = button("Find duplicates", "search", async () => {
+      try {
+        render(await post("/api/duplicates/scan"));
+        poll();
+      } catch (error) {
+        fail(error);
+      }
+    }, "primary");
+    const kind = el("select");
+    for (const [value, label] of [["", "All kinds"], ["exact", "Exact copies"], ["similar", "Same shot, re-saved"]])
+      kind.append(Object.assign(el("option", null, label), { value }));
+    kind.value = store.get("dupKind", "");
+    kind.addEventListener("change", () => {
+      store.set("dupKind", kind.value);
+      render(last);
+    });
+    const status = el("span", "muted");
+    const bar = el("div", "progress");
+    const fill = el("div");
+    bar.append(fill);
+    toolbar.append(scan, kind, status, bar);
+    const list = el("div");
+    page.append(toolbar, list);
+    let last = null, shown = 60;
+
+    const render = data => {
+      last = data;
+      scan.lastChild.textContent = data.groups ? "Scan again" : "Find duplicates";
+      scan.disabled = data.running;
+      bar.hidden = !data.running;
+      if (data.progress) fill.style.width = (data.progress.total ? 100 * data.progress.done / data.progress.total : 5) + "%";
+      status.textContent = data.running
+        ? `${data.progress?.stage || "Scanning"}… ${data.progress?.total ? `${number(data.progress.done)} of ${number(data.progress.total)}` : ""}`
+        : data.error ? `The scan failed: ${data.error}`
+          : data.groups ? `${plural(data.groups.length, "group", "groups")} · last scan ${formats.full.format(new Date(data.finished + "Z"))}`
+            : "Not scanned yet. The first scan reads every photo on the photo computer and can take a while.";
+      list.replaceChildren();
+      const groups = (data.groups || []).filter(g => !kind.value || g.kind === kind.value);
+      for (const group of groups.slice(0, shown)) list.append(groupCard(group));
+      if (groups.length > shown) list.append(button(`Show more (${number(groups.length - shown)} left)`, null, () => {
+        shown += 60;
+        render(last);
+      }));
+      if (data.groups && !groups.length) list.append(el("p", "muted", "No duplicates of this kind."));
+    };
+
+    const groupCard = group => {
+      const card = el("section", "dup-group");
+      const header = el("header");
+      header.append(el("strong", null, group.kind === "exact" ? "Exact copies" : "Same shot, re-saved or resized"),
+        el("span", "muted", `${plural(group.members.length, "copy", "copies")} · ${fileSize(group.reclaimable)} to free`));
+      const extras = group.members.filter(m => !m.keep);
+      const deleteExtras = button(`Delete the ${extras.length === 1 ? "extra copy" : `${extras.length} extra copies`}`, "trash", async () => {
+        if (await deleteIds(extras.map(m => m.id), `Delete ${plural(extras.length, "extra copy", "extra copies")}? The one marked “Keep” stays.`))
+          render(await json("/api/duplicates"));
+      }, "danger");
+      deleteExtras.setAttribute("data-change", "");
+      header.append(deleteExtras);
+      const members = el("div", "dup-members");
+      for (const m of group.members) {
+        const box = el("div", "dup-member");
+        const thumb = el("div", "thumb");
+        const img = el("img");
+        img.loading = "lazy";
+        img.alt = "";
+        img.src = thumbUrl(m.id);
+        thumb.append(img);
+        if (m.keep) thumb.append(el("span", "keep", "Keep"));
+        thumb.addEventListener("click", () => openList(group.members.map(x => x.id), m.id));
+        const remove = button("Delete", "trash", async () => {
+          if (await deleteIds([m.id])) render(await json("/api/duplicates"));
+        }, "danger");
+        remove.setAttribute("data-change", "");
+        box.append(thumb, el("span", "name", m.name),
+          el("span", "muted", [fileSize(m.size), m.width ? `${m.width} × ${m.height}` : "", formats.date.format(new Date(m.taken + "Z"))].filter(Boolean).join(" · ")),
+          remove);
+        members.append(box);
+      }
+      card.append(header, members);
+      return card;
+    };
+
+    const poll = async () => {
+      while (token === state.loadToken) {
+        await new Promise(r => setTimeout(r, 1500));
+        if (token !== state.loadToken) return;
+        try {
+          const data = await json("/api/duplicates");
+          render(data);
+          if (!data.running) return;
+        } catch {
+          return;
+        }
+      }
+    };
+
+    try {
+      const data = await json("/api/duplicates");
+      if (token !== state.loadToken) return;
+      render(data);
+      if (data.running) poll();
+    } catch (error) {
+      if (token === state.loadToken) status.textContent = error.message;
+    }
+  }
+
+  /** Shows a given set of items in the grid, and opens one of them. */
+  async function openList(ids, openId) {
+    try {
+      const data = await post("/api/items/list", { ids, sort: "listed" });
+      state.items = data;
+      state.group = "none";
+      openViewer(Math.max(0, data.ids.indexOf(openId)));
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  // ---------- Map: clustered photos; the list below shows the photos in view, or a cluster's ----------
+
+  let leaflet = null;
+  function loadLeaflet() {
+    leaflet ??= new Promise((resolve, reject) => {
+      for (const href of ["vendor/leaflet.css", "vendor/MarkerCluster.css", "vendor/MarkerCluster.Default.css"]) {
+        const link = el("link");
+        link.rel = "stylesheet";
+        link.href = href;
+        document.head.append(link);
+      }
+      const load = src => new Promise((ok, bad) => {
+        const script = el("script");
+        script.src = src;
+        script.onload = ok;
+        script.onerror = () => bad(new Error("The map couldn't load."));
+        document.head.append(script);
+      });
+      load("vendor/leaflet.js").then(() => load("vendor/leaflet.markercluster.js")).then(resolve, reject);
+    });
+    return leaflet;
+  }
+
+  const map = { view: null, clusters: null, selected: null, ready: false };
+
+  async function showMap(route, token) {
+    $("title").textContent = "Map";
+    $("subtitle").textContent = "Loading photo locations…";
+    updateControls(route, route.params.get("group") || "month");
+    state.group = route.params.get("group") || "month";
+    try {
+      await loadLeaflet();
+    } catch (error) {
+      $("subtitle").textContent = error.message;
+      return;
+    }
+    if (token !== state.loadToken) return;
+    if (!map.view) {
+      const L = window.L;
+      map.view = L.map("map", { worldCopyJump: true, preferCanvas: true }).setView([20, 0], 2);
+      map.view.setMaxZoom(21);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 21,
+        maxNativeZoom: 19,
+        referrerPolicy: "origin",
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+      }).addTo(map.view);
+      map.clusters = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 60, showCoverageOnHover: false, zoomToBoundsOnClick: false, spiderfyOnMaxZoom: true });
+      map.view.addLayer(map.clusters);
+      // Clicking a cluster lists exactly its photos; clicking the map goes back to everything in view.
+      map.clusters.on("clusterclick", e => {
+        map.selected?.getElement()?.classList.remove("selected");
+        map.selected = e.layer;
+        map.selected.getElement()?.classList.add("selected");
+        listMap(e.layer.getAllChildMarkers().map(m => m.options.photoId));
+      });
+      map.view.on("click", () => {
+        if (!map.selected) return;
+        map.selected.getElement()?.classList.remove("selected");
+        map.selected = null;
+        listMap();
+      });
+      let timer;
+      map.view.on("moveend", () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          if (!map.selected) listMap();
+        }, 300);
+      });
+      // A photo's own pin: its thumbnail, drawn when it's shown (not for every photo up front).
+      const PhotoIcon = L.DivIcon.extend({
+        createIcon(old) {
+          const div = L.DivIcon.prototype.createIcon.call(this, old);
+          div.style.backgroundImage = `url("${thumbUrl(this.options.photoId)}")`;
+          return div;
+        },
+      });
+      try {
+        const points = await json("/api/map");
+        const markers = points.ids.map((id, i) => {
+          const marker = L.marker([points.lat[i], points.lon[i]], {
+            icon: new PhotoIcon({ className: "photo-pin", html: "", iconSize: [44, 44], iconAnchor: [22, 22], photoId: id }),
+            photoId: id,
+          });
+          marker.on("click", () => openList([id], id));
+          return marker;
+        });
+        map.clusters.addLayers(markers);
+        $("map-status").textContent = `${number(points.ids.length)} photos with a location`;
+        setTimeout(() => ($("map-status").textContent = ""), 4000);
+        if (points.ids.length) map.view.fitBounds(L.latLngBounds(points.lat.map((lat, i) => [lat, points.lon[i]])), { maxZoom: 12 });
+        map.ready = true;
+      } catch (error) {
+        $("map-status").textContent = "Couldn't load photo locations: " + error.message;
+      }
+    } else {
+      map.view.invalidateSize();
+    }
+    listMap();
+  }
+
+  /** The list under the map: a cluster's photos (ids), or the photos in view. */
+  function listMap(ids) {
+    if (state.route?.section !== "map" || !map.view) return;
+    const token = state.loadToken;
+    const p = state.route.params;
+    if (ids) {
+      loadItems(() => post("/api/items/list", { ids }), { subtitle: "Photos in the cluster · click the map to see everything in view", empty: "Nothing here." }, token);
+      return;
+    }
+    const b = map.view.getBounds();
+    const query = new URLSearchParams({ section: "area", s: b.getSouth(), w: b.getWest(), n: b.getNorth(), e: b.getEast() });
+    addFilters(query, p, "area");
+    loadItems(() => json("/api/items?" + query), { subtitle: "Photos in view · click a cluster for just its photos", empty: "No photos with a location in view." }, token);
+  }
 
   // ---------- The grid: only the rows on (or near) the screen exist ----------
 
@@ -605,7 +1220,6 @@
 
   function layout(reset) {
     const scroller = $("scroller");
-    const sizer = $("sizer");
     const side = window.innerWidth <= 760 ? 16 : 20;
     const width = Math.max(100, scroller.clientWidth - side * 2);
     const cols = Math.max(2, Math.floor((width + GAP) / (state.tileSize + GAP)));
@@ -649,7 +1263,7 @@
     state.tile = tile;
     for (const node of state.rendered.values()) node.remove();
     state.rendered.clear();
-    sizer.style.height = top + 24 + "px";
+    $("sizer").style.height = top + 24 + "px";
     if (anchor >= 0) scroller.scrollTop = Math.max(0, rowTopOf(anchor) - anchorOffset);
     else if (atTop) scroller.scrollTop = 0;
     render();
@@ -731,6 +1345,7 @@
     tile.type = "button";
     tile.dataset.index = index;
     tile.style.height = state.tile + "px";
+    if (state.selected.has(id)) tile.classList.add("selected");
     const img = el("img");
     img.alt = "";
     img.loading = "lazy";
@@ -738,7 +1353,9 @@
     img.draggable = false;
     img.src = thumbUrl(id);
     img.addEventListener("error", () => tile.classList.add("broken"));
-    tile.append(img);
+    const check = el("span", "check");
+    check.append(icon("check"));
+    tile.append(img, check);
     if (flags & 1) {
       const badge = el("span", "badge kind");
       badge.append(icon("play"), document.createTextNode(duration(flags / 32)));
@@ -754,15 +1371,13 @@
     return tile;
   }
 
-  function refreshTile(index) {
+  /** Rebuilds the rows on screen (after ratings or selection change). */
+  function refreshRows() {
     for (const [i, node] of state.rendered) {
-      const row = state.rows[i];
-      if (row.start != null && index >= row.start && index < row.end) {
-        const fresh = buildRow(row);
-        fresh.style.transform = node.style.transform;
-        node.replaceWith(fresh);
-        state.rendered.set(i, fresh);
-      }
+      const fresh = buildRow(state.rows[i]);
+      fresh.style.transform = node.style.transform;
+      node.replaceWith(fresh);
+      state.rendered.set(i, fresh);
     }
   }
 
@@ -785,20 +1400,185 @@
       layout();
     }
   }).observe($("scroller"));
+
+  /** Drops items from the list shown (deleted, or taken out of the album), keeping the place. */
+  function removeItems(gone) {
+    const set = new Set(gone);
+    const keep = [];
+    state.items.ids.forEach((id, i) => {
+      if (!set.has(id)) keep.push(i);
+    });
+    state.items = {
+      ...state.items,
+      ids: keep.map(i => state.items.ids[i]),
+      dates: keep.map(i => state.items.dates[i]),
+      flags: keep.map(i => state.items.flags[i]),
+    };
+    for (const id of gone) state.selected.delete(id);
+    if (state.describeList) $("subtitle").textContent = state.describeList(state.items);
+    updateSelection();
+    layout();
+  }
+
+  // ---------- Selecting: click the circle (or Ctrl-click); then clicks add, Shift-click adds a run ----------
+
   $("sizer").addEventListener("click", event => {
     const tile = event.target.closest(".tile");
-    if (tile) openViewer(Number(tile.dataset.index));
+    if (!tile) return;
+    const index = Number(tile.dataset.index);
+    if (event.target.closest(".check") || state.selected.size > 0 || event.ctrlKey || event.metaKey || event.shiftKey) {
+      event.preventDefault();
+      if (event.shiftKey && state.anchor != null) selectRange(state.anchor, index);
+      else toggleSelected(index);
+      state.anchor = index;
+      return;
+    }
+    openViewer(index);
   });
+
+  function toggleSelected(index) {
+    const id = state.items.ids[index];
+    if (state.selected.has(id)) state.selected.delete(id);
+    else state.selected.add(id);
+    document.querySelector(`.tile[data-index="${index}"]`)?.classList.toggle("selected", state.selected.has(id));
+    updateSelection();
+  }
+
+  function selectRange(from, to) {
+    const [a, b] = from < to ? [from, to] : [to, from];
+    for (let i = a; i <= b; i++) state.selected.add(state.items.ids[i]);
+    refreshRows();
+    updateSelection();
+  }
+
+  function clearSelection() {
+    if (!state.selected.size) return;
+    state.selected.clear();
+    state.anchor = null;
+    refreshRows();
+    updateSelection();
+  }
+
+  function updateSelection() {
+    const count = state.selected.size;
+    $("selbar").hidden = count === 0;
+    $("bar").hidden = count > 0;
+    $("main").classList.toggle("selecting", count > 0);
+    if (!count) return;
+    let videos = 0;
+    const flags = new Map(state.items.ids.map((id, i) => [id, state.items.flags[i]]));
+    for (const id of state.selected) if (flags.get(id) & 1) videos++;
+    $("sel-count").textContent = `${describe(count, videos)} selected`;
+    $("sel-unalbum").hidden = state.route?.section !== "album";
+    $("sel-all").hidden = count === state.items.ids.length;
+  }
+
+  const selectedIds = () => [...state.selected];
+
+  $("sel-clear").addEventListener("click", clearSelection);
+  $("sel-all").addEventListener("click", () => {
+    state.items.ids.forEach(id => state.selected.add(id));
+    refreshRows();
+    updateSelection();
+  });
+  $("sel-rate").addEventListener("click", async () => {
+    const rating = await ask({
+      title: `Rate ${plural(state.selected.size, "item", "items")}`,
+      choices: [5, 4, 3, 2, 1, 0].map(n => ({ label: n ? "★".repeat(n) : "No stars", value: n })),
+    });
+    if (rating == null) return;
+    const ids = selectedIds();
+    try {
+      await post("/api/media/rating", { ids, rating });
+      setRatings(ids, rating);
+      clearSelection();
+    } catch (error) {
+      fail(error);
+    }
+  });
+  $("sel-album").addEventListener("click", async () => {
+    try {
+      const album = await chooseAlbum(`Add ${plural(state.selected.size, "item", "items")} to…`);
+      if (!album) return;
+      const ids = selectedIds();
+      await post(`/api/albums/${album.id}/add`, { ids });
+      state.albums = null;
+      toast(`Added ${plural(ids.length, "item", "items")} to ${album.name}.`);
+      clearSelection();
+    } catch (error) {
+      fail(error);
+    }
+  });
+  $("sel-unalbum").addEventListener("click", async () => {
+    const ids = selectedIds();
+    try {
+      await post(`/api/albums/${state.route.id}/remove`, { ids });
+      state.albums = null;
+      removeItems(ids);
+      toast(`Took ${plural(ids.length, "item", "items")} out of the album.`);
+    } catch (error) {
+      fail(error);
+    }
+  });
+  $("sel-tag").addEventListener("click", async () => {
+    const tags = await getTags().catch(() => []);
+    const name = await ask({ title: `Tag ${plural(state.selected.size, "item", "items")}`, input: "Tag", options: tags.filter(t => t.yours).map(t => t.name), ok: "Tag" });
+    if (!name) return;
+    const ids = selectedIds();
+    try {
+      await post("/api/tags/add", { ids, name });
+      state.tags = null;
+      toast(`Tagged ${plural(ids.length, "item", "items")} “${name}”.`);
+      clearSelection();
+    } catch (error) {
+      fail(error);
+    }
+  });
+  $("sel-delete").addEventListener("click", () => deleteIds(selectedIds()));
+
+  function setRatings(ids, rating) {
+    const set = new Set(ids);
+    state.items.ids.forEach((id, i) => {
+      if (set.has(id)) state.items.flags[i] = (state.items.flags[i] & ~(7 << 2)) | (rating << 2);
+    });
+    refreshRows();
+  }
+
+  /** Deletes (after asking) to the photo computer's Recycle Bin; resolves to whether anything went. */
+  async function deleteIds(ids, question) {
+    if (!ids.length) return false;
+    const flags = new Map(state.items.ids.map((id, i) => [id, state.items.flags[i]]));
+    const videos = ids.filter(id => flags.get(id) & 1).length;
+    const what = ids.length === 1 ? (videos ? "this video" : "this photo") : describe(ids.length, videos);
+    if (!await ask({
+      title: `Delete ${what}?`,
+      text: question || `${ids.length === 1 ? "It goes" : "They go"} to the Recycle Bin on ${state.name}, a Live Photo's video with its photo. OneDrive keeps its copy in its own recycle bin.`,
+      ok: "Delete",
+      danger: true,
+    })) return false;
+    try {
+      const result = await post("/api/media/delete", { ids });
+      if (result.deleted.length) removeItems(result.deleted);
+      toast(result.failed.length
+        ? `Couldn't delete ${result.failed.join(", ")}${result.deleted.length ? `; deleted ${number(result.deleted.length)} others` : ""}.`
+        : `Deleted ${plural(result.deleted.length, "item", "items")} (in the Recycle Bin on ${state.name}).`);
+      state.albums = state.people = null;
+      return result.deleted.length > 0;
+    } catch (error) {
+      fail(error);
+      return false;
+    }
+  }
 
   // ---------- Viewer ----------
 
-  const viewer = { index: -1, id: 0, token: 0, pushed: false, details: null };
+  const viewer = { index: -1, id: 0, token: 0, pushed: false, details: null, zoom: { scale: 1, x: 0, y: 0 }, big: false };
 
   function openViewer(index) {
     const current = parseHash();
     current.params.set("view", state.items.ids[index]);
     viewer.pushed = true;
-    location.hash = hashOf(current); // a history entry, so Back closes the viewer
+    go(hashOf(current)); // a history entry, so Back closes the viewer
   }
 
   function openViewerById(id) {
@@ -872,9 +1652,13 @@
     viewer.index = index;
     viewer.id = id;
     viewer.details = null;
+    viewer.big = false;
     state.lastViewed = index;
     $("viewer").hidden = false;
     stopVideo();
+    resetZoom();
+    $("v-overlay").replaceChildren();
+    $("v-faces").hidden = $("v-text").hidden = true;
     $("v-message").hidden = true;
     $("v-prev").hidden = index === 0;
     $("v-next").hidden = index === ids.length - 1;
@@ -887,7 +1671,7 @@
 
     const img = $("v-img"), video = $("v-video");
     if (f & 1) {
-      img.hidden = true;
+      $("v-zoom").hidden = true;
       video.hidden = false;
       video.controls = true;
       video.poster = thumbUrl(id);
@@ -898,26 +1682,32 @@
       video.src = `/api/media/${id}/video`;
       video.play().catch(() => {});
     } else {
-      img.hidden = false;
+      $("v-zoom").hidden = false;
       img.src = thumbUrl(id);
       img.classList.add("preview");
-      const full = new Image();
-      full.onload = () => {
-        if (token !== viewer.token) return;
-        img.src = full.src;
-        img.classList.remove("preview");
-      };
-      full.onerror = () => {
-        if (token === viewer.token) {
-          img.classList.remove("preview");
-          message("This photo can't be shown here.", true);
-        }
-      };
-      full.src = `/api/media/${id}/display?size=${displaySize()}`;
+      loadPhoto(id, displaySize(), token);
       preload(index + 1);
       preload(index - 1);
     }
     loadDetails(id, token);
+  }
+
+  function loadPhoto(id, size, token) {
+    const img = $("v-img");
+    const full = new Image();
+    full.onload = () => {
+      if (token !== viewer.token) return;
+      img.src = full.src;
+      img.classList.remove("preview");
+      drawOverlay();
+    };
+    full.onerror = () => {
+      if (token === viewer.token && img.classList.contains("preview")) {
+        img.classList.remove("preview");
+        message("This photo can't be shown here.", true);
+      }
+    };
+    full.src = `/api/media/${id}/display?size=${size}`;
   }
 
   function preload(index) {
@@ -928,10 +1718,10 @@
 
   async function playLive() {
     const id = viewer.id, token = viewer.token;
-    const button = $("v-live");
-    if (button.hidden || button.classList.contains("busy")) return;
+    const live = $("v-live");
+    if (live.hidden || live.classList.contains("busy")) return;
     const url = `/api/media/${id}/motion`;
-    button.classList.add("busy");
+    live.classList.add("busy");
     try {
       // Ask first, so a video that can't be had (only in OneDrive, say) explains itself.
       const probe = await api(url, { headers: { Range: "bytes=0-0" } });
@@ -942,6 +1732,7 @@
       }
       probe.body?.cancel();
       if (token !== viewer.token) return;
+      resetZoom();
       const video = $("v-video");
       video.controls = false;
       video.classList.add("live");
@@ -961,9 +1752,9 @@
       video.src = url;
       await video.play();
     } catch (error) {
-      if (error.name !== "AbortError" && error.message !== "Signed out.") toast(error.message);
+      if (error.name !== "AbortError") fail(error);
     } finally {
-      button.classList.remove("busy");
+      live.classList.remove("busy");
     }
   }
 
@@ -982,18 +1773,27 @@
   }
 
   async function rate(rating) {
-    const index = viewer.index, id = viewer.id;
+    const id = viewer.id;
     try {
-      await json(`/api/media/${id}/rating`, { method: "POST", body: { rating } });
-      const flags = state.items.flags;
-      if (state.items.ids[index] === id) {
-        flags[index] = (flags[index] & ~(7 << 2)) | (rating << 2);
-        refreshTile(index);
-      }
+      await post(`/api/media/${id}/rating`, { rating });
+      setRatings([id], rating);
       if (viewer.id === id) renderStars(rating);
     } catch (error) {
-      toast(error.message);
+      fail(error);
     }
+  }
+
+  async function deleteCurrent() {
+    if (!state.changes || $("viewer").hidden) return;
+    const index = viewer.index;
+    const id = viewer.id;
+    if (!await deleteIds([id])) return;
+    if (!state.items.ids.length) return closeViewer(false);
+    const next = Math.min(index, state.items.ids.length - 1);
+    const current = parseHash();
+    current.params.set("view", state.items.ids[next]);
+    history.replaceState(null, "", hashOf(current));
+    show(next);
   }
 
   async function loadDetails(id, token) {
@@ -1016,27 +1816,87 @@
     }
     $("v-date").textContent = formats.full.format(new Date(details.taken + "Z"));
     $("v-place").textContent = details.place || "";
+    $("v-faces").hidden = details.video || !details.faces?.length;
+    $("v-text").hidden = details.video || !details.textLines?.length;
+    $("v-faces").classList.toggle("on", store.get("faces", false));
+    $("v-text").classList.toggle("on", store.get("text", false));
+    drawOverlay();
     renderPanel(details);
   }
+
+  // Faces and text drawn over the photo (boxes are fractions of the upright picture's longer side).
+  function drawOverlay() {
+    const overlay = $("v-overlay");
+    overlay.replaceChildren();
+    const d = viewer.details, img = $("v-img");
+    if (!d || d.video || $("v-zoom").hidden) return;
+    const nw = img.naturalWidth || d.width, nh = img.naturalHeight || d.height;
+    const sw = overlay.clientWidth, sh = overlay.clientHeight;
+    if (!nw || !nh || !sw || !sh) return;
+    const fit = Math.min(sw / nw, sh / nh);
+    const dw = nw * fit, dh = nh * fit, ox = (sw - dw) / 2, oy = (sh - dh) / 2, long = Math.max(dw, dh);
+    const place = (node, box) => {
+      node.style.left = ox + box.x * long + "px";
+      node.style.top = oy + box.y * long + "px";
+      node.style.width = box.w * long + "px";
+      node.style.height = box.h * long + "px";
+      overlay.append(node);
+    };
+    if (store.get("faces", false)) {
+      for (const face of d.faces || []) {
+        const box = el("div", "face-box");
+        box.title = face.name;
+        box.append(el("span", null, face.name));
+        box.addEventListener("click", e => {
+          e.stopPropagation();
+          viewer.pushed = false;
+          go(`#/person/${face.id}`);
+        });
+        place(box, face);
+      }
+    }
+    // Text: all of it when asked for; otherwise just the words that match the search.
+    const words = searchWords();
+    const all = store.get("text", false);
+    for (const line of d.textLines || []) {
+      for (const word of line) {
+        const hit = words.some(w => word.t.toLowerCase().includes(w));
+        if (all || hit) place(el("div", "text-box" + (hit ? " hit" : "")), word);
+      }
+    }
+  }
+
+  const searchWords = () => state.route?.section === "search"
+    ? (state.route.params.get("q") || "").toLowerCase().split(/\s+/).filter(w => w.length > 1)
+    : [];
+
+  function toggleOverlay(kind) {
+    const on = !store.get(kind, false);
+    store.set(kind, on);
+    $(kind === "faces" ? "v-faces" : "v-text").classList.toggle("on", on);
+    drawOverlay();
+  }
+
+  new ResizeObserver(() => {
+    if (!$("viewer").hidden) drawOverlay();
+  }).observe($("v-stage"));
 
   function renderPanel(d) {
     const panel = $("v-panel");
     panel.hidden = !store.get("info", false);
     panel.replaceChildren();
-    const section = (title, ...content) => {
-      panel.append(el("h3", null, title), ...content);
-    };
+    const section = (title, ...content) => panel.append(el("h3", null, title), ...content);
     section("Taken", el("p", null, formats.long.format(new Date(d.taken + "Z"))));
     if (d.place || d.latitude != null) {
       const parts = [];
       if (d.place) parts.push(el("p", null, d.place));
       if (d.latitude != null) {
-        const map = el("a", null, `${d.latitude.toFixed(5)}, ${d.longitude.toFixed(5)}`);
-        map.href = `https://www.openstreetmap.org/?mlat=${d.latitude}&mlon=${d.longitude}#map=17/${d.latitude}/${d.longitude}`;
-        map.target = "_blank";
-        map.rel = "noopener noreferrer";
+        const link = el("a", null, `${d.latitude.toFixed(5)}, ${d.longitude.toFixed(5)}`);
+        link.href = `https://www.openstreetmap.org/?mlat=${d.latitude}&mlon=${d.longitude}#map=17/${d.latitude}/${d.longitude}`;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
         const line = el("p");
-        line.append(map);
+        line.append(link);
         parts.push(line);
       }
       section("Place", ...parts);
@@ -1050,18 +1910,151 @@
       }
       section("People", people);
     }
+    tagsSection(d, section);
+    albumsSection(d, section);
     const file = [fileSize(d.size), d.width ? `${number(d.width)} × ${number(d.height)}` : "", d.video && d.durationMs ? duration(d.durationMs / 1000) : ""]
       .filter(Boolean).join(" · ");
     section("File", el("p", null, d.name), el("p", "muted", file));
     if (d.camera) section("Camera", el("p", null, d.camera));
     if (d.edited) panel.append(el("p", "muted", "Shown with the edits made in Photo Gallery."));
-    if (d.text) section("Text in this photo", el("pre", null, d.text));
+    if (d.text || d.transcript?.length) findSection(d, panel, section);
+    const download = el("a", "download");
+    download.href = `/api/media/${d.id}/original`;
+    download.setAttribute("download", "");
+    download.append(icon("download"), document.createTextNode("Download the original"));
+    panel.append(download);
+  }
+
+  function tagsSection(d, section) {
+    const tags = d.tags || [];
+    if (!tags.length && !state.changes) return;
+    const row = el("div", "chips-row");
+    for (const tag of tags) {
+      const chip = el("a", "tag-chip" + (tag.yours && state.changes ? "" : " plain"), tag.name);
+      chip.href = `#/tag/${tag.id}`;
+      if (tag.yours && state.changes) {
+        const remove = el("button");
+        remove.type = "button";
+        remove.title = "Remove the tag";
+        remove.append(icon("close"));
+        remove.addEventListener("click", async e => {
+          e.preventDefault();
+          try {
+            await post("/api/tags/remove", { ids: [d.id], tagId: tag.id });
+            d.tags = tags.filter(t => t !== tag);
+            state.tags = null;
+            renderPanel(d);
+          } catch (error) {
+            fail(error);
+          }
+        });
+        chip.append(remove);
+      }
+      row.append(chip);
+    }
+    const parts = [row];
+    if (state.changes) {
+      const form = el("form", "tag-add");
+      const input = el("input");
+      input.placeholder = "Add a tag";
+      input.setAttribute("list", "tag-options");
+      const options = el("datalist");
+      options.id = "tag-options";
+      getTags().then(all => options.replaceChildren(...all.filter(t => t.yours).map(t => Object.assign(el("option"), { value: t.name })))).catch(() => {});
+      form.append(input, options, Object.assign(el("button", null, "Add"), { type: "submit" }));
+      form.addEventListener("submit", async e => {
+        e.preventDefault();
+        const name = input.value.trim();
+        if (!name) return;
+        try {
+          await post("/api/tags/add", { ids: [d.id], name });
+          state.tags = null;
+          const fresh = await json(`/api/media/${d.id}`);
+          if (viewer.id === d.id) {
+            viewer.details = fresh;
+            renderPanel(fresh);
+          }
+        } catch (error) {
+          fail(error);
+        }
+      });
+      parts.push(form);
+    }
+    section("Tags", ...parts);
+  }
+
+  function albumsSection(d, section) {
+    const ids = d.albums || [];
+    if (!ids.length && !state.changes) return;
+    const row = el("div", "chips-row");
+    getAlbums().then(albums => {
+      for (const id of ids) {
+        const album = albums.find(a => a.id === id);
+        if (!album) continue;
+        const chip = el("a", "tag-chip plain", album.name);
+        chip.href = `#/album/${id}`;
+        row.append(chip);
+      }
+    }).catch(() => {});
+    const parts = [row];
+    if (state.changes) parts.push(button("Add to album…", "album", addCurrentToAlbum, "panel-button"));
+    section("Albums", ...parts);
+  }
+
+  async function addCurrentToAlbum() {
+    const id = viewer.id;
+    try {
+      const album = await chooseAlbum("Add to…");
+      if (!album) return;
+      await post(`/api/albums/${album.id}/add`, { ids: [id] });
+      state.albums = null;
+      toast(`Added to ${album.name}.`);
+      if (viewer.id === id && viewer.details) {
+        viewer.details.albums = [...new Set([...(viewer.details.albums || []), album.id])];
+        renderPanel(viewer.details);
+      }
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** The photo's text and what's said in the video, with a box to find words in them. */
+  function findSection(d, panel, section) {
+    const find = el("input", "find");
+    find.type = "search";
+    find.placeholder = d.video ? "Find in what's said" : "Find in the text";
+    find.value = searchWords().join(" ");
+    const blocks = [];
+    const highlight = (node, text) => {
+      const query = find.value.trim().toLowerCase();
+      node.replaceChildren();
+      if (!query) return node.append(document.createTextNode(text));
+      const lower = text.toLowerCase();
+      let at = 0;
+      for (let i = lower.indexOf(query); i >= 0; i = lower.indexOf(query, at)) {
+        node.append(document.createTextNode(text.slice(at, i)), el("mark", null, text.slice(i, i + query.length)));
+        at = i + query.length;
+      }
+      node.append(document.createTextNode(text.slice(at)));
+    };
+    const refresh = () => {
+      blocks.forEach(b => highlight(b.node, b.text));
+      panel.querySelector("mark")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    };
+    find.addEventListener("input", refresh);
+    panel.append(find);
+    if (d.text) {
+      const pre = el("pre");
+      blocks.push({ node: pre, text: d.text });
+      section("Text in this photo", pre);
+    }
     if (d.transcript?.length) {
       const transcript = el("div", "transcript");
       for (const paragraph of d.transcript) {
         const p = el("p");
-        const time = el("time", null, duration(paragraph.start));
-        p.append(time, document.createTextNode(paragraph.text));
+        const words = el("span");
+        blocks.push({ node: words, text: paragraph.text });
+        p.append(el("time", null, duration(paragraph.start)), words);
         p.addEventListener("click", () => {
           const video = $("v-video");
           if (!d.video || video.hidden) return;
@@ -1072,11 +2065,7 @@
       }
       section("What's said", transcript);
     }
-    const download = el("a", "download");
-    download.href = `/api/media/${d.id}/original`;
-    download.setAttribute("download", "");
-    download.append(icon("download"), document.createTextNode("Download the original"));
-    panel.append(download);
+    refresh();
   }
 
   function toggleInfo() {
@@ -1085,38 +2074,145 @@
     $("v-panel").hidden = !open;
   }
 
+  // Zoom: the wheel (around the pointer), a double-click, pinching; drag to move around.
+  function resetZoom() {
+    viewer.zoom = { scale: 1, x: 0, y: 0 };
+    applyZoom();
+  }
+
+  function applyZoom(showLabel) {
+    const z = viewer.zoom, node = $("v-zoom");
+    node.style.transform = z.scale === 1 ? "" : `translate(${z.x}px, ${z.y}px) scale(${z.scale})`;
+    node.classList.toggle("zoomed", z.scale > 1);
+    if (showLabel) {
+      const label = $("v-zoom-label");
+      label.textContent = `${Math.round(z.scale * 100)}%`;
+      label.hidden = false;
+      clearTimeout(applyZoom.timer);
+      applyZoom.timer = setTimeout(() => (label.hidden = true), 900);
+    }
+    // Zoomed in: the biggest picture the photo computer makes, for detail.
+    if (z.scale > 1.3 && !viewer.big && !$("v-zoom").hidden && displaySize() < 4096) {
+      viewer.big = true;
+      loadPhoto(viewer.id, 4096, viewer.token);
+    }
+  }
+
+  function zoomAt(scale, cx, cy) {
+    const z = viewer.zoom;
+    const next = Math.min(8, Math.max(1, scale));
+    if (next === 1) return resetZoom();
+    const rect = $("v-stage").getBoundingClientRect();
+    const px = cx - rect.left, py = cy - rect.top;
+    z.x = px - (px - z.x) * (next / z.scale);
+    z.y = py - (py - z.y) * (next / z.scale);
+    z.scale = next;
+    clampZoom();
+    applyZoom(true);
+  }
+
+  function clampZoom() {
+    const z = viewer.zoom, rect = $("v-stage").getBoundingClientRect();
+    z.x = Math.min(0, Math.max(rect.width * (1 - z.scale), z.x));
+    z.y = Math.min(0, Math.max(rect.height * (1 - z.scale), z.y));
+  }
+
+  const stage = $("v-stage");
+  stage.addEventListener("wheel", event => {
+    if ($("v-zoom").hidden || !$("v-video").hidden) return;
+    event.preventDefault();
+    zoomAt(viewer.zoom.scale * Math.exp(-event.deltaY * 0.0015), event.clientX, event.clientY);
+  }, { passive: false });
+  stage.addEventListener("dblclick", event => {
+    if ($("v-zoom").hidden || event.target.closest("button, .face-box")) return;
+    if (viewer.zoom.scale > 1) resetZoom();
+    else zoomAt(2.5, event.clientX, event.clientY);
+  });
+
+  const pointers = new Map();
+  let drag = null, pinch = null, swipe = null;
+  stage.addEventListener("pointerdown", event => {
+    if (event.target.closest("button, a, .face-box, video")) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    stage.setPointerCapture(event.pointerId);
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y), scale: viewer.zoom.scale };
+      drag = swipe = null;
+    } else if (viewer.zoom.scale > 1) {
+      drag = { x: event.clientX, y: event.clientY, ox: viewer.zoom.x, oy: viewer.zoom.y };
+      $("v-zoom").classList.add("dragging");
+    } else if (event.pointerType !== "mouse") {
+      swipe = { x: event.clientX, y: event.clientY };
+    }
+  });
+  stage.addEventListener("pointermove", event => {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinch && pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      zoomAt(pinch.scale * Math.hypot(a.x - b.x, a.y - b.y) / pinch.distance, (a.x + b.x) / 2, (a.y + b.y) / 2);
+    } else if (drag) {
+      viewer.zoom.x = drag.ox + event.clientX - drag.x;
+      viewer.zoom.y = drag.oy + event.clientY - drag.y;
+      clampZoom();
+      applyZoom();
+    }
+  });
+  const endPointer = event => {
+    pointers.delete(event.pointerId);
+    if (swipe && pointers.size === 0) {
+      const dx = event.clientX - swipe.x, dy = event.clientY - swipe.y;
+      if (Math.abs(dx) > 60 && Math.abs(dy) < 80) step(dx < 0 ? 1 : -1);
+    }
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 0) {
+      drag = swipe = null;
+      $("v-zoom").classList.remove("dragging");
+    }
+  };
+  stage.addEventListener("pointerup", endPointer);
+  stage.addEventListener("pointercancel", endPointer);
+
   $("v-close").addEventListener("click", () => closeViewer(false));
   $("v-prev").addEventListener("click", () => step(-1));
   $("v-next").addEventListener("click", () => step(1));
   $("v-info").addEventListener("click", toggleInfo);
   $("v-live").addEventListener("click", playLive);
+  $("v-faces").addEventListener("click", () => toggleOverlay("faces"));
+  $("v-text").addEventListener("click", () => toggleOverlay("text"));
+  $("v-similar").addEventListener("click", () => {
+    viewer.pushed = false;
+    go(`#/similar/${viewer.id}`);
+  });
+  $("v-album").addEventListener("click", addCurrentToAlbum);
+  $("v-delete").addEventListener("click", deleteCurrent);
   $("v-panel").addEventListener("click", event => {
-    if (event.target.closest(".people a")) viewer.pushed = false; // following a person replaces the viewer's entry
+    if (event.target.closest(".people a, .tag-chip")) viewer.pushed = false; // following a link replaces the viewer's entry
   });
 
-  // Swipe between photos on touch screens.
-  let swipe = null;
-  $("v-stage").addEventListener("pointerdown", event => {
-    if (event.pointerType !== "mouse") swipe = { x: event.clientX, y: event.clientY };
-  });
-  $("v-stage").addEventListener("pointerup", event => {
-    if (!swipe) return;
-    const dx = event.clientX - swipe.x, dy = event.clientY - swipe.y;
-    swipe = null;
-    if (Math.abs(dx) > 60 && Math.abs(dy) < 80) step(dx < 0 ? 1 : -1);
-  });
+  // ---------- Keys ----------
 
   document.addEventListener("keydown", event => {
+    if (!$("dialog").hidden) return;
     if (event.target instanceof Element && event.target.closest("input, select, textarea")) {
       if (event.key === "Escape") event.target.blur();
       return;
     }
     if (!$("viewer").hidden) {
       switch (event.key) {
-        case "Escape": closeViewer(false); break;
+        case "Escape":
+          if (viewer.zoom.scale > 1) resetZoom();
+          else closeViewer(false);
+          break;
         case "ArrowLeft": step(-1); break;
         case "ArrowRight": step(1); break;
         case "i": case "I": toggleInfo(); break;
+        case "f": case "F": if (!$("v-faces").hidden) toggleOverlay("faces"); break;
+        case "t": case "T": if (!$("v-text").hidden) toggleOverlay("text"); break;
+        case "+": case "=": zoomAt(viewer.zoom.scale * 1.5, innerWidth / 2, innerHeight / 2); break;
+        case "-": zoomAt(viewer.zoom.scale / 1.5, innerWidth / 2, innerHeight / 2); break;
+        case "Delete": deleteCurrent(); break;
         case " ":
           if (!$("v-live").hidden) playLive();
           else return;
@@ -1128,7 +2224,18 @@
       event.preventDefault();
       return;
     }
-    if (event.key === "/" || (event.ctrlKey && (event.key === "e" || event.key === "E"))) {
+    if (event.key === "Escape" && state.selected.size) {
+      clearSelection();
+      event.preventDefault();
+    } else if (event.key === "Delete" && state.selected.size && state.changes) {
+      deleteIds(selectedIds());
+      event.preventDefault();
+    } else if ((event.ctrlKey || event.metaKey) && (event.key === "a" || event.key === "A") && !$("scroller").hidden && state.items.ids.length) {
+      state.items.ids.forEach(id => state.selected.add(id));
+      refreshRows();
+      updateSelection();
+      event.preventDefault();
+    } else if (event.key === "/" || (event.ctrlKey && (event.key === "e" || event.key === "E"))) {
       event.preventDefault();
       $("search").focus();
       $("search").select();
@@ -1145,7 +2252,7 @@
       await started;
       if (!$("app").hidden) return report({ signedIn: true });
       try {
-        await json("/api/login", { method: "POST", body: { passphrase } });
+        await post("/api/login", { passphrase });
         showApp();
         report({ signedIn: true });
       } catch (error) {

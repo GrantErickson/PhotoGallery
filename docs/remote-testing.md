@@ -33,9 +33,17 @@ Grant: open Claude Code on the tester, in a clone of this repo, and paste:
 
    Test ids, pass or fail, error text, HTTP status codes and timings are fine. Screenshots stay on the tester; tell
    Grant where they are if he needs to see one.
-2. **The host's library is real.** Remote access can only change ratings. Other writes:
-   - only test ratings as in B13, on a photo with no rating, and set it back to none afterwards;
-   - delete anything you download from the host once you've checked it.
+2. **The host's library is real.** Anything that changes things happens only in the host's test folder,
+   `C:\PhotoGalleryRemoteTest`. It holds copies of about 25 photos and a video, outside OneDrive. In the web app it
+   shows under **Folders** as *PhotoGalleryRemoteTest*.
+   - **Delete, tag, rate, add to albums:** only items in that folder.
+   - **Albums:** only an album you create, named "Remote test…". Delete it at the end.
+   - **Tags:** only "remote-test…" tags, and only on test-folder items. Remove them at the end.
+   - **People:** Hide then Show again; Rename to a test name then back to the exact original name. **Never Merge**
+     real people; merging is covered by the automated tests.
+   - **Duplicates:** only delete copies whose names start with `remote-test`.
+   - **Ratings outside the test folder:** only as in B13, set back afterwards.
+   - **Downloads:** delete anything you download from the host once you've checked it.
 3. **Don't change the host's settings.** If a test needs a change there (port, passphrase, restart), ask Grant in the
    channel.
 4. **Input only goes to the right window.** Scripted clicks or keys on the tester go only to Photo Gallery or the
@@ -89,6 +97,11 @@ the results in the channel so there's a record.
 4. Give the tester agent three things: the computer name, the security code, and the passphrase. All three are shown
    or set in Settings.
 5. Optional, for B9: **Connect** the OneDrive web session in Settings, so Live Photos stored only in OneDrive play.
+6. For the F tests:
+   - turn on **Let them change things too** under Remote access;
+   - add `C:\PhotoGalleryRemoteTest` under Settings › Library folders (the host agent made it);
+   - when testing is done, **Remove** that folder there, which also clears its rows, and turn changes off again if
+     you like.
 
 ## On the tester (tester agent)
 
@@ -184,6 +197,32 @@ Start Photo Gallery with `PhotoGallery.bat`, then choose **Another computer** at
 | A12 | Download the original | WebView2's download bar; the file is in Downloads. Delete it afterwards. |
 | A13 | "Forget the saved passphrase" | Removed from Credential Manager (*Web Credentials*, "Photo Gallery remote access"). The next connect asks for it. |
 
+### F: doing things from the client (phase 1)
+These need host step 6. Follow rule 2: change nothing outside the test folder.
+
+| Id | Do | Expect |
+|---|---|---|
+| F1 | With changes off on the host, select a photo | Only Rate shows. Add to album, Tag and Delete are gone, and in the viewer the album and delete buttons too. |
+| F2 | Changes on. Folders › PhotoGalleryRemoteTest. Hover a tile, click its circle; Shift-click another; Ctrl+A; Esc | Selection bar with the count; a run selected; everything; cleared. |
+| F3 | Select 3 test photos › Rate › ★★★ | Stars on the tiles; still there after reloading the page. |
+| F4 | Select 2 › Add to album › New album… "Remote test" | "Added 2 items…". Albums lists it with a cover. In the album: select one › Remove from album; Rename; Delete album (the photos stay). |
+| F5 | Select 2 › Tag "remote-test" | Tags lists it; the tag's page shows the 2. In the viewer's details the tag has an ×; remove it there. |
+| F6 | Select 1 › Delete (or the Del key) | A question naming the host's Recycle Bin, then the photo leaves the list, and the count updates. On the host it's in the Recycle Bin. |
+| F7 | Viewer on a test photo: Delete (Del) | Goes to the next photo. |
+| F8 | Viewer: Similar photos button | "Similar photos": that photo first, then look-alikes. |
+| F9 | Viewer: F (faces) and T (text) on a photo with people or text | Outlines with names; clicking a face opens that person. Text boxes; in a search's results, matching words are highlighted without T. |
+| F10 | Viewer: mouse wheel, double-click, drag; on a touch screen, pinch | Zooms around the pointer, pans, a sharper picture loads when zoomed; Esc zooms out first. |
+| F11 | Viewer details: the find box, on a photo with text or a video with speech | Matches highlighted; the first scrolls into view. |
+| F12 | Filters: rating, Live Photos only, screenshots (leave out / include / only), photos or videos | The list narrows; "Filters (n)"; Clear filters. |
+| F13 | Map | Clusters. The list below shows the photos in view and follows panning. Click a cluster: just its photos. Click the map: back to all in view. Zoomed right in, thumbnails as pins; clicking one opens it. |
+| F14 | Folders, then a folder; untick Include subfolders | Its photos, then without subfolders. |
+| F15 | Tags | Your tags first, then OneDrive's; each opens its photos. |
+| F16 | People › Show hidden people; a person › Hide from People, then Show in People; Rename and rename back | Each works; the name shows at once. Don't use Merge on real people. |
+| F17 | Duplicates › Find duplicates | Progress, then groups ("Keep" on one). The two `remote-test-… (copy)` files show as exact copies. Delete the extra copy of **those** only. |
+| F18 | Blurry photos | Blurriest first; grouping off. |
+| F19 | Type 2+ letters in the search box | Suggestions include people, places and tags. |
+| F20 | In the app on the tester (Another computer): repeat F3, F6 and F13 | The same, inside the app. |
+
 ### X: refusals (last, since X1 locks the tester out for a minute)
 | Id | Do | Expect |
 |---|---|---|
@@ -204,7 +243,8 @@ Start Photo Gallery with `PhotoGallery.bat`, then choose **Another computer** at
   Extensions*, or hardware support. The download always works.
 - The host must be on and awake, with Photo Gallery running. Restarting it signs everyone out: browsers ask again,
   and the app signs in again by itself.
-- Remote users can rate, but can't edit, tag, move or delete.
+- Remote users can always rate. Deleting, tags, albums and people need the host's "Let them change things too".
+  Editing photos and trimming videos aren't there yet (phase 2).
 - Only computers on the local network can connect (not over the internet, VPN or Tailscale).
 
 ## For the host agent

@@ -86,18 +86,32 @@ works out live in its own database.
 - Files On-Demand placeholders (cloud-only files) are never downloaded just to index them.
 
 ### Remote access (another computer on your network)
-- **Open the library from another computer** on the same network: the timeline, best-match and exact-word search
-  (sorted and grouped), On this day, Favorites, Live Photos, Videos, People and Albums, with the people and
-  photo/video filters.
-- **The viewer**: photos at screen size, videos and Live Photos, details (place, people, text in the photo, what's
-  said in a video), star ratings, and downloading the original.
+- **Open the library from another computer** on the same network:
+  - the timeline, best-match and exact-word search (sorted and grouped, with suggestions);
+  - On this day, Favorites, Live Photos, Videos, People, Tags, Folders, the Map, Albums, Duplicates and Blurry
+    photos;
+  - the filters: people, photos or videos, rating, Live Photos only, screenshots.
+- **Organize from there too**:
+  - select photos, then rate, add to an album, tag or delete them (to the main PC's Recycle Bin);
+  - make, rename and delete albums;
+  - rename, hide and merge people;
+  - clear out duplicates.
+
+  Everything but rating needs the main PC's permission (Settings › Remote access › *Let them change things too*).
+- **The viewer**:
+  - photos at screen size, with zoom;
+  - face and text outlines;
+  - videos and Live Photos;
+  - details: place, people, tags, albums, text in the photo, what's said in a video, with a find box;
+  - similar photos, star ratings, and downloading the original.
 - **In a browser** (any computer, tablet or phone) at `https://<computer name>:47813`, or in **Photo Gallery on the
   other computer**: *Another computer* at the bottom of the menu. There, the title bar's search box searches the
   other computer's photos.
 - **The main PC does the work**: searching by description on its graphics card, decoding HEIC for browsers,
   fetching Live Photo videos from OneDrive. The other computer needs nothing installed but a browser.
 - **Off until you turn it on** (Settings › Remote access, with a passphrase). Other computers can browse, search,
-  view, download and rate, but not edit, move or delete anything. OneDrive's sign-in never leaves the main PC.
+  view, download and rate; changing anything else is a separate switch. Editing photos and trimming videos stay on
+  the main PC for now. OneDrive's sign-in never leaves the main PC.
 - **Secured for a home network**:
   - it only answers computers on the local network;
   - the connection is encrypted (HTTPS, with a certificate the main PC makes for itself);
