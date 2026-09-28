@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 
@@ -38,9 +39,10 @@ public sealed class OneDriveWebUnavailableException(string message) : Exception(
 /// <summary>
 /// OneDrive's people and face positions, read the way onedrive.live.com's Photos › People view does:
 /// <c>/_api/v2.1/drives/{driveId}/recognizedEntities</c> for the people and their names, and the photo listing with
-/// <c>expand=detectedEntities(expand=recognizedEntity)</c> for each face's box and person. Undocumented, so only the
-/// fields used here are relied on. Uses the web session's Authorization header (in memory only), which is only ever
-/// sent to the API host.
+/// <c>expand=detectedEntities(expand=recognizedEntity)</c> for each face's box and person. Names and merges made in
+/// the gallery are sent the way that view sends them (seen in its own requests). Undocumented, so only the fields
+/// used here are relied on. Uses the web session's Authorization header (in memory only), which is only ever sent to
+/// the API host.
 /// </summary>
 public sealed class OneDrivePeopleClient(IOneDriveWebToken token, HttpMessageHandler? handler = null)
 {
@@ -125,6 +127,31 @@ public sealed class OneDrivePeopleClient(IOneDriveWebToken token, HttpMessageHan
         }
     }
 
+    /// <summary>
+    /// Names a person in OneDrive, as its People page does (<c>PATCH recognizedEntities/{id}</c> with the display name).
+    /// Returns the person as OneDrive has them now.
+    /// </summary>
+    public async Task<OneDrivePerson?> RenameAsync(string driveId, string personId, string name, CancellationToken ct = default)
+    {
+        using var json = await SendAsync(HttpMethod.Patch, EntityUrl(driveId, personId),
+            new { identity = new { user = new { displayName = name } } }, ct);
+        return ParsePerson(json.RootElement);
+    }
+
+    /// <summary>
+    /// Merges a person into another in OneDrive, as its People page does: the merged-away person is patched with the
+    /// other's id and name. Returns the person they're now part of.
+    /// </summary>
+    public async Task<OneDrivePerson?> MergeAsync(string driveId, string personId, string intoId, string intoName, CancellationToken ct = default)
+    {
+        using var json = await SendAsync(HttpMethod.Patch, EntityUrl(driveId, personId),
+            new { id = intoId, identity = new { user = new { displayName = intoName } } }, ct);
+        return ParsePerson(json.RootElement);
+    }
+
+    private static string EntityUrl(string driveId, string personId) =>
+        $"{ApiRoot}/drives/{driveId}/recognizedEntities/{Uri.EscapeDataString(personId)}?expand={Uri.EscapeDataString("identity/user/thumbnails")}";
+
     internal static OneDrivePerson? ParsePerson(JsonElement e)
     {
         if (Str(e, "id") is not { } id) return null;
@@ -189,15 +216,25 @@ public sealed class OneDrivePeopleClient(IOneDriveWebToken token, HttpMessageHan
             : throw new InvalidDataException($"OneDrive returned a continuation link to an unexpected host ({uri?.Host}).");
     }
 
-    private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct)
+    private Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct) => SendAsync(HttpMethod.Get, url, null, ct);
+
+    /// <summary>
+    /// A request to the API host with the web session's Authorization header; <paramref name="body"/> goes as JSON.
+    /// Retried after a refreshed sign-in, and while OneDrive is busy (then it wasn't applied, so a change can be
+    /// sent again).
+    /// </summary>
+    private async Task<JsonDocument> SendAsync(HttpMethod method, string url, object? body, CancellationToken ct)
     {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !string.Equals(uri.Host, ApiHost, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("OneDrive's people API is only called on its own host.");
         for (var attempt = 1; ; attempt++)
         {
             var auth = await token.GetAsync(forceRefresh: attempt == 2, ct)
                        ?? throw new OneDriveWebUnavailableException("Connect OneDrive in Settings to read people from OneDrive.");
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var request = new HttpRequestMessage(method, url);
             request.Headers.TryAddWithoutValidation("Authorization", auth);
             request.Headers.TryAddWithoutValidation("Accept", "application/json");
+            if (body is not null) request.Content = JsonContent.Create(body);
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct);
             switch (response.StatusCode)
             {
@@ -213,8 +250,24 @@ public sealed class OneDrivePeopleClient(IOneDriveWebToken token, HttpMessageHan
                     continue;
             }
             if (!response.IsSuccessStatusCode)
-                throw new HttpRequestException($"OneDrive people API returned {(int)response.StatusCode}.", null, response.StatusCode);
+                throw new HttpRequestException($"OneDrive people API returned {(int)response.StatusCode}{await ErrorMessageAsync(response, ct)}.", null, response.StatusCode);
             return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        }
+    }
+
+    /// <summary>OneDrive's own explanation of an error (<c>{"error":{"message":…}}</c>), if it gave one.</summary>
+    private static async Task<string> ErrorMessageAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            return json.RootElement.TryGetProperty("error", out var error) && Str(error, "message") is { Length: > 0 } message
+                ? $": {(message.Length > 200 ? message[..200] + "…" : message)}"
+                : "";
+        }
+        catch (JsonException)
+        {
+            return "";
         }
     }
 }

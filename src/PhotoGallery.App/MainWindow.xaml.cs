@@ -224,7 +224,7 @@ public sealed partial class MainWindow : Window
     {
         var tag = page == typeof(GalleryPage) ? (parameter as GalleryRequest)?.Section
             : page == typeof(OnThisDayPage) ? "onthisday"
-            : page == typeof(PeoplePage) ? "people"
+            : page == typeof(PeoplePage) || page == typeof(WhoPage) ? "people"
             : page == typeof(TagsPage) ? "tags"
             : page == typeof(FoldersPage) ? "folders"
             : page == typeof(MapPage) ? "map"

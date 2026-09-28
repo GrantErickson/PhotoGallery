@@ -19,6 +19,7 @@ public sealed partial class SettingsPage : Page
         App.Services.Similar.StateChanged += OnTranscriptionChanged;
         App.Services.PlacesOnline.StateChanged += OnTranscriptionChanged;
         App.Services.Remote.StateChanged += () => DispatcherQueue.TryEnqueue(RefreshRemote);
+        App.Services.PeopleChanges.StateChanged += () => DispatcherQueue.TryEnqueue(RefreshPeopleChanges);
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -256,6 +257,32 @@ public sealed partial class SettingsPage : Page
         LiveStatusText.Text = web.IsConnected ? "Connected — Live Photos stored in OneDrive play in the gallery, and people come from OneDrive." : "Not connected.";
         ConnectWebButton.Content = web.IsConnected ? "Sign in again" : "Connect OneDrive";
         DisconnectWebButton.Visibility = web.IsConnected ? Visibility.Visible : Visibility.Collapsed;
+        RefreshPeopleChanges();
+    }
+
+    /// <summary>Names and joins made here on their way to OneDrive: waiting, or refused (to try again or keep here only).</summary>
+    private void RefreshPeopleChanges()
+    {
+        var (waiting, refused, error) = App.Services.People.GetChangeStatus();
+        static string Changes(long n) => n == 1 ? "1 name or join" : $"{n:N0} names and joins";
+        PeopleChangesText.Text =
+            (waiting > 0 ? $"{Changes(waiting)} waiting to go to OneDrive. {App.Services.PeopleChanges.Problem ?? "Sending…"}" : "") +
+            (waiting > 0 && refused > 0 ? "\n" : "") +
+            (refused > 0 ? $"OneDrive refused {Changes(refused)} made here{(error is null ? "" : $" ({error})")}." : "");
+        PeopleChangesText.Visibility = waiting + refused > 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefusedPanel.Visibility = refused > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OnRetryPeopleChanges(object sender, RoutedEventArgs e)
+    {
+        App.Services.People.RetryRefusedChanges();
+        RefreshPeopleChanges();
+    }
+
+    private void OnDiscardPeopleChanges(object sender, RoutedEventArgs e)
+    {
+        App.Services.People.DiscardRefusedChanges();
+        RefreshPeopleChanges();
     }
 
     private async void OnAddRoot(object sender, RoutedEventArgs e)

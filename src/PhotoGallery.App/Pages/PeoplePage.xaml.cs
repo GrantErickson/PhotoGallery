@@ -59,7 +59,10 @@ public sealed class PersonTile(PersonRow row) : Observable
     }
 }
 
-/// <summary>People recognised by OneDrive; click for their photos, right-click to name, merge or hide.</summary>
+/// <summary>
+/// People recognised by OneDrive; click for their photos, right-click to name, join to someone or set aside. Names and
+/// joins go to OneDrive too; setting aside ("known, but don't tag", "not someone I know") stays on this PC.
+/// </summary>
 public sealed partial class PeoplePage : Page
 {
     private List<PersonTile> _all = [];
@@ -86,42 +89,60 @@ public sealed partial class PeoplePage : Page
             await LoadAsync();
             return;
         }
-        // Coming back: refresh names in place (one may have been named on their page) without losing the scroll position.
-        var includeHidden = HiddenBox.IsChecked == true; // read on the UI thread
-        var rows = await Task.Run(() => App.Services.People.GetPeople(includeHidden));
+        // Coming back: refresh names in place (one may have been named on their page, or set aside while reviewing)
+        // without losing the scroll position.
+        var rows = await Task.Run(() => App.Services.People.GetPeople(includeHidden: true));
         var byId = rows.ToDictionary(r => r.Id);
-        foreach (var tile in _all)
-            if (byId.TryGetValue(tile.Row.Id, out var row)) tile.Update(row);
+        _all.RemoveAll(t => !byId.ContainsKey(t.Row.Id)); // joined to someone
+        foreach (var tile in _all) tile.Update(byId[tile.Row.Id]);
+        ApplyFilter(keepScroll: true);
     }
 
     private async Task LoadAsync()
     {
-        var includeHidden = HiddenBox.IsChecked == true;
-        var rows = await Task.Run(() => App.Services.People.GetPeople(includeHidden));
+        var rows = await Task.Run(() => App.Services.People.GetPeople(includeHidden: true));
         _all = rows.Select(r => new PersonTile(r)).ToList();
         ApplyFilter();
     }
 
-    private void ApplyFilter()
+    /// <summary>Which people the Show box asks for: named and unnamed, or those set aside.</summary>
+    private bool Shown(PersonRow row) => ShowBox.SelectedIndex switch
+    {
+        1 => row.NotTagged && !row.Hidden,
+        2 => row.Hidden,
+        _ => !row.NotTagged && !row.Hidden,
+    };
+
+    private void ApplyFilter(bool keepScroll = false)
     {
         var text = FilterBox.Text.Trim();
-        var includeFew = FewBox.IsChecked == true;
-        var visible = _all.Where(p => (includeFew || p.Row.Count > 1 || p.Row.Name is not null) &&
+        var includeFew = FewBox.IsChecked == true || ShowBox.SelectedIndex > 0;
+        var visible = _all.Where(p => Shown(p.Row) && (includeFew || p.Row.Count > 1 || p.Row.Name is not null) &&
                                       (text.Length == 0 || p.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase))).ToList();
-        People.ItemsSource = visible;
+        // Unchanged (names updated in place): keep the list, and with it the scroll position.
+        if (!keepScroll || People.ItemsSource is not List<PersonTile> shown || !shown.SequenceEqual(visible)) People.ItemsSource = visible;
         EmptyText.Visibility = _all.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        SubtitleText.Text = _all.Count == 0
-            ? ""
-            : $"{visible.Count:N0} of {_all.Count:N0} people recognised by OneDrive, with the names you gave them there. Right-click to rename, merge or hide. Named people are searchable.";
+        var toReview = _all.Count(p => p.Row.Name is null && !p.Row.Hidden && !p.Row.NotTagged);
+        WhoText.Text = toReview > 0 ? $"Who's this? ({toReview:N0})" : "Who's this?";
+        SubtitleText.Text = _all.Count == 0 ? ""
+            : ShowBox.SelectedIndex switch
+            {
+                1 => $"{visible.Count:N0} people you know but didn't want tagged. Right-click to name them after all, or to look at them again in Who's this?",
+                2 => $"{visible.Count:N0} people you don't know. Right-click to show them again.",
+                _ => $"{visible.Count:N0} people recognised by OneDrive, with the names given there or here. Right-click to name, join or set aside; names and joins go to OneDrive too.",
+            };
     }
 
     private void OnFilterChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args) => ApplyFilter();
 
-    private void OnFilterClick(object sender, RoutedEventArgs e)
+    private void OnFilterClick(object sender, RoutedEventArgs e) => ApplyFilter();
+
+    private void OnShowChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ReferenceEquals(sender, HiddenBox)) _ = LoadAsync();
-        else ApplyFilter();
+        if (_all.Count > 0) ApplyFilter();
     }
+
+    private void OnWho(object sender, RoutedEventArgs e) => App.MainWindow.Navigate(typeof(WhoPage), null);
 
     private void OnTileLoaded(object sender, RoutedEventArgs e)
     {
@@ -145,31 +166,69 @@ public sealed partial class PeoplePage : Page
         var name = new MenuFlyoutItem { Text = tile.Row.Name is null ? "Name…" : "Rename…", Icon = new SymbolIcon(Symbol.Rename) };
         name.Click += async (_, _) =>
         {
-            if (await NameAsync(XamlRoot, tile.Row) is { } updated) tile.Update(updated);
+            if (await NameAsync(XamlRoot, tile.Row) is not { } updated) return;
+            if (updated.Id == tile.Row.Id) tile.Update(updated);
+            else await LoadAsync(); // joined to someone
         };
         var merge = new MenuFlyoutItem { Text = "Same person as…", Icon = new SymbolIcon(Symbol.People) };
         merge.Click += async (_, _) =>
         {
             if (await MergeAsync(tile.Row)) await LoadAsync();
         };
-        var hide = new MenuFlyoutItem { Text = tile.Row.Hidden ? "Unhide" : "Hide", Icon = new SymbolIcon(tile.Row.Hidden ? Symbol.View : Symbol.Remove) };
+        menu.Items.Add(name);
+        menu.Items.Add(merge);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        if (tile.Row.Name is null && !tile.Row.Hidden)
+        {
+            var notTagged = new MenuFlyoutItem
+            {
+                Text = tile.Row.NotTagged ? "Look at again in Who's this?" : "Known, but don't tag",
+                Icon = new FontIcon { Glyph = tile.Row.NotTagged ? "\uE8FA" : "\uE8F8" },
+            };
+            notTagged.Click += async (_, _) =>
+            {
+                App.Services.People.SetNotTagged(tile.Row.Id, !tile.Row.NotTagged);
+                await LoadAsync();
+            };
+            menu.Items.Add(notTagged);
+        }
+        var hide = new MenuFlyoutItem
+        {
+            Text = tile.Row.Hidden ? "Show again" : "Not someone I know",
+            Icon = new SymbolIcon(tile.Row.Hidden ? Symbol.View : Symbol.Remove),
+        };
         hide.Click += async (_, _) =>
         {
             App.Services.People.SetHidden(tile.Row.Id, !tile.Row.Hidden);
+            if (!tile.Row.Hidden) App.Services.People.SetNotTagged(tile.Row.Id, false);
             await LoadAsync();
         };
-        menu.Items.Add(name);
-        menu.Items.Add(merge);
         menu.Items.Add(hide);
         menu.ShowAt((FrameworkElement)sender, e.GetPosition((UIElement)sender));
         e.Handled = true;
     }
 
-    /// <summary>Asks for a name; returns the updated person, or null if cancelled.</summary>
+    /// <summary>
+    /// Asks for a name (here and in OneDrive); returns the updated person, or null if cancelled. A name someone else
+    /// already has offers to join the two instead: one name, one person.
+    /// </summary>
     public static async Task<PersonRow?> NameAsync(XamlRoot root, PersonRow person)
     {
         var name = await Dialogs.PromptAsync(root, person.Name is null ? "Who is this?" : "Rename person", "Name", person.Name ?? "", "Save");
         if (name is null) return null;
+        name = name.Trim();
+        var other = name.Length == 0 ? null
+            : App.Services.People.GetPeople(includeHidden: true)
+                .FirstOrDefault(p => p.Id != person.Id && string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase));
+        if (other is not null)
+        {
+            if (!await Dialogs.ConfirmAsync(root, $"Same person as {other.Name}?",
+                    $"{other.Name} is already someone. These photos will be joined to theirs, here and in OneDrive. OneDrive can't undo that.",
+                    "Join them")) return null;
+            await Task.Run(() => App.Services.People.Merge(person.Id, other.Id));
+            App.MainWindow.ShowStatus($"Joined to {other.Name}");
+            return App.Services.People.Get(other.Id);
+        }
         await Task.Run(() => App.Services.People.Rename(person.Id, name));
         return App.Services.People.Get(person.Id);
     }
@@ -192,7 +251,7 @@ public sealed partial class PeoplePage : Page
                 Spacing = 8,
                 Children =
                 {
-                    new TextBlock { Text = "OneDrive sometimes splits one person into several. Their photos will be combined.", TextWrapping = TextWrapping.Wrap },
+                    new TextBlock { Text = "OneDrive sometimes splits one person into several. Their photos will be joined, here and in OneDrive (OneDrive can't undo that).", TextWrapping = TextWrapping.Wrap },
                     box,
                 },
             },

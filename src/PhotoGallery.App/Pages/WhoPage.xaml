@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.WhoPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:pages="using:PhotoGallery.App.Pages">
+
+    <Grid Padding="20,12,20,16" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <TextBlock Text="Who's this?" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock x:Name="ProgressText" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+            <TextBlock x:Name="AboutText" VerticalAlignment="Center" />
+            <HyperlinkButton x:Name="AllPhotosLink" Padding="0" Click="OnAllPhotos" />
+            <TextBlock x:Name="DecisionText" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+        </StackPanel>
+
+        <GridView x:Name="Faces" Grid.Row="2" SelectionMode="None" IsItemClickEnabled="True" ItemClick="OnFaceClick">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="pages:FaceSampleTile">
+                    <StackPanel Width="176" Spacing="4" Margin="4" ToolTipService.ToolTip="Open the photo">
+                        <Grid Width="176" Height="176" CornerRadius="8" Background="{ThemeResource ControlAltFillColorSecondaryBrush}">
+                            <Image Source="{x:Bind Image, Mode=OneWay}" Stretch="UniformToFill" />
+                            <FontIcon Glyph="&#xE77B;" FontSize="40" Visibility="{x:Bind NoImage, Mode=OneWay}"
+                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        </Grid>
+                        <TextBlock Text="{x:Bind DateText}" HorizontalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+        <TextBlock x:Name="DoneText" Grid.Row="2" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   TextAlignment="Center" TextWrapping="Wrap" Style="{StaticResource SubtitleTextBlockStyle}" />
+
+        <StackPanel x:Name="AnswerPanel" Grid.Row="3" Orientation="Horizontal" Spacing="8">
+            <AutoSuggestBox x:Name="NameBox" Width="340" PlaceholderText="Their name, or someone you've named" QueryIcon="Contact"
+                            TextChanged="OnNameChanged" SuggestionChosen="OnSuggestionChosen" QuerySubmitted="OnNameSubmitted" />
+            <Border x:Name="MatchPicture" Width="32" Height="32" CornerRadius="16" Visibility="Collapsed" VerticalAlignment="Center"
+                    Background="{ThemeResource ControlAltFillColorSecondaryBrush}">
+                <Image x:Name="MatchImage" Stretch="UniformToFill" />
+            </Border>
+            <Button x:Name="SaveButton" Content="Name" Style="{StaticResource AccentButtonStyle}" IsEnabled="False" Click="OnSave" />
+        </StackPanel>
+        <TextBlock x:Name="HintText" Grid.Row="4" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   Text="A new name names them here and in OneDrive. Choosing someone you've named joins these photos to theirs, here and in OneDrive (OneDrive can't undo that)." />
+
+        <Grid x:Name="ActionsPanel" Grid.Row="5" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Click="OnNotTagged" ToolTipService.ToolTip="You know them, but they don't need tagging. Stays on this PC; People › Known, not tagged has them if you change your mind.">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE8F8;" FontSize="14" />
+                        <TextBlock Text="Known, but don't tag" />
+                    </StackPanel>
+                </Button>
+                <Button Click="OnStranger" ToolTipService.ToolTip="Leaves them out of People. Stays on this PC; People › Not someone I know has them.">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE7BA;" FontSize="14" />
+                        <TextBlock Text="Not someone I know" />
+                    </StackPanel>
+                </Button>
+                <Button Content="Skip" Click="OnSkip" ToolTipService.ToolTip="Decide later" />
+            </StackPanel>
+            <TextBlock x:Name="SendText" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"
+                       Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                <Button x:Name="PreviousButton" Click="OnPrevious" ToolTipService.ToolTip="The one before" IsEnabled="False">
+                    <FontIcon Glyph="&#xE76B;" FontSize="14" />
+                </Button>
+                <Button x:Name="NextButton" Click="OnSkip" ToolTipService.ToolTip="Next (decide later)">
+                    <FontIcon Glyph="&#xE76C;" FontSize="14" />
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

@@ -319,6 +319,23 @@ public sealed class GalleryDatabase
         ALTER TABLE Media ADD COLUMN Utility REAL;
         ALTER TABLE Media ADD COLUMN UtilityOverride INTEGER;
         """,
+        // v19: reviewing unnamed people. NotTagged: someone known but not worth naming, left out of "Who's this?"
+        // until named after all (Hidden already means "not someone I know"); both stay on this PC. PeopleChanges:
+        // names and merges made here, sent to OneDrive in order; Failed ones OneDrive refused, set aside for the user.
+        """
+        ALTER TABLE People ADD COLUMN NotTagged INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE PeopleChanges (
+            Id               INTEGER PRIMARY KEY,
+            Kind             TEXT NOT NULL,
+            OneDrivePersonId TEXT NOT NULL,
+            IntoPersonId     TEXT,
+            Name             TEXT,
+            Created          INTEGER NOT NULL,
+            Attempts         INTEGER NOT NULL DEFAULT 0,
+            Failed           INTEGER NOT NULL DEFAULT 0,
+            LastError        TEXT
+        );
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

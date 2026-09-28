@@ -171,6 +171,8 @@ public sealed partial class GalleryPage : Page
     private async void OnNamePerson(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
         if (_personId is not { } id || App.Services.People.Get(id) is not { } person) return;
-        if (await PeoplePage.NameAsync(XamlRoot, person) is { } updated) TitleText.Text = updated.DisplayName;
+        if (await PeoplePage.NameAsync(XamlRoot, person) is not { } updated) return;
+        if (updated.Id == person.Id) TitleText.Text = updated.DisplayName;
+        else PeoplePage.Open(updated); // joined to someone: their photos now
     }
 }

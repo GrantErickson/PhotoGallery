@@ -15,11 +15,23 @@
             <TextBlock Text="People" Style="{StaticResource TitleTextBlockStyle}" />
             <AutoSuggestBox x:Name="FilterBox" PlaceholderText="Find a person" Width="240" VerticalAlignment="Center" QueryIcon="Find"
                             TextChanged="OnFilterChanged" />
+            <ComboBox x:Name="ShowBox" SelectedIndex="0" VerticalAlignment="Center" SelectionChanged="OnShowChanged"
+                      ToolTipService.ToolTip="People you set aside stay on this PC; OneDrive still has them">
+                <x:String>People</x:String>
+                <x:String>Known, not tagged</x:String>
+                <x:String>Not someone I know</x:String>
+            </ComboBox>
             <CheckBox x:Name="FewBox" Content="Include people in only one photo" VerticalAlignment="Center" Click="OnFilterClick" />
-            <CheckBox x:Name="HiddenBox" Content="Show hidden" VerticalAlignment="Center" Click="OnFilterClick" />
+            <Button x:Name="WhoButton" Style="{StaticResource AccentButtonStyle}" VerticalAlignment="Center" Click="OnWho"
+                    ToolTipService.ToolTip="Go through the people nobody has named yet, most photos first">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE8FA;" FontSize="14" />
+                    <TextBlock x:Name="WhoText" Text="Who's this?" />
+                </StackPanel>
+            </Button>
         </StackPanel>
         <TextBlock x:Name="SubtitleText" Grid.Row="1" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                   Text="People recognised by OneDrive, with the names you gave them there. Right-click to rename, merge or hide. Named people are searchable." />
+                   Text="People recognised by OneDrive, with the names you gave them there. Right-click to name, join or set aside. Named people are searchable." />
 
         <GridView x:Name="People" Grid.Row="2" IsItemClickEnabled="True" SelectionMode="None" ItemClick="OnPersonClick">
             <GridView.ItemTemplate>

@@ -41,6 +41,7 @@ public sealed class AppServices
         Motion = new MotionVideoService(Media, OneDrive, LiveVideo, Settings, Paths.MotionCache);
         Indexing = new IndexingService(this);
         CloudSync = new CloudSyncService(this);
+        PeopleChanges = new PeopleChangesService(this);
         Transcription = new TranscriptionService(this);
         PhotoText = new PhotoTextService(this);
         Sharpness = new SharpnessService(this);
@@ -97,6 +98,8 @@ public sealed class AppServices
     public PlaceSearchService PlaceSearch { get; }
     public Imaging.FaceCropper Faces { get; }
     public CloudSyncService CloudSync { get; }
+    /// <summary>Names and merges made here, on their way to OneDrive.</summary>
+    public PeopleChangesService PeopleChanges { get; }
     public ThumbnailCache Thumbnails { get; }
     public OneDriveClient OneDrive { get; }
     public MotionVideoService Motion { get; }

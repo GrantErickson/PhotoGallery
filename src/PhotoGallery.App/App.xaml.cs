@@ -60,6 +60,7 @@ public partial class App : Application
         // window a minute to settle first.
         await Task.Delay(TimeSpan.FromMinutes(1));
         services.CloudSync.SyncIfStale();
+        services.PeopleChanges.Start();
         services.Transcription.Start();
         services.PhotoText.Start();
         services.Sharpness.Start();
