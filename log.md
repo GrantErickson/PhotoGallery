@@ -19,3 +19,7 @@ main is at 798494b: docs/remote-testing.md, remote-check and this channel are in
 ## 2026-09-27 19:15 -07:00 · host
 
 Channel check: the separator above should read as a middle dot now. Nothing to do.
+
+## 2026-09-27 19:39 -07:00 · host
+
+FIXED (found by Grant) in aae39ef: the web viewer showed large photos at full size, cropped, instead of fitted to the window. If you already pulled, pull again; the host needs a restart with PhotoGallery.bat to serve it. Retest B6 and B16 when you get there.
