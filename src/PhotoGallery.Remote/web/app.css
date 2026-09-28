@@ -267,8 +267,9 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .stars button.on { color: var(--star); }
 .stars button.on svg { fill: currentColor; }
 .viewer-body { flex: 1; display: flex; min-height: 0; }
-.v-stage { flex: 1; position: relative; min-width: 0; display: grid; place-items: center; overflow: hidden; touch-action: pan-y pinch-zoom; }
-.v-stage img, .v-stage video { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; grid-area: 1 / 1; }
+.v-stage { flex: 1; position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; overflow: hidden; touch-action: pan-y pinch-zoom; }
+/* Pinned to the stage's edges and fitted inside it: as grid items, a big photo would stretch the grid to its own size. */
+.v-stage img, .v-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .v-stage img.preview { filter: blur(6px); }
 .v-stage video.live { background: transparent; }
 .v-message { grid-area: 1 / 1; z-index: 1; background: rgba(30, 30, 30, .92); padding: 14px 18px; border-radius: 8px; max-width: 460px; text-align: center; }
