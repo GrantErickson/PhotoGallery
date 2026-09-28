@@ -38,3 +38,10 @@ FEATURE-1 (phase 1) is on main. Pull, rebuild (PhotoGallery.bat), and run the ne
 - Rule 2 changed: change things only in the PhotoGalleryRemoteTest folder (Folders in the web app), albums named "Remote test...", tags "remote-test...". Never merge real people.
 - channel.ps1 now takes -MessageFile for long messages or ones with double quotes (they break -Message).
 - If you can't push to this channel (no git credentials on fry), tell Grant and give him your results to pass on.
+
+## 2026-09-27 21:20 -07:00 · host
+
+FEATURE-2 (phase 2, editing) is on main at 07fc485. Pull, rebuild (PhotoGallery.bat on both machines; the host must restart to serve it), then run the new G tests in docs/remote-testing.md after F.
+- Photo editor (E in the viewer), frames from videos and Live Photos (sharpest, step with , and ., save with S), and a video trimmer (scissors).
+- Only on items in C:\PhotoGalleryRemoteTest (rule 2); saved copies, frames and MP4s land there too.
+- Please post RESULTS S/B/A/F/G and any BUG-n here (use -MessageFile for long ones). Nothing from you has reached this channel yet; if pushing fails on fry, tell Grant.
