@@ -43,10 +43,11 @@
                         <TextBlock Text="◉ Live" />
                     </StackPanel>
                 </ToggleButton>
-                <ComboBox x:Name="ScreenshotBox" SelectedIndex="0" MinWidth="150" SelectionChanged="OnFilterChanged" ToolTipService.ToolTip="Screenshots">
-                    <x:String>No screenshots</x:String>
-                    <x:String>With screenshots</x:String>
-                    <x:String>Only screenshots</x:String>
+                <ComboBox x:Name="ScreenshotBox" SelectedIndex="0" MinWidth="150" SelectionChanged="OnFilterChanged"
+                          ToolTipService.ToolTip="Screenshots and utility shots: photos of receipts, documents, screens, boxes, tickets, whiteboards, instructions…">
+                    <x:String>No utility shots</x:String>
+                    <x:String>With utility shots</x:String>
+                    <x:String>Only utility shots</x:String>
                 </ComboBox>
                 <DropDownButton x:Name="PeopleButton" ToolTipService.ToolTip="Only photos with these people in them">
                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -111,6 +112,16 @@
                             <MenuFlyoutItem Text="★" Tag="1" Click="OnRateSelection" />
                             <MenuFlyoutSeparator />
                             <MenuFlyoutItem Text="Clear rating" Tag="0" Click="OnRateSelection" />
+                        </MenuFlyout>
+                    </AppBarButton.Flyout>
+                </AppBarButton>
+                <AppBarButton Icon="Document" Label="Utility shots" ToolTipService.ToolTip="Screenshots and photos of receipts, documents, screens… are left out of the timeline">
+                    <AppBarButton.Flyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="Utility shots: leave out of the timeline" Tag="1" Click="OnMarkUtility" />
+                            <MenuFlyoutItem Text="Not utility shots: show in the timeline" Tag="0" Click="OnMarkUtility" />
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutItem Text="Let the app decide" Tag="" Click="OnMarkUtility" />
                         </MenuFlyout>
                     </AppBarButton.Flyout>
                 </AppBarButton>

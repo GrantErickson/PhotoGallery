@@ -319,6 +319,7 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .v-panel .transcript p:hover { background: #2a2a2a; }
 .v-panel .transcript time { color: #60cdff; font-size: 12px; margin-right: 6px; font-variant-numeric: tabular-nums; }
 .v-panel .download { margin-top: 18px; display: inline-flex; align-items: center; gap: 6px; }
+.v-panel label.check { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; cursor: pointer; }
 
 .toast {
   position: fixed;

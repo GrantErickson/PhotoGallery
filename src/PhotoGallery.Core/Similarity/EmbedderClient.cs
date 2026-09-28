@@ -2,21 +2,22 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using PhotoGallery.Core;
 
-namespace PhotoGallery.App.Similarity;
+namespace PhotoGallery.Core.Similarity;
 
 /// <summary>
-/// Talks to PhotoGallery.Embedder (the "embedder" folder next to the app): CLIP on the graphics card in a process of
-/// its own. One request at a time; the process is started on first use and stopped with <see cref="Dispose"/>.
+/// Talks to PhotoGallery.Embedder (the "embedder" folder next to the app, unless told otherwise): CLIP on the graphics
+/// card in a process of its own. One request at a time; the process is started on first use and stopped with
+/// <see cref="Dispose"/>.
 /// </summary>
-public sealed class EmbedderClient(string visionModel, string textModel) : IDisposable
+public sealed class EmbedderClient(string visionModel, string textModel, string? exe = null) : IDisposable
 {
-    private static readonly string Exe = Path.Combine(AppContext.BaseDirectory, "embedder", "PhotoGallery.Embedder.exe");
+    public static readonly string DefaultExe = Path.Combine(AppContext.BaseDirectory, "embedder", "PhotoGallery.Embedder.exe");
+    private readonly string _exe = exe ?? DefaultExe;
     private readonly SemaphoreSlim _gate = new(1);
     private Process? _process;
 
-    public static bool IsInstalled => File.Exists(Exe);
+    public static bool IsInstalled => File.Exists(DefaultExe);
 
     /// <summary>"DirectML" or "CPU" once started.</summary>
     public string? Device { get; private set; }
@@ -73,7 +74,7 @@ public sealed class EmbedderClient(string visionModel, string textModel) : IDisp
         Stop();
         var process = new Process
         {
-            StartInfo = new ProcessStartInfo(Exe)
+            StartInfo = new ProcessStartInfo(_exe)
             {
                 ArgumentList = { visionModel, textModel },
                 UseShellExecute = false,

@@ -324,10 +324,20 @@ public sealed class RemoteServerTests : IAsyncLifetime
         Assert.Contains("turned off", await refused.Content.ReadAsStringAsync(ct));
         Assert.Empty(_library.Changes);
 
-        // Ratings don't need it.
+        // Ratings and utility shots don't need it.
         using var rated = await _client.SendAsync(Post("api/media/rating", new { ids = new[] { 1, 2 }, rating = 2 }), ct);
         Assert.Equal(HttpStatusCode.OK, rated.StatusCode);
         Assert.Contains("rate 1,2 2", _library.Changes);
+        using var marked = await _client.SendAsync(Post("api/media/utility", new { ids = new[] { 1, 2 }, utility = true }), ct);
+        Assert.Equal(HttpStatusCode.OK, marked.StatusCode);
+        using var unmarked = await _client.SendAsync(Post("api/media/utility", new { ids = new[] { 2 }, utility = (bool?)null }), ct);
+        Assert.Equal(HttpStatusCode.OK, unmarked.StatusCode);
+        Assert.Equal(["rate 1,2 2", "utility 1,2 True", "utility 2 auto"], _library.Changes);
+        using var none = await _client.SendAsync(Post("api/media/utility", new { utility = true }), ct);
+        Assert.Equal(HttpStatusCode.BadRequest, none.StatusCode);
+        var details = await _client.GetFromJsonAsync<JsonElement>("api/media/2", ct);
+        Assert.False(details.GetProperty("utility").GetBoolean());
+        Assert.False(details.GetProperty("utilityChosen").GetBoolean());
 
         _library.AllowChanges = true;
         using var deleted = await _client.SendAsync(Post("api/media/delete", new { ids = new[] { 2 } }), ct);
@@ -607,6 +617,9 @@ public sealed class RemoteServerTests : IAsyncLifetime
             if (ids.Count == 1) LastRating = (ids.First(), rating);
             Changes.Add($"rate {string.Join(",", ids)} {rating}");
         }
+
+        public void SetUtility(IReadOnlyCollection<long> ids, bool? utility) =>
+            Changes.Add($"utility {string.Join(",", ids)} {utility?.ToString() ?? "auto"}");
 
         public Task<(List<long> Deleted, List<string> Failed)> DeleteAsync(IReadOnlyCollection<long> ids)
         {

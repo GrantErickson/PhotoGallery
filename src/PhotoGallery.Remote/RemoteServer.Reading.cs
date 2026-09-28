@@ -114,6 +114,9 @@ public sealed partial class RemoteServer
                 tags = details.Tags?.Select(t => new { id = t.Id, name = t.Name, yours = t.Yours }),
                 albums = details.Albums,
                 edited = details.Edited,
+                screenshot = item.IsScreenshot,
+                utility = item.IsClutter,
+                utilityChosen = item.UtilityOverride is not null,
             });
         });
         app.MapGet("/api/media/{id:long}/similar", async ctx =>

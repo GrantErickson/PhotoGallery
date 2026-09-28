@@ -1,4 +1,4 @@
-using PhotoGallery.App.Similarity;
+using System.Globalization;
 using PhotoGallery.Core;
 using PhotoGallery.Core.Similarity;
 
@@ -7,8 +7,9 @@ namespace PhotoGallery.App.Services;
 /// <summary>
 /// Similar photos and searching by description, with OpenAI's CLIP ViT-L/14: every photo and video gets an embedding
 /// from its thumbnail, in the background on the graphics card (<see cref="EmbedderClient"/>), newest first. Searches
-/// compare embeddings in memory. The model (about 860 MB) is downloaded from Hugging Face on first use. Events are
-/// raised on a background thread.
+/// compare embeddings in memory. The model (about 860 MB) is downloaded from Hugging Face on first use. Once every
+/// item has one, photos are scored as utility shots or not (<see cref="UtilityShots"/>). Events are raised on a
+/// background thread.
 /// </summary>
 public sealed class EmbeddingService(AppServices services) : IDisposable
 {
@@ -30,6 +31,7 @@ public sealed class EmbeddingService(AppServices services) : IDisposable
     private SimilarityIndex? _index;
     private int _started;
     private DateTime _lastUse;
+    private (sbyte[][] Records, sbyte[][] Memories)? _utilityDescriptions;
 
     public event Action? StateChanged;
 
@@ -141,6 +143,7 @@ public sealed class EmbeddingService(AppServices services) : IDisposable
             var backlog = services.Embeddings.GetBacklog(Batch * 8);
             if (backlog.Count == 0)
             {
+                await ScoreUtilityAsync(index);
                 IsWorking = false;
                 StateChanged?.Invoke();
                 // Keep the model loaded a while for searches, then give the graphics card its memory back.
@@ -178,6 +181,55 @@ public sealed class EmbeddingService(AppServices services) : IDisposable
                 await _wake.WaitAsync(TimeSpan.FromMinutes(5));
             }
             StateChanged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Scores the photos that have an embedding but no utility score (all of them when the way of scoring changed),
+    /// and has views re-query if any turned out to be utility shots.
+    /// </summary>
+    private async Task ScoreUtilityAsync(SimilarityIndex index)
+    {
+        const string VersionKey = "UtilityShotsVersion";
+        try
+        {
+            var version = UtilityShots.Version.ToString(CultureInfo.InvariantCulture);
+            if (services.Media.GetSyncValue(VersionKey) != version)
+            {
+                await Task.Run(services.Media.ResetUtility);
+                services.Media.SetSyncValue(VersionKey, version);
+            }
+            var backlog = await Task.Run(() => services.Media.GetUtilityBacklog());
+            if (backlog.Count == 0) return;
+            if (_utilityDescriptions is not { } descriptions)
+            {
+                var tokenizer = _tokenizer ??= ClipTokenizer.Load(ModelPath("vocab.json"), ModelPath("merges.txt"));
+                async Task<sbyte[][]> EmbedAsync(string[] texts)
+                {
+                    var vectors = new sbyte[texts.Length][];
+                    for (var i = 0; i < texts.Length; i++) vectors[i] = Embedding.Quantize(await Embedder.EmbedTextAsync(tokenizer.Encode(texts[i])));
+                    return vectors;
+                }
+                _utilityDescriptions = descriptions = (await EmbedAsync(UtilityShots.Records), await EmbedAsync(UtilityShots.Memories));
+                _lastUse = DateTime.UtcNow;
+            }
+            var scores = await Task.Run(() => backlog
+                .AsParallel()
+                .Select(item =>
+                {
+                    var vector = index.VectorOf(item.Id);
+                    return (item.Id, Score: vector.IsEmpty ? double.NaN : UtilityShots.Score(vector, descriptions.Records, descriptions.Memories, item.Words, item.Faces));
+                })
+                .Where(s => !double.IsNaN(s.Score))
+                .ToList());
+            await Task.Run(() => services.Media.SetUtility(scores));
+            var found = scores.Count(s => s.Score >= UtilityShots.Threshold);
+            Log.Info($"Scored {scores.Count:N0} photos as utility shots or not: {found:N0} are");
+            if (found > 0) services.Indexing.RaiseLibraryChanged();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or InvalidDataException or TimeoutException or System.ComponentModel.Win32Exception)
+        {
+            Log.Error("Scoring utility shots failed", ex);
         }
     }
 

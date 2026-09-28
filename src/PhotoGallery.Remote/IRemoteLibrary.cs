@@ -65,9 +65,12 @@ public interface IRemoteLibrary
     /// <summary>The video of a Live Photo or motion photo.</summary>
     Task<(MotionResult Result, string? Path)> GetMotionAsync(MediaItem item, CancellationToken ct);
 
-    // ---------- Changing (ratings always; the rest only while AllowChanges) ----------
+    // ---------- Changing (ratings and utility shots always; the rest only while AllowChanges) ----------
 
     void SetRating(IReadOnlyCollection<long> ids, int rating);
+
+    /// <summary>Chosen by hand: utility shots (left out of the timeline, like screenshots), not, or null to let the app decide.</summary>
+    void SetUtility(IReadOnlyCollection<long> ids, bool? utility);
 
     /// <summary>To the host's Recycle Bin (a Live Photo's video with its photo), then out of the library.</summary>
     Task<(List<long> Deleted, List<string> Failed)> DeleteAsync(IReadOnlyCollection<long> ids);

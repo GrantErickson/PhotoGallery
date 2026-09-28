@@ -13,8 +13,13 @@ works out live in its own database.
 - **Timeline** of every photo and video, newest first, with day badges and a year/month jump list that follows the
   scrolling. It stays smooth with 250,000 items.
 - **Adjustable tiles** (slider or Ctrl+mouse wheel), cropped around faces. Video tiles play a preview in place.
-- **Filters** on every gallery: photos or videos, minimum rating, Live Photos only, screenshots (none / with / only),
+- **Filters** on every gallery: photos or videos, minimum rating, Live Photos only, utility shots (none / with / only),
   and **people** (photos with everyone you pick, chosen from face avatars).
+- **Utility shots** stay out of the timeline and the map: screenshots, and photos of receipts, documents, screens,
+  boxes, tickets, whiteboards, instructions and labels. CLIP finds them on this PC by comparing each photo with
+  descriptions of such records and of memories (people, places, moments). Text read in the photo counts toward a
+  record, and faces count against one. Mark or unmark one in the viewer's details, or several at once from the
+  selection.
 - **Folders**, **On this day** (this date in past years), **Favorites** (4★ and up), **Live Photos**, **Albums**
   (drag to reorder), **Tags**, **People**, **Map**, **Duplicates**, **Blurry photos**.
 
@@ -93,10 +98,11 @@ works out live in its own database.
   - the timeline, best-match and exact-word search (sorted and grouped, with suggestions);
   - On this day, Favorites, Live Photos, Videos, People, Tags, Folders, the Map, Albums, Duplicates and Blurry
     photos;
-  - the filters: people, photos or videos, rating, Live Photos only, screenshots;
+  - the filters: people, photos or videos, rating, Live Photos only, utility shots;
   - finding a place on the map, as in the app.
 - **Organize from there too**:
-  - select photos, then rate, add to an album, tag or delete them (to the main PC's Recycle Bin);
+  - select photos, then rate, add to an album, tag, mark as utility shots or delete them (to the main PC's Recycle
+    Bin);
   - make, rename and delete albums;
   - rename, hide and merge people;
   - clear out duplicates.
@@ -240,7 +246,7 @@ Built with the Windows App SDK (WinUI 3), Win2D, SQLite (Microsoft.Data.Sqlite, 
 - **Speech**: [Whisper.net](https://github.com/sandrohanea/whisper.net) running OpenAI's Whisper, with Silero VAD.
 - **Speakers**: [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), with pyannote segmentation and NVIDIA NeMo
   TitaNet.
-- **Similar photos**: OpenAI [CLIP](https://github.com/openai/CLIP) ViT-L/14, in the ONNX export by Xenova on
+- **Similar photos and utility shots**: OpenAI [CLIP](https://github.com/openai/CLIP) ViT-L/14, in the ONNX export by Xenova on
   Hugging Face, run with ONNX Runtime and DirectML.
 - **Text in photos**: Windows' built-in OCR.
 - **Map**: [Leaflet](https://leafletjs.com) and Leaflet.markercluster, with map tiles © OpenStreetMap contributors.

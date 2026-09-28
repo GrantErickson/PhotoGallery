@@ -313,6 +313,12 @@ public sealed class GalleryDatabase
         UPDATE MediaFts SET Tags = {SearchIndex.TagsExpression} WHERE rowid IN (SELECT Id FROM PoiReset);
         DROP TABLE PoiReset;
         """,
+        // v18: utility shots (receipts, documents, screens, boxes…): how much more a photo looks like one than like a
+        // memory (null until scored), and a choice made by hand that overrides it (and screenshots): 1 is, 0 isn't.
+        """
+        ALTER TABLE Media ADD COLUMN Utility REAL;
+        ALTER TABLE Media ADD COLUMN UtilityOverride INTEGER;
+        """,
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

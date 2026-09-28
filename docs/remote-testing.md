@@ -213,7 +213,7 @@ These need host step 6. Follow rule 2: change nothing outside the test folder.
 | F9 | Viewer: F (faces) and T (text) on a photo with people or text | Outlines with names; clicking a face opens that person. Text boxes; in a search's results, matching words are highlighted without T. |
 | F10 | Viewer: mouse wheel, double-click, drag; on a touch screen, pinch | Zooms around the pointer, pans, a sharper picture loads when zoomed; Esc zooms out first. |
 | F11 | Viewer details: the find box, on a photo with text or a video with speech | Matches highlighted; the first scrolls into view. |
-| F12 | Filters: rating, Live Photos only, screenshots (leave out / include / only), photos or videos | The list narrows; "Filters (n)"; Clear filters. |
+| F12 | Filters: rating, Live Photos only, utility shots (leave out / include / only), photos or videos | The list narrows; "Filters (n)"; Clear filters. Only utility shots: screenshots and photos of receipts, documents, screens… |
 | F13 | Map | Clusters. The list below shows the photos in view and follows panning. Click a cluster: just its photos. Click the map: back to all in view. Zoomed right in, thumbnails as pins; clicking one opens it. |
 | F14 | Folders, then a folder; untick Include subfolders | Its photos, then without subfolders. |
 | F15 | Tags | Your tags first, then OneDrive's; each opens its photos. |
@@ -223,6 +223,7 @@ These need host step 6. Follow rule 2: change nothing outside the test folder.
 | F19 | Type 2+ letters in the search box | Suggestions include people, places and tags. |
 | F20 | In the app on the tester (Another computer): repeat F3, F6 and F13 | The same, inside the app. |
 | F21 | Map › the Find a place box: type a town ("spokane", "paris, france"), a park near your photos; press Enter; then "Search OpenStreetMap for …" with an address | Matches from the host as you type (your places, places near photos, towns biggest first). Choosing one moves the map there with a labelled pin, and the list below shows the photos there. OpenStreetMap finds addresses and landmarks. |
+| F22 | Viewer › Details (I) on a test photo: Kind › untick or tick Utility shot, then Let the photo computer decide; then select two test photos › Utility shots › each choice | "Chosen by hand." and the button appear, then go. A photo marked as a utility shot leaves the timeline (and shows with Only utility shots). Works with changes off on the host too, like ratings. Put the test photos back with Let the photo computer decide. |
 
 ### G: editing from the client (phase 2)
 Only on items in the test folder (rule 2). Everything saved lands next to the original there, and shows up in the

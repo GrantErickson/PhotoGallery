@@ -246,6 +246,8 @@ public sealed partial class ViewerControl : UserControl
         EditedPanel.Visibility = edits is null ? Visibility.Collapsed : Visibility.Visible;
         EditedText.Text = edits is null ? "" : DescribeEdits(edits);
 
+        ShowUtility(item);
+
         _suppressRating = true;
         Rating.Value = item.Rating > 0 ? item.Rating : -1;
         _suppressRating = false;
@@ -832,6 +834,31 @@ public sealed partial class ViewerControl : UserControl
         _suppressRating = true;
         Rating.Value = rating > 0 ? rating : -1;
         _suppressRating = false;
+    }
+
+    private void ShowUtility(MediaItem item)
+    {
+        UtilityCheck.IsChecked = item.IsClutter;
+        UtilityText.Text = item.UtilityOverride is not null ? "Chosen by hand."
+            : item.IsScreenshot ? "A screenshot: left out of the timeline."
+            : item.IsClutter ? "Looks like a record of something (a receipt, a document, a screen…): left out of the timeline."
+            : "";
+        UtilityText.Visibility = UtilityText.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UtilityResetLink.Visibility = item.UtilityOverride is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OnUtilityClick(object sender, RoutedEventArgs e) => SetUtility(UtilityCheck.IsChecked == true);
+
+    private void OnUtilityReset(object sender, RoutedEventArgs e) => SetUtility(null);
+
+    /// <summary>Chosen by hand: a utility shot (left out of the timeline), not one, or null to let the app decide.</summary>
+    private void SetUtility(bool? utility)
+    {
+        if (_current is null) return;
+        S.Media.SetUtilityOverride([_current.Id], utility);
+        _current.UtilityOverride = utility;
+        _changed = true;
+        ShowUtility(_current);
     }
 
     private void OnTagBoxTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)

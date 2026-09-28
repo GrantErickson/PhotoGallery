@@ -287,6 +287,13 @@
                     <TextBlock Text="Motion" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock x:Name="MotionText" TextWrapping="Wrap" />
                 </StackPanel>
+                <StackPanel Spacing="0">
+                    <CheckBox x:Name="UtilityCheck" Content="Utility shot" Click="OnUtilityClick"
+                              ToolTipService.ToolTip="Screenshots and photos of receipts, documents, screens, boxes, tickets… are left out of the timeline and the map" />
+                    <TextBlock x:Name="UtilityText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <HyperlinkButton x:Name="UtilityResetLink" Content="Let the app decide" Padding="0" FontSize="12" Click="OnUtilityReset" />
+                </StackPanel>
 
                 <StackPanel x:Name="PeoplePanel" Spacing="4" Visibility="Collapsed">
                     <TextBlock Text="People" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

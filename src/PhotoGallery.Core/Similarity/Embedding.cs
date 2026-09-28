@@ -47,6 +47,9 @@ public static class Embedding
     }
 }
 
+/// <summary>An item's id and its embedding (valid only during the call).</summary>
+public delegate void VectorVisitor(long id, ReadOnlySpan<sbyte> vector);
+
 /// <summary>
 /// Every photo's embedding in memory (about 170 MB for 225,000 photos), searched by brute force on all cores: a query
 /// against the whole library takes tens of milliseconds. New embeddings can be added while it's searched.
@@ -106,6 +109,24 @@ public sealed class SimilarityIndex
             }
             vector.CopyTo(_vectors, row * Embedding.Dimensions);
         }
+    }
+
+    /// <summary>
+    /// Calls <paramref name="visit"/> for every item there is now (items added meanwhile are left out), on all cores:
+    /// it has to be safe to call from several threads.
+    /// </summary>
+    public void VisitAll(VectorVisitor visit)
+    {
+        long[] ids;
+        sbyte[] vectors;
+        int rows;
+        lock (_gate) (ids, vectors, rows) = (_ids, _vectors, _count);
+        Parallel.For(0, (rows + 4095) / 4096, chunk =>
+        {
+            var end = Math.Min(rows, (chunk + 1) * 4096);
+            for (var row = chunk * 4096; row < end; row++)
+                visit(ids[row], vectors.AsSpan(row * Embedding.Dimensions, Embedding.Dimensions));
+        });
     }
 
     /// <summary>How similar an item is to the query, or null if it has no embedding.</summary>

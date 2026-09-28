@@ -817,6 +817,20 @@ public sealed partial class GalleryView : UserControl
         _ = ReloadAsync(keepPosition: true);
     }
 
+    private void OnMarkUtility(object sender, RoutedEventArgs e)
+    {
+        var utility = (string)((FrameworkElement)sender).Tag switch { "1" => true, "0" => false, _ => (bool?)null };
+        var ids = SelectedIds();
+        S.Media.SetUtilityOverride(ids, utility);
+        App.MainWindow.ShowStatus(utility switch
+        {
+            true => $"{ids.Count:N0} marked as utility shots",
+            false => $"{ids.Count:N0} marked as not utility shots",
+            null => $"The app decides for {ids.Count:N0} again",
+        });
+        _ = ReloadAsync(keepPosition: true);
+    }
+
     private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
     {
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)

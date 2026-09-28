@@ -156,11 +156,11 @@ public sealed class SimilarityTests : IDisposable
         Assert.Equal([b, c, a], _media.Query(new MediaFilter { Ids = [b, c, a], Order = MediaOrder.Listed }).Select(m => m.Id));
     }
 
-    private long Add(string name, long size = 1, bool hidden = false)
+    private long Add(string name, long size = 1, bool hidden = false, MediaKind kind = MediaKind.Photo, bool screenshot = false)
     {
         using var db = _database.Open();
         using var tx = db.BeginTransaction();
-        var item = new MediaItem { Path = $@"D:\Lib\{name}", FileName = name, FileSize = size, FileModified = 1, Kind = MediaKind.Photo };
+        var item = new MediaItem { Path = $@"D:\Lib\{name}", FileName = name, FileSize = size, FileModified = 1, Kind = kind, IsScreenshot = screenshot };
         item.FolderId = _media.EnsureFolder(db, tx, _media.GetFolderIds(), @"D:\Lib", @"D:\Lib");
         _media.Upsert(db, tx, item, @"D:\Lib");
         tx.Commit();
@@ -188,5 +188,71 @@ public sealed class SimilarityTests : IDisposable
         Add("dog.jpg", size: 2); // changed: redone, and not searchable meanwhile
         Assert.Equal([dog], _embeddings.GetBacklog(10).Select(b => b.Id));
         Assert.False(_embeddings.LoadIndex().Contains(dog));
+    }
+
+    [Fact]
+    public void Utility_score_is_how_much_nearer_a_record_than_a_memory_nudged_by_text_and_faces()
+    {
+        var receipt = Embedding.Quantize(Direction((0, 1)));
+        var beach = Embedding.Quantize(Direction((1, 1)));
+        var photo = Embedding.Quantize(Direction((0, 3), (1, 1))); // mostly receipt
+        sbyte[][] records = [receipt], memories = [beach];
+
+        var plain = UtilityShots.Score(photo, records, memories, words: 0, faces: 0);
+        Assert.Equal(Embedding.Similarity(photo, receipt) - Embedding.Similarity(photo, beach), plain, 1e-9);
+        Assert.True(plain > UtilityShots.Threshold);
+        Assert.Equal(plain + UtilityShots.TextBonus, UtilityShots.Score(photo, records, memories, UtilityShots.ManyWords, 0), 1e-9);
+        Assert.Equal(plain - UtilityShots.FacePenalty, UtilityShots.Score(photo, records, memories, 0, faces: 2), 1e-9);
+        Assert.True(UtilityShots.Score(Embedding.Quantize(Direction((1, 1), (0, 0.2f))), records, memories, 0, 0) < UtilityShots.Threshold);
+        Assert.Equal((0, Embedding.Similarity(photo, receipt)), UtilityShots.Closest(photo, records));
+    }
+
+    [Fact]
+    public void Utility_shots_are_scored_once_and_left_out_like_screenshots_unless_chosen_by_hand()
+    {
+        var receipt = Add("receipt.jpg");
+        var beach = Add("beach.jpg");
+        var broken = Add("broken.jpg");
+        var video = Add("clip.mp4", kind: MediaKind.Video);
+        var screenshot = Add("Screenshot 1.png", screenshot: true);
+        var v = Embedding.Quantize(Direction((0, 1)));
+        _embeddings.Save([(receipt, v), (beach, v), (broken, null), (video, v), (screenshot, v)]);
+
+        // Photos that can be compared (not the unreadable one or the video), with their hints.
+        Assert.Equal([receipt, beach, screenshot], _media.GetUtilityBacklog().Select(b => b.Id).Order());
+        _media.SetUtility([(receipt, UtilityShots.Threshold + 0.05), (beach, UtilityShots.Threshold - 0.05), (screenshot, -1)]);
+        Assert.Empty(_media.GetUtilityBacklog());
+        Assert.Equal(3, _media.GetUtilityBacklog(scoredToo: true).Count);
+        Assert.Equal((3L, 3L, 1L), _media.GetUtilityProgress());
+        Assert.Equal(1, _media.GetStats().UtilityShots);
+
+        List<long> Timeline() => [.. _media.Query(MediaFilter.Timeline).Select(m => m.Id).Order()];
+        List<long> OnlyThem() => [.. _media.Query(new MediaFilter { ScreenshotsOnly = true, IncludeScreenshots = true }).Select(m => m.Id).Order()];
+        Assert.Equal([beach, broken, video], Timeline());
+        Assert.Equal([receipt, screenshot], OnlyThem());
+        Assert.True(_media.Get(receipt)!.IsClutter);
+        Assert.False(_media.Get(beach)!.IsClutter);
+        Assert.True(_media.Get(screenshot)!.IsClutter); // a screenshot, whatever it looks like
+
+        // Chosen by hand, either way, even for a screenshot; then left to the app again.
+        _media.SetUtilityOverride([receipt, screenshot], false);
+        _media.SetUtilityOverride([beach], true);
+        Assert.Equal([receipt, broken, video, screenshot], Timeline());
+        Assert.Equal([beach], OnlyThem());
+        Assert.False(_media.Get(receipt)!.UtilityOverride);
+        Assert.True(_media.Get(beach)!.IsClutter);
+        _media.SetUtilityOverride([receipt, beach, screenshot], null);
+        Assert.Null(_media.Get(beach)!.UtilityOverride);
+        Assert.Equal([beach, broken, video], Timeline());
+
+        // A changed file is scored again once it has a new embedding; so is everything when the scoring changes.
+        Add("receipt.jpg", size: 2);
+        Assert.Null(_media.Get(receipt)!.Utility);
+        Assert.Contains(receipt, Timeline());
+        Assert.Empty(_media.GetUtilityBacklog());
+        _embeddings.Save([(receipt, v)]);
+        Assert.Equal([receipt], _media.GetUtilityBacklog().Select(b => b.Id));
+        _media.ResetUtility();
+        Assert.Equal(3, _media.GetUtilityBacklog().Count);
     }
 }

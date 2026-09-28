@@ -20,6 +20,8 @@ public sealed class LibraryStats
     public long Photos { get; init; }
     public long Videos { get; init; }
     public long Screenshots { get; init; }
+    /// <summary>Photos that are records of things (receipts, documents, screens…), not screenshots.</summary>
+    public long UtilityShots { get; init; }
     public long LocalPairs { get; init; }
     public long Embedded { get; init; }
     public long Cloud { get; init; }
@@ -100,6 +102,7 @@ public sealed class MediaRepository(GalleryDatabase database)
                 QuickHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.QuickHash END,
                 PerceptualHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.PerceptualHash END,
                 Sharpness = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.Sharpness END,
+                Utility = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.Utility END,
                 PoiId = CASE WHEN Media.Latitude IS excluded.Latitude AND Media.Longitude IS excluded.Longitude THEN Media.PoiId END,
                 FolderId = excluded.FolderId, FileName = excluded.FileName, FileSize = excluded.FileSize,
                 FileModified = excluded.FileModified, Kind = excluded.Kind, DateTaken = excluded.DateTaken,
@@ -230,6 +233,13 @@ public sealed class MediaRepository(GalleryDatabase database)
         return db.ExecuteScalar<long>(sql, parameters);
     }
 
+    /// <summary>
+    /// A screenshot or a utility shot (a receipt, a document, a screen…), unless chosen otherwise by hand: the photos
+    /// that are records of things rather than memories. Utility scores come from <see cref="Similarity.UtilityShots"/>.
+    /// </summary>
+    internal static readonly string Clutter =
+        $"coalesce(m.UtilityOverride, m.IsScreenshot = 1 OR m.Utility >= {Similarity.UtilityShots.Threshold.ToString(System.Globalization.CultureInfo.InvariantCulture)}, 0) = 1";
+
     internal static (string Sql, DynamicParameters Parameters) BuildQuery(MediaFilter f, string columns, bool ordered = true)
     {
         var p = new DynamicParameters();
@@ -254,9 +264,9 @@ public sealed class MediaRepository(GalleryDatabase database)
             case KindFilter.Photos: sql.Append(" AND m.Kind IN (1, 3)"); break;
             case KindFilter.Videos: sql.Append(" AND m.Kind = 2"); break;
         }
-        // Screenshots are excluded from the main flow, but always shown when browsing a folder or album explicitly.
-        if (f.ScreenshotsOnly) sql.Append(" AND m.IsScreenshot = 1");
-        else if (!f.IncludeScreenshots && f.FolderId is null && f.AlbumId is null) sql.Append(" AND m.IsScreenshot = 0");
+        // Screenshots and utility shots are left out of the main flow, but always shown when browsing a folder or album.
+        if (f.ScreenshotsOnly) sql.Append($" AND {Clutter}");
+        else if (!f.IncludeScreenshots && f.FolderId is null && f.AlbumId is null) sql.Append($" AND NOT {Clutter}");
         if (f.MotionOnly) sql.Append(" AND m.Motion IN (1, 2, 3)");
         if (f.EditedOnly) sql.Append(" AND m.Id IN (SELECT MediaId FROM Edits)");
         if (f.SharpnessBelow is { } sharpness)
@@ -391,12 +401,12 @@ public sealed class MediaRepository(GalleryDatabase database)
         return db.Query<FolderRow>("SELECT Id, ParentId, Path, Name FROM Folders ORDER BY Path").AsList();
     }
 
-    /// <summary>Every located photo/video (screenshots excluded) for the map: id, latitude, longitude.</summary>
+    /// <summary>Every located photo/video (not screenshots or utility shots) for the map: id, latitude, longitude.</summary>
     public List<(long Id, double Latitude, double Longitude)> GetGeoPoints()
     {
         using var db = database.Open();
         return db.Query<(long, double, double)>(
-            "SELECT Id, Latitude, Longitude FROM Media WHERE Latitude IS NOT NULL AND Longitude IS NOT NULL AND IsHidden = 0 AND IsScreenshot = 0").AsList();
+            $"SELECT m.Id, m.Latitude, m.Longitude FROM Media m WHERE m.Latitude IS NOT NULL AND m.Longitude IS NOT NULL AND m.IsHidden = 0 AND NOT {Clutter}").AsList();
     }
 
     public void SetRating(IEnumerable<long> ids, int rating)
@@ -451,6 +461,67 @@ public sealed class MediaRepository(GalleryDatabase database)
             """, new { blurry = Imaging.Sharpness.BlurryBelow });
     }
 
+    /// <summary>Photos with an embedding of their current file (videos aren't utility shots).</summary>
+    private static readonly string Scorable =
+        $"""
+        FROM Media m JOIN Embeddings e ON e.MediaId = m.Id AND e.FileSize = m.FileSize AND e.FileModified = m.FileModified
+                                        AND length(e.Vector) = {Similarity.Embedding.Dimensions}
+        WHERE m.IsHidden = 0 AND m.Kind IN (1, 3)
+        """;
+
+    /// <summary>
+    /// Photos with an embedding but no utility score yet (or all of them), with the other hints: how many words were
+    /// read in them (text in photos) and how many faces OneDrive found.
+    /// </summary>
+    public List<(long Id, int Words, int Faces)> GetUtilityBacklog(bool scoredToo = false)
+    {
+        using var db = database.Open();
+        return db.Query<(long, int, int)>(
+            $"""
+            SELECT m.Id,
+                   coalesce((SELECT CASE WHEN p.Text = '' THEN 0
+                                         ELSE length(replace(p.Text, char(10), ' ')) - length(replace(replace(p.Text, char(10), ' '), ' ', '')) + 1 END
+                             FROM PhotoText p WHERE p.MediaId = m.Id), 0),
+                   (SELECT count(*) FROM MediaFaces f WHERE f.MediaId = m.Id)
+            {Scorable}{(scoredToo ? "" : " AND m.Utility IS NULL")}
+            """).AsList();
+    }
+
+    public void SetUtility(IReadOnlyCollection<(long Id, double Score)> scores)
+    {
+        if (scores.Count == 0) return;
+        using var db = database.Open();
+        using var tx = db.BeginTransaction();
+        foreach (var (id, score) in scores)
+            db.Execute("UPDATE Media SET Utility = @score WHERE Id = @id", new { id, score = Math.Round(score, 4) }, tx);
+        tx.Commit();
+    }
+
+    /// <summary>Forgets every utility score (the way of scoring changed): they're worked out again.</summary>
+    public void ResetUtility()
+    {
+        using var db = database.Open();
+        db.Execute("UPDATE Media SET Utility = NULL WHERE Utility IS NOT NULL");
+    }
+
+    /// <summary>Chosen by hand: true a utility shot (left out like screenshots), false not one (even a screenshot), null as found.</summary>
+    public void SetUtilityOverride(IEnumerable<long> ids, bool? utility)
+    {
+        using var db = database.Open();
+        db.Execute("UPDATE Media SET UtilityOverride = @value WHERE Id IN @ids", new { ids, value = utility is null ? (int?)null : utility.Value ? 1 : 0 });
+    }
+
+    /// <summary>Photos scored, photos there are to score (those with an embedding), and how many are utility shots.</summary>
+    public (long Done, long Total, long Utility) GetUtilityProgress()
+    {
+        using var db = database.Open();
+        return db.QuerySingle<(long, long, long)>(
+            $"""
+            SELECT coalesce(sum(m.Utility IS NOT NULL), 0), count(*), coalesce(sum(m.IsScreenshot = 0 AND {Clutter}), 0)
+            {Scorable}
+            """);
+    }
+
     public void SetMotion(long id, MotionSource motion)
     {
         using var db = database.Open();
@@ -467,15 +538,16 @@ public sealed class MediaRepository(GalleryDatabase database)
     {
         using var db = database.Open();
         return db.QuerySingle<LibraryStats>(
-            """
+            $"""
             SELECT
-              coalesce(sum(Kind IN (1, 3) AND IsScreenshot = 0), 0) AS Photos,
-              coalesce(sum(Kind = 2 AND IsHidden = 0), 0) AS Videos,
-              coalesce(sum(IsScreenshot), 0) AS Screenshots,
-              coalesce(sum(Motion = 1), 0) AS LocalPairs,
-              coalesce(sum(Motion = 2), 0) AS Embedded,
-              coalesce(sum(Motion = 3), 0) AS Cloud
-            FROM Media
+              coalesce(sum(m.Kind IN (1, 3) AND m.IsScreenshot = 0), 0) AS Photos,
+              coalesce(sum(m.Kind = 2 AND m.IsHidden = 0), 0) AS Videos,
+              coalesce(sum(m.IsScreenshot), 0) AS Screenshots,
+              coalesce(sum(m.IsScreenshot = 0 AND {Clutter}), 0) AS UtilityShots,
+              coalesce(sum(m.Motion = 1), 0) AS LocalPairs,
+              coalesce(sum(m.Motion = 2), 0) AS Embedded,
+              coalesce(sum(m.Motion = 3), 0) AS Cloud
+            FROM Media m
             """);
     }
 }

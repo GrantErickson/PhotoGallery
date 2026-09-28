@@ -173,6 +173,8 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 
     public void SetRating(IReadOnlyCollection<long> ids, int rating) => services.Media.SetRating(ids, rating);
 
+    public void SetUtility(IReadOnlyCollection<long> ids, bool? utility) => services.Media.SetUtilityOverride(ids, utility);
+
     public async Task<(List<long> Deleted, List<string> Failed)> DeleteAsync(IReadOnlyCollection<long> ids) =>
         await Deletion.DeleteWithoutAskingAsync(ids);
 
@@ -315,7 +317,7 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
     {
         var tried = services.Faces.TryGetCached(personId, out var face);
         if (face is not null) return (face, true);
-        if (!tried) _faces.GetOrAdd(personId, id => Task.Run(async () =>
+        if (!tried) _ = _faces.GetOrAdd(personId, id => Task.Run(async () =>
         {
             try
             {

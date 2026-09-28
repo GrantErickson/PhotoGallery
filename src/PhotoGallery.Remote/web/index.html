@@ -108,6 +108,7 @@
           <button id="sel-album" type="button" data-change><svg><use href="#i-album" /></svg>Add to album</button>
           <button id="sel-unalbum" type="button" data-change hidden>Remove from album</button>
           <button id="sel-tag" type="button" data-change><svg><use href="#i-tag" /></svg>Tag</button>
+          <button id="sel-utility" type="button" title="Screenshots and photos of receipts, documents, screens… are left out of the timeline">Utility shots</button>
           <button id="sel-delete" type="button" class="danger" data-change><svg><use href="#i-trash" /></svg>Delete</button>
         </div>
       </section>
@@ -150,11 +151,11 @@
                 <option value="4">★★★★ or more</option>
                 <option value="5">★★★★★</option>
               </select></label>
-              <label>Screenshots <select id="screenshots">
+              <label title="Screenshots and photos of receipts, documents, screens, boxes, tickets, whiteboards, instructions…">Utility shots <select id="screenshots">
                 <option value="">As usual here</option>
                 <option value="hide">Leave out</option>
                 <option value="with">Include</option>
-                <option value="only">Only screenshots</option>
+                <option value="only">Only utility shots</option>
               </select></label>
               <label class="check"><input id="live-only" type="checkbox"> Live Photos and motion photos only</label>
               <div class="popover-actions"><button id="filters-clear" type="button">Clear filters</button></div>

@@ -4,11 +4,13 @@ using PhotoGallery.Core;
 
 namespace PhotoGallery.Remote;
 
-// Changing the library from another computer. Ratings are always allowed; everything else only while the host's
-// Settings allow changes (read on every request), and each change is logged on the host.
+// Changing the library from another computer. Ratings and marking utility shots are always allowed (they only change
+// how the gallery shows photos); everything else only while the host's Settings allow changes (read on every request),
+// and each change is logged on the host.
 public sealed partial class RemoteServer
 {
     private sealed record RatingRequest(List<long>? Ids, int? Rating);
+    private sealed record UtilityRequest(List<long>? Ids, bool? Utility);
     private sealed record TagRequest(List<long>? Ids, string? Name, long? TagId);
     private sealed record NameRequest(string? Name);
     private sealed record HiddenRequest(bool Hidden);
@@ -38,6 +40,18 @@ public sealed partial class RemoteServer
             }
             _library.SetRating(body.Ids!, rating);
             await WriteJsonAsync(ctx, new { rating, count = body.Ids!.Count });
+        });
+        app.MapPost("/api/media/utility", async ctx =>
+        {
+            // utility: true (a utility shot), false (not one) or null (let the photo computer decide).
+            var body = await ReadAsync<UtilityRequest>(ctx);
+            if (!IdsOk(body?.Ids))
+            {
+                await WriteJsonAsync(ctx, new { error = "Which items?" }, StatusCodes.Status400BadRequest);
+                return;
+            }
+            _library.SetUtility(body!.Ids!, body.Utility);
+            await WriteJsonAsync(ctx, new { utility = body.Utility, count = body.Ids!.Count });
         });
 
         MapChange(app, "/api/media/delete", async ctx =>

@@ -42,7 +42,7 @@ public sealed partial class SettingsPage : Page
         PathsText.Text = $"Database: {services.Paths.Database}\nThumbnails: {services.Paths.Thumbnails}";
         var stats = await Task.Run(services.Media.GetStats);
         StatsText.Text =
-            $"{stats.Photos:N0} photos · {stats.Videos:N0} videos · {stats.Screenshots:N0} screenshots\n" +
+            $"{stats.Photos:N0} photos · {stats.Videos:N0} videos · {stats.Screenshots:N0} screenshots · {stats.UtilityShots:N0} utility shots\n" +
             $"Live & motion: {stats.LocalPairs:N0} with local video, {stats.Embedded:N0} with embedded video, {stats.Cloud:N0} with video in OneDrive";
     }
 
@@ -90,6 +90,10 @@ public sealed partial class SettingsPage : Page
               (similar.LastError is { } error ? error
                : !App.Services.Settings.FindSimilarInBackground ? "background comparing is off"
                : similar.IsWorking ? "Comparing…" : compared == all ? "Up to date" : "Waiting to start") + device;
+        var (scored, scorable, utility) = await Task.Run(App.Services.Media.GetUtilityProgress);
+        UtilityStatsText.Text = scorable == 0 ? ""
+            : $"{scored:N0} of {scorable:N0} compared photos checked for utility shots · {utility:N0} found" +
+              (scored < scorable && !similar.IsWorking && App.Services.Settings.FindSimilarInBackground ? " · checking…" : "");
     }
 
     private void OnPoiToggled(object sender, RoutedEventArgs e)

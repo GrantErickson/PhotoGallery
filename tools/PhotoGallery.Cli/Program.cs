@@ -6,6 +6,7 @@
 //   dotnet run --project tools/PhotoGallery.Cli -- motion <mediaId>
 //   dotnet run --project tools/PhotoGallery.Cli -- remote-check <computer> [--code "XXXX XXXX XXXX XXXX"]
 //   dotnet run --project tools/PhotoGallery.Cli -- remove-root <folder>
+//   dotnet run --project tools/PhotoGallery.Cli -- utility-sample <embedder exe> <output folder>
 using System.Diagnostics;
 using PhotoGallery.Core;
 using PhotoGallery.Core.Cloud;
@@ -46,6 +47,10 @@ switch (args.FirstOrDefault())
     }
     case "stats":
         PrintStats();
+        break;
+    case "utility-sample":
+        // Tuning utility shots: scores everything (nothing is saved) and writes contact sheets of each band of scores.
+        await PhotoGallery.Cli.UtilitySample.RunAsync(paths, database, media, thumbs, args[1], args[2]);
         break;
     case "remove-root":
     {
@@ -128,7 +133,7 @@ switch (args.FirstOrDefault())
         break;
     }
     default:
-        Console.WriteLine("Commands: index [root...] | stats | thumbs [count] | motion <mediaId> | remote-check <computer> [--code ...] | remove-root <folder>");
+        Console.WriteLine("Commands: index [root...] | stats | thumbs [count] | motion <mediaId> | remote-check <computer> [--code ...] | remove-root <folder> | utility-sample <embedder exe> <output folder>");
         break;
 }
 

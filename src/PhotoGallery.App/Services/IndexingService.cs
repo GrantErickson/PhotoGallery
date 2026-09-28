@@ -22,6 +22,9 @@ public sealed class IndexingService(AppServices services)
 
     public bool IsRunning { get; private set; }
 
+    /// <summary>For other background work that changes what views show (e.g. which photos are utility shots).</summary>
+    public void RaiseLibraryChanged() => LibraryChanged?.Invoke();
+
     public void Start()
     {
         RestartWatcher();

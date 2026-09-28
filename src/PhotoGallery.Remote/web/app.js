@@ -1628,6 +1628,29 @@
       fail(error);
     }
   });
+  $("sel-utility").addEventListener("click", async () => {
+    const choice = await ask({
+      title: `Mark ${plural(state.selected.size, "item", "items")}`,
+      text: "Utility shots (screenshots, and photos of receipts, documents, screens, boxes, tickets…) are left out of the timeline and the map.",
+      choices: [
+        { label: "Utility shots: leave out of the timeline", value: "yes" },
+        { label: "Not utility shots: show in the timeline", value: "no" },
+        { label: "Let the photo computer decide", value: "auto" },
+      ],
+    });
+    if (choice == null) return;
+    const ids = selectedIds();
+    try {
+      await post("/api/media/utility", { ids, utility: choice === "auto" ? null : choice === "yes" });
+      toast(choice === "yes" ? `Marked ${plural(ids.length, "item", "items")} as utility shots.`
+        : choice === "no" ? `Marked ${plural(ids.length, "item", "items")} as not utility shots.`
+        : `The photo computer decides for ${plural(ids.length, "item", "items")} again.`);
+      clearSelection();
+      reloadList();
+    } catch (error) {
+      fail(error);
+    }
+  });
   $("sel-delete").addEventListener("click", () => deleteIds(selectedIds()));
 
   function setRatings(ids, rating) {
@@ -2022,6 +2045,7 @@
     }
     tagsSection(d, section);
     albumsSection(d, section);
+    utilitySection(d, section);
     const file = [fileSize(d.size), d.width ? `${number(d.width)} × ${number(d.height)}` : "", d.video && d.durationMs ? duration(d.durationMs / 1000) : ""]
       .filter(Boolean).join(" · ");
     section("File", el("p", null, d.name), el("p", "muted", file));
@@ -2091,6 +2115,41 @@
       parts.push(form);
     }
     section("Tags", ...parts);
+  }
+
+  // Utility shots (receipts, documents, screens…) are left out of the timeline and the map, like screenshots.
+  function utilitySection(d, section) {
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = d.utility;
+    const label = el("label", "check");
+    label.append(box, document.createTextNode("Utility shot"));
+    label.title = "Screenshots and photos of receipts, documents, screens, boxes, tickets… are left out of the timeline and the map";
+    const note = d.utilityChosen ? "Chosen by hand."
+      : d.screenshot ? "A screenshot: left out of the timeline."
+      : d.utility ? "Looks like a record of something (a receipt, a document, a screen…): left out of the timeline."
+      : "";
+    const parts = [label];
+    if (note) parts.push(el("p", "muted", note));
+    const set = async utility => {
+      const id = d.id;
+      try {
+        await post("/api/media/utility", { ids: [id], utility });
+        if (utility === null) {
+          const fresh = await json(`/api/media/${id}`);
+          d.utility = fresh.utility;
+        } else {
+          d.utility = utility;
+        }
+        d.utilityChosen = utility !== null;
+      } catch (error) {
+        fail(error);
+      }
+      if (viewer.id === id) renderPanel(d);
+    };
+    box.addEventListener("change", () => set(box.checked));
+    if (d.utilityChosen) parts.push(button("Let the photo computer decide", null, () => set(null), "panel-button"));
+    section("Kind", ...parts);
   }
 
   function albumsSection(d, section) {
