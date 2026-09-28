@@ -33,7 +33,17 @@ public sealed partial class RemoteServer
         app.MapGet("/api/suggest", ctx => WriteJsonAsync(ctx, _library.Suggest(ctx.Request.Query["q"].ToString().Trim())
             .Select(s => new { text = s.Text, kind = s.Kind })));
         app.MapGet("/api/people", ctx => WriteJsonAsync(ctx, _library.GetPeople(ctx.Request.Query["hidden"] == "1")
-            .Select(p => new { id = p.Id, name = p.Name, count = p.Count, hidden = p.Hidden })));
+            .Select(p => new { id = p.Id, name = p.Name, count = p.Count, hidden = p.Hidden, notTagged = p.NotTagged })));
+        app.MapGet("/api/people/review", ctx => WriteJsonAsync(ctx, _library.GetPeopleToReview().Select(p => new { id = p.Id, count = p.Count })));
+        app.MapGet("/api/people/{id:long}/samples", ctx =>
+        {
+            var (samples, span) = _library.GetFaceSamples(IdOf(ctx), 8);
+            return WriteJsonAsync(ctx, new
+            {
+                first = span?.First, last = span?.Last,
+                samples = samples.Select(s => new { media = s.MediaId, taken = s.DateTaken }),
+            });
+        });
         app.MapGet("/api/albums", ctx => WriteJsonAsync(ctx, _library.GetAlbums()
             .Select(a => new { id = a.Id, name = a.Name, count = a.Count, cover = a.CoverMediaId })));
         app.MapGet("/api/tags", ctx => WriteJsonAsync(ctx, _library.GetTags()
@@ -80,6 +90,16 @@ public sealed partial class RemoteServer
             await WriteJsonAsync(ctx, DuplicatesJson());
         });
 
+        app.MapGet("/api/media/{id:long}/face", async ctx =>
+        {
+            if (await ItemOrNotFoundAsync(ctx) is not { } item) return;
+            if (!long.TryParse(ctx.Request.Query["person"], out var personId))
+            {
+                await BadAsync(ctx, "Whose face?");
+                return;
+            }
+            await SendFileAsync(ctx, await _library.GetFaceCropAsync(item, personId, ctx.RequestAborted), "image/jpeg", "private, max-age=86400");
+        });
         app.MapGet("/api/people/{id:long}/face", async ctx =>
         {
             var (path, final) = await _library.GetFaceAsync(IdOf(ctx), ctx.RequestAborted);

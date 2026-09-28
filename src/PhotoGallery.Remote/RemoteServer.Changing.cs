@@ -14,6 +14,7 @@ public sealed partial class RemoteServer
     private sealed record TagRequest(List<long>? Ids, string? Name, long? TagId);
     private sealed record NameRequest(string? Name);
     private sealed record HiddenRequest(bool Hidden);
+    private sealed record NotTaggedRequest(bool NotTagged);
     private sealed record MergeRequest(long Into);
 
     private void MapChanging(WebApplication app)
@@ -114,7 +115,19 @@ public sealed partial class RemoteServer
         {
             var name = (await ReadAsync<NameRequest>(ctx))?.Name?.Trim();
             if (name is { Length: > 200 }) return Bad("A name of up to 200 characters.");
-            _library.RenamePerson(IdOf(ctx), string.IsNullOrEmpty(name) ? null : name);
+            var id = IdOf(ctx);
+            // One name, one person: a name someone else already has is answered with them, to join instead.
+            if (!string.IsNullOrEmpty(name) && _library.GetPeople(includeHidden: true)
+                    .FirstOrDefault(p => p.Id != id && string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase)) is { } other)
+                return new { sameAs = new { id = other.Id, name = other.Name } };
+            _library.RenamePerson(id, string.IsNullOrEmpty(name) ? null : name);
+            return new { };
+        });
+        MapChange(app, "/api/people/{id:long}/nottagged", async ctx =>
+        {
+            var body = await ReadAsync<NotTaggedRequest>(ctx);
+            if (body is null) return Bad("Tagged or not?");
+            _library.SetPersonNotTagged(IdOf(ctx), body.NotTagged);
             return new { };
         });
         MapChange(app, "/api/people/{id:long}/hide", async ctx =>

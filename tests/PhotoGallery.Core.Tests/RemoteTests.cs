@@ -377,6 +377,33 @@ public sealed class RemoteServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Unnamed_people_can_be_reviewed_and_a_taken_name_offers_to_join()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        var review = await _client.GetFromJsonAsync<JsonElement>("api/people/review", ct);
+        Assert.Equal(8, review[0].GetProperty("id").GetInt64());
+        var samples = await _client.GetFromJsonAsync<JsonElement>("api/people/8/samples", ct);
+        Assert.Equal(1_690_000_000, samples.GetProperty("first").GetInt64());
+        Assert.Equal(1, samples.GetProperty("samples")[0].GetProperty("media").GetInt64());
+        using var face = await _client.GetAsync("api/media/1/face?person=8", ct);
+        Assert.Equal("image/jpeg", face.Content.Headers.ContentType?.MediaType);
+        using var noFace = await _client.GetAsync("api/media/1/face?person=7", ct);
+        Assert.Equal(HttpStatusCode.NotFound, noFace.StatusCode);
+        using var whose = await _client.GetAsync("api/media/1/face", ct);
+        Assert.Equal(HttpStatusCode.BadRequest, whose.StatusCode);
+
+        _library.AllowChanges = true;
+        using var notTagged = await _client.SendAsync(Post("api/people/8/nottagged", new { notTagged = true }), ct);
+        Assert.Equal(HttpStatusCode.OK, notTagged.StatusCode);
+        // "grant" is Grant's (person 7) already: nothing renamed, and the answer says who, to join instead.
+        using var taken = await _client.SendAsync(Post("api/people/8/rename", new { name = "grant" }), ct);
+        var sameAs = (await taken.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("sameAs");
+        Assert.Equal((7L, "Grant"), (sameAs.GetProperty("id").GetInt64(), sameAs.GetProperty("name").GetString()));
+        Assert.Equal(["person 8 not tagged True"], _library.Changes);
+    }
+
+    [Fact]
     public async Task Sections_and_filters_become_the_right_query()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -648,6 +675,16 @@ public sealed class RemoteServerTests : IAsyncLifetime
         public void RenamePerson(long personId, string? name) => Changes.Add($"person {personId} name {name}");
 
         public void HidePerson(long personId, bool hidden) => Changes.Add($"person {personId} hidden {hidden}");
+
+        public void SetPersonNotTagged(long personId, bool notTagged) => Changes.Add($"person {personId} not tagged {notTagged}");
+
+        public List<PersonRow> GetPeopleToReview() => [new PersonRow { Id = 8, Count = 3 }];
+
+        public (List<FaceSample> Samples, (long First, long Last)? Span) GetFaceSamples(long personId, int count) =>
+            ([new FaceSample(1, new PhotoGallery.Core.Cloud.FaceBox(0.1, 0.1, 0.2, 0.2), 1_700_000_000)], (1_690_000_000, 1_700_000_000));
+
+        public Task<string?> GetFaceCropAsync(MediaItem item, long personId, CancellationToken ct) =>
+            Task.FromResult<string?>(personId == 8 ? Thumbnail : null);
 
         public void MergePeople(long sourceId, long targetId) => Changes.Add($"person {sourceId} into {targetId}");
 

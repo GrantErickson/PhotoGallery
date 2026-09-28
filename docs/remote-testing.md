@@ -218,7 +218,8 @@ These need host step 6. Follow rule 2: change nothing outside the test folder.
 | F13 | Map | Clusters. The list below shows the photos in view and follows panning. Click a cluster: just its photos. Click the map: back to all in view. Zoomed right in, thumbnails as pins; clicking one opens it. |
 | F14 | Folders, then a folder; untick Include subfolders | Its photos, then without subfolders. |
 | F15 | Tags | Your tags first, then OneDrive's; each opens its photos. |
-| F16 | People › Show hidden people; a person › Hide from People, then Show in People; Rename and rename back | Each works; the name shows at once. Don't use Merge on real people. |
+| F16 | People › Show › each choice; an unnamed person › Known, but don't tag, then Look at again in Who's this?; Not someone I know, then Show again | Each works and shows at once. **Don't name, rename or join ("Same person as…") real people**: names and joins now go to Grant's OneDrive. Setting aside stays on the host. |
+| F16b | People › Who's this?: look at a few (faces, years, "See all"), click a face, Skip, Back; type the first letters of a named person | Faces from different years; a face opens that photo, Back returns to the same person. Typing a named person's name turns the button into "Same person as …" with their face. **Don't press it**, and don't name anyone (both go to OneDrive): Skip instead. |
 | F17 | Duplicates › Find duplicates | Progress, then groups ("Keep" on one). The two `remote-test-… (copy)` files show as exact copies. Delete the extra copy of **those** only. |
 | F18 | Blurry photos | Blurriest first; grouping off. |
 | F19 | Type 2+ letters in the search box | Suggestions include people, places and tags. |

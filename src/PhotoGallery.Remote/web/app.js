@@ -352,10 +352,10 @@
     videos: { title: "Videos", query: { section: "videos" }, empty: "No videos found." },
     blurry: { title: "Blurry photos", query: { section: "blurry" }, group: "none", subtitle: "Blurriest first · Filters › Live Photos only finds the ones whose video may have a sharper frame", empty: "No blurry photos (or they haven't all been measured yet on the photo computer)." },
   };
-  const pages = new Set(["people", "albums", "tags", "folders", "duplicates"]);
+  const pages = new Set(["people", "albums", "tags", "folders", "duplicates", "who"]);
 
   function setNav(section) {
-    const selected = { person: "people", album: "albums", tag: "tags", folder: "folders", area: "map", similar: null }[section] ?? section;
+    const selected = { person: "people", who: "people", album: "albums", tag: "tags", folder: "folders", area: "map", similar: null }[section] ?? section;
     for (const link of document.querySelectorAll(".nav a")) link.classList.toggle("selected", link.dataset.section === selected);
   }
 
@@ -377,10 +377,11 @@
     $("section-actions").replaceChildren();
     if (route.section !== "search") setSearchText("");
     if (pages.has(route.section)) {
-      showPane(route.section === "folders" || route.section === "duplicates" ? "page" : "cards");
+      showPane(["folders", "duplicates", "who"].includes(route.section) ? "page" : "cards");
       if (route.section === "folders") return showFolders(token);
       if (route.section === "duplicates") return showDuplicates(token);
-      return showCards(route.section, route.params.get("hidden") === "1", token);
+      if (route.section === "who") return showWho(token);
+      return showCards(route.section, route.params.get("show") || (route.params.get("hidden") === "1" ? "hidden" : ""), token);
     }
     if (route.section === "map") {
       showPane("map");
@@ -428,7 +429,7 @@
         const person = (await getPeople().catch(() => [])).find(x => String(x.id) === route.id)
           || (await json("/api/people?hidden=1").catch(() => [])).find(x => String(x.id) === route.id);
         title = person?.name || "Unnamed person";
-        subtitle = person?.hidden ? "Hidden from People" : "";
+        subtitle = person?.hidden ? "Not someone you know (kept on the photo computer)" : person?.notTagged ? "Known, not tagged (kept on the photo computer)" : "";
         personActions(person || { id: Number(route.id) });
         break;
       }
@@ -542,7 +543,20 @@
       const name = await ask({ title: person.name ? "Rename" : "Who is this?", input: "Name", value: person.name || "", ok: "Save" });
       if (name == null) return;
       try {
-        await post(`/api/people/${person.id}/rename`, { name });
+        const result = await post(`/api/people/${person.id}/rename`, { name });
+        if (result.sameAs) {
+          // One name, one person.
+          const other = result.sameAs;
+          if (!await ask({
+            title: `Same person as ${other.name}?`,
+            text: `${other.name} is already someone. These photos will be joined to theirs, here and in OneDrive. OneDrive can't undo that.`,
+            ok: "Join them",
+          })) return;
+          await post(`/api/people/${person.id}/merge`, { into: other.id });
+          state.people = null;
+          toast(`Joined to ${other.name}.`);
+          return go(`#/person/${other.id}`);
+        }
         state.people = null;
         $("title").textContent = name;
         person.name = name;
@@ -551,38 +565,243 @@
         fail(error);
       }
     });
-    const hide = button(person.hidden ? "Show in People" : "Hide from People", null, async () => {
+    // Setting aside stays on the photo computer.
+    const hide = button(person.hidden ? "Show again" : "Not someone I know", null, async () => {
       try {
         await post(`/api/people/${person.id}/hide`, { hidden: !person.hidden });
         state.people = null;
         person.hidden = !person.hidden;
-        hide.lastChild.textContent = person.hidden ? "Show in People" : "Hide from People";
-        toast(person.hidden ? "Hidden from People." : "Shown in People again.");
+        hide.lastChild.textContent = person.hidden ? "Show again" : "Not someone I know";
+        notTagged.hidden = !!person.name || person.hidden;
+        toast(person.hidden ? "Left out of People." : "Back in People.");
       } catch (error) {
         fail(error);
       }
     });
-    const merge = button("Merge into…", null, async () => {
+    const notTagged = button(person.notTagged ? "Look at again in Who's this?" : "Known, but don't tag", null, async () => {
+      try {
+        await post(`/api/people/${person.id}/nottagged`, { notTagged: !person.notTagged });
+        state.people = null;
+        person.notTagged = !person.notTagged;
+        notTagged.lastChild.textContent = person.notTagged ? "Look at again in Who's this?" : "Known, but don't tag";
+        toast(person.notTagged ? "Set aside: known, not tagged." : "Back in Who's this?");
+      } catch (error) {
+        fail(error);
+      }
+    });
+    notTagged.hidden = !!person.name || !!person.hidden;
+    const merge = button("Same person as…", null, async () => {
       const people = (await getPeople().catch(() => [])).filter(x => x.id !== person.id && x.name);
       const into = await ask({
-        title: `Merge ${person.name || "this person"} into…`,
-        text: "Their photos go to the person you choose. This can't be undone here.",
+        title: `${person.name || "This person"} is the same person as…`,
+        text: "Their photos are joined to the person you choose, here and in OneDrive.",
         choices: people.map(x => ({ label: x.name, hint: number(x.count), value: x.id })),
       });
       if (into == null) return;
       const target = people.find(x => x.id === into);
-      if (!await ask({ title: `Merge into ${target.name}?`, text: `${person.name || "This person"} becomes ${target.name}.`, ok: "Merge", danger: true })) return;
+      if (!await ask({ title: `Join to ${target.name}?`, text: `${person.name || "This person"} becomes ${target.name}, here and in OneDrive. OneDrive can't undo that.`, ok: "Join them", danger: true })) return;
       try {
         await post(`/api/people/${person.id}/merge`, { into });
         state.people = null;
-        toast(`Merged into ${target.name}.`);
+        toast(`Joined to ${target.name}.`);
         go(`#/person/${into}`);
       } catch (error) {
         fail(error);
       }
     });
-    [rename, hide, merge].forEach(b => b.setAttribute("data-change", ""));
-    actions(rename, hide, merge);
+    [rename, hide, notTagged, merge].forEach(b => b.setAttribute("data-change", ""));
+    actions(rename, merge, notTagged, hide);
+  }
+
+  // ---------- Who's this? People nobody has named, most photos first ----------
+
+  const who = { queue: null, index: 0, decisions: new Map() };
+  const monthYear = new Intl.DateTimeFormat(undefined, { timeZone: "UTC", month: "short", year: "numeric" });
+
+  /** Starts going through them afresh (coming back from a person's photos keeps the place instead). */
+  function startWho() {
+    who.queue = null;
+    go("#/who");
+  }
+
+  async function showWho(token) {
+    $("title").textContent = "Who's this?";
+    $("subtitle").textContent = "Loading…";
+    $("page").replaceChildren();
+    try {
+      if (!who.queue) {
+        who.queue = await json("/api/people/review");
+        who.index = 0;
+        who.decisions.clear();
+      }
+      state.people = null;
+      await getPeople();
+      if (token === state.loadToken) renderWho(token);
+    } catch (error) {
+      if (token === state.loadToken && error.status !== 401) $("subtitle").textContent = error.message;
+    }
+  }
+
+  function renderWho(token) {
+    const page = $("page");
+    const person = who.queue[who.index];
+    if (!person) {
+      $("subtitle").textContent = who.queue.length ? "That's everyone for now." : "Everyone OneDrive found has a name or has been set aside.";
+      const note = el("p", "muted");
+      const people = el("a", null, "People");
+      people.href = "#/people";
+      note.append("Set someone aside by mistake? ", people, " has them under Show.");
+      page.replaceChildren(note);
+      return;
+    }
+    $("subtitle").textContent = `${number(who.index + 1)} of ${number(who.queue.length)} · ${plural(person.count, "photo", "photos")}`;
+
+    const about = el("div", "who-about");
+    const years = el("span", "muted");
+    const all = el("a", null, person.count === 1 ? "See the photo" : `See all ${number(person.count)}`);
+    all.href = `#/person/${person.id}`;
+    about.append(years, all);
+    if (who.decisions.has(person.id)) about.append(el("span", "decided", who.decisions.get(person.id)));
+    const faces = el("div", "who-faces");
+
+    // A new name names them; someone already named joins them (one name, one person).
+    const named = (state.people || []).filter(p => p.name && p.id !== person.id).sort((a, b) => b.count - a.count);
+    const matchOf = text => named.find(p => p.name.toLowerCase() === text.toLowerCase());
+    const form = el("form", "who-answer");
+    form.setAttribute("data-change", "");
+    const input = el("input");
+    input.type = "search";
+    input.placeholder = "Their name, or someone you've named";
+    input.autocomplete = "off";
+    input.setAttribute("aria-label", "Name");
+    input.setAttribute("list", "who-names");
+    const list = el("datalist");
+    list.id = "who-names";
+    list.append(...named.map(p => Object.assign(el("option"), { value: p.name })));
+    const match = el("img", "match");
+    match.alt = "";
+    match.hidden = true;
+    match.addEventListener("error", () => (match.hidden = true));
+    const save = el("button", "primary", "Name");
+    save.type = "submit";
+    save.disabled = true;
+    form.append(input, list, match, save);
+    input.addEventListener("input", () => {
+      const text = input.value.trim();
+      const same = text ? matchOf(text) : null;
+      save.disabled = !text;
+      save.textContent = same ? `Same person as ${same.name}` : "Name";
+      match.hidden = !same;
+      if (same) {
+        match.src = `/api/people/${same.id}/face`;
+        match.title = same.name;
+      }
+    });
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      save.disabled = true;
+      try {
+        let into = matchOf(text);
+        if (!into) {
+          const result = await post(`/api/people/${person.id}/rename`, { name: text });
+          if (!result.sameAs) {
+            decide(person, `Named ${text}`);
+            return whoStep(1);
+          }
+          into = result.sameAs; // someone not in the list (set aside): make sure
+          if (!await ask({ title: `Same person as ${into.name}?`, text: `${into.name} is already someone. Join these photos to theirs, here and in OneDrive?`, ok: "Join them" })) {
+            save.disabled = false;
+            return;
+          }
+        }
+        await post(`/api/people/${person.id}/merge`, { into: into.id });
+        person.joined = true;
+        decide(person, `Joined to ${into.name}`);
+        whoStep(1);
+      } catch (error) {
+        save.disabled = false;
+        fail(error);
+      }
+    });
+    const hint = el("p", "muted who-hint",
+      "A new name names them here and in OneDrive. Someone you've named: these photos join theirs, here and in OneDrive (OneDrive can't undo that).");
+    hint.setAttribute("data-change", "");
+
+    // Setting aside stays on the photo computer.
+    const aside = (label, tip, path, body, decision) => {
+      const b = button(label, null, async () => {
+        try {
+          await post(path, body);
+          decide(person, decision);
+          whoStep(1);
+        } catch (error) {
+          fail(error);
+        }
+      });
+      b.title = tip;
+      b.setAttribute("data-change", "");
+      return b;
+    };
+    const row = el("div", "who-actions");
+    const back = button("Back", null, () => whoStep(-1));
+    back.disabled = who.index === 0;
+    row.append(
+      aside("Known, but don't tag", "You know them, but they don't need tagging. Stays on the photo computer; People › Known, not tagged has them.",
+        `/api/people/${person.id}/nottagged`, { notTagged: true }, "Known, not tagged"),
+      aside("Not someone I know", "Leaves them out of People. Stays on the photo computer; People › Not someone I know has them.",
+        `/api/people/${person.id}/hide`, { hidden: true }, "Not someone I know"),
+      button("Skip", null, () => whoStep(1)),
+      back);
+    page.replaceChildren(about, faces, form, hint, row);
+    if (state.changes) input.focus();
+
+    // Their faces (click one for the photo), then the next person's meanwhile.
+    json(`/api/people/${person.id}/samples`).then(data => {
+      if (token !== state.loadToken || who.queue[who.index] !== person) return;
+      const year = s => new Date(s * 1000).getUTCFullYear();
+      if (data.first != null) years.textContent = year(data.first) === year(data.last) ? `In photos from ${year(data.first)}` : `In photos from ${year(data.first)} to ${year(data.last)}`;
+      const ids = data.samples.map(s => s.media);
+      faces.replaceChildren(...data.samples.map(s => {
+        const face = el("button", "who-face");
+        face.type = "button";
+        face.title = "Open the photo";
+        const img = el("img");
+        img.alt = "";
+        img.src = `/api/media/${s.media}/face?person=${person.id}`;
+        img.addEventListener("error", () => img.classList.add("broken"));
+        face.append(img, el("span", null, monthYear.format(new Date(s.taken * 1000))));
+        face.addEventListener("click", () => {
+          state.items = { ids, dates: ids.map(() => 0), flags: ids.map(() => 0) };
+          const current = parseHash();
+          current.params.set("view", s.media);
+          viewer.pushed = true;
+          go(hashOf(current));
+        });
+        return face;
+      }));
+    }).catch(() => {});
+    const following = who.queue[who.index + 1];
+    if (following) json(`/api/people/${following.id}/samples`)
+      .then(data => data.samples.forEach(s => { new Image().src = `/api/media/${s.media}/face?person=${following.id}`; }))
+      .catch(() => {});
+  }
+
+  function decide(person, decision) {
+    who.decisions.set(person.id, decision);
+    state.people = null;
+    toast(decision + ".");
+  }
+
+  /** On (or back), past people joined to someone meanwhile. */
+  async function whoStep(step) {
+    let index = who.index + step;
+    while (index >= 0 && index < who.queue.length && who.queue[index].joined) index += step;
+    if (index < 0) return;
+    who.index = index;
+    if (!state.people) await getPeople().catch(() => []);
+    renderWho(state.loadToken);
   }
 
   function albumActions(album) {
@@ -834,7 +1053,7 @@
 
   // ---------- People, albums and tags ----------
 
-  async function showCards(kind, showHidden, token) {
+  async function showCards(kind, show, token) {
     $("title").textContent = { people: "People", albums: "Albums", tags: "Tags" }[kind];
     $("subtitle").textContent = "Loading…";
     $("cards").replaceChildren();
@@ -854,17 +1073,34 @@
       });
       create.setAttribute("data-change", "");
       actions(create);
-    } else if (kind === "people") {
-      const link = el("a", null, showHidden ? "Hide the hidden people" : "Show hidden people");
-      link.href = showHidden ? "#/people" : "#/people?hidden=1";
-      actions(link);
+    }
+    let whoButton = null;
+    if (kind === "people") {
+      // Everyone, or those set aside (which stay on the photo computer).
+      const which = el("select");
+      which.title = "People you set aside stay on the photo computer; OneDrive still has them";
+      for (const [value, label] of [["", "People"], ["nottagged", "Known, not tagged"], ["hidden", "Not someone I know"]])
+        which.append(Object.assign(el("option", null, label), { value }));
+      which.value = show;
+      which.addEventListener("change", () => go(which.value ? `#/people?show=${which.value}` : "#/people"));
+      whoButton = button("Who's this?", null, startWho, "primary");
+      whoButton.title = "Go through the people nobody has named yet, most photos first";
+      whoButton.setAttribute("data-change", "");
+      actions(which, whoButton);
     }
     try {
-      const rows = kind === "people" ? (showHidden ? await json("/api/people?hidden=1") : await getPeople())
-        : kind === "albums" ? await getAlbums() : await getTags();
+      const all = kind === "people" ? await json("/api/people?hidden=1") : kind === "albums" ? await getAlbums() : await getTags();
       if (token !== state.loadToken) return;
+      const rows = kind !== "people" ? all
+        : all.filter(p => show === "hidden" ? p.hidden : show === "nottagged" ? p.notTagged && !p.hidden : !p.hidden && !p.notTagged);
+      if (whoButton) {
+        const unnamed = all.filter(p => !p.name && !p.hidden && !p.notTagged).length;
+        whoButton.lastChild.textContent = unnamed ? `Who's this? (${number(unnamed)})` : "Who's this?";
+      }
       $("subtitle").textContent = kind === "people"
-        ? `${plural(rows.length, "person", "people")} OneDrive recognised in your photos`
+        ? show === "hidden" ? `${plural(rows.length, "person", "people")} you don't know`
+          : show === "nottagged" ? `${plural(rows.length, "person", "people")} you know but didn't want tagged`
+            : `${plural(rows.length, "person", "people")} OneDrive recognised in your photos`
         : kind === "albums" ? plural(rows.length, "album", "albums")
           : `${plural(rows.filter(t => t.yours).length, "tag", "tags")} of yours, ${number(rows.filter(t => !t.yours).length)} from OneDrive`;
       const cards = (kind === "tags" ? [...rows].sort((a, b) => (b.yours - a.yours) || b.count - a.count) : rows).map(row => {

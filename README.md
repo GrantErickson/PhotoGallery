@@ -69,8 +69,15 @@ works out live in its own database.
   gallery only.
 
 ### People, places and the map
-- **People from OneDrive**: the names you gave and the people OneDrive merged, with face positions and avatars. You
-  can rename, merge and hide them.
+- **People from OneDrive**: the names you gave and the people OneDrive merged, with face positions and avatars.
+- **Who's this?** (People › Who's this?) goes through the people OneDrive found but nobody named, most photos first,
+  with a few of their faces from over the years. Type a name, or pick someone already named to join them. Names and
+  joins go back to OneDrive too, the way OneDrive's own People page sends them: right away, or when OneDrive is
+  connected again (Settings shows anything waiting or refused). Or set someone aside, on this PC only:
+  - **Known, but don't tag**: out of the way until you name them after all;
+  - **Not someone I know**: left out of People.
+
+  People › Show has both, to change your mind. Right-click anyone on People to name, join or set them aside.
 - **Place names**:
   - **your places**: a centre and a radius you draw on the map, e.g. "Home" or "Grandma's";
   - OneDrive's place names, and the nearest town from GeoNames' offline list;
@@ -108,7 +115,7 @@ works out live in its own database.
   - select photos, then rate, add to an album, tag, mark as utility shots or delete them (to the main PC's Recycle
     Bin);
   - make, rename and delete albums;
-  - rename, hide and merge people;
+  - Who's this?, and naming, joining and setting aside people (names and joins go to OneDrive through the main PC);
   - clear out duplicates.
 - **Edit from there too**:
   - photos: rotate, flip, crop (free or a fixed shape), light and colour, Auto; save as a copy, overwrite the

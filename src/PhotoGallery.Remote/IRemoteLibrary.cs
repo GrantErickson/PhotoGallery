@@ -33,6 +33,15 @@ public interface IRemoteLibrary
 
     List<PersonRow> GetPeople(bool includeHidden);
 
+    /// <summary>Unnamed people still to look at ("Who's this?"): not set aside, most photos first.</summary>
+    List<PersonRow> GetPeopleToReview();
+
+    /// <summary>Some of a person's faces, spread over the years (oldest first), and when they were first and last photographed.</summary>
+    (List<FaceSample> Samples, (long First, long Last)? Span) GetFaceSamples(long personId, int count);
+
+    /// <summary>A square crop around this person's face in this photo (a JPEG's path), or null.</summary>
+    Task<string?> GetFaceCropAsync(MediaItem item, long personId, CancellationToken ct);
+
     List<AlbumRow> GetAlbums();
 
     List<TagRow> GetTags();
@@ -89,10 +98,16 @@ public interface IRemoteLibrary
 
     void RemoveFromAlbum(long albumId, IReadOnlyCollection<long> ids);
 
+    /// <summary>Names someone (on the host, and in OneDrive through the host).</summary>
     void RenamePerson(long personId, string? name);
 
+    /// <summary>"Not someone I know" (or back again); stays on the host.</summary>
     void HidePerson(long personId, bool hidden);
 
+    /// <summary>"Known, but don't tag" (or back to be looked at); stays on the host.</summary>
+    void SetPersonNotTagged(long personId, bool notTagged);
+
+    /// <summary>Joins someone to another person (on the host, and in OneDrive through the host).</summary>
     void MergePeople(long sourceId, long targetId);
 
     // ---------- Editing (previews and finding frames are read-only; saving needs AllowChanges) ----------

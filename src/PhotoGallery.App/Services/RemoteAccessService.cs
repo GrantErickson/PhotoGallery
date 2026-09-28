@@ -167,6 +167,16 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 
     public List<PersonRow> GetPeople(bool includeHidden) => services.People.GetPeople(includeHidden);
 
+    public List<PersonRow> GetPeopleToReview() => services.People.GetToReview();
+
+    public (List<FaceSample> Samples, (long First, long Last)? Span) GetFaceSamples(long personId, int count) =>
+        (services.People.GetFaceSamples(personId, count), services.People.GetSpan(personId));
+
+    public async Task<string?> GetFaceCropAsync(MediaItem item, long personId, CancellationToken ct) =>
+        services.People.GetFacesIn(item.Id).FirstOrDefault(f => f.PersonId == personId)?.Box is { } box
+            ? await services.Faces.GetSampleAsync(item.Id, item.Path, box)
+            : null;
+
     public List<AlbumRow> GetAlbums() => services.Collections.GetAlbums();
 
     // ---------- Changes from another computer (the server checks AllowChanges first; ratings are always allowed) ----------
@@ -194,7 +204,17 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 
     public void RenamePerson(long personId, string? name) => services.People.Rename(personId, name);
 
-    public void HidePerson(long personId, bool hidden) => services.People.SetHidden(personId, hidden);
+    public void HidePerson(long personId, bool hidden)
+    {
+        services.People.SetHidden(personId, hidden);
+        if (hidden) services.People.SetNotTagged(personId, false);
+    }
+
+    public void SetPersonNotTagged(long personId, bool notTagged)
+    {
+        services.People.SetNotTagged(personId, notTagged);
+        if (notTagged) services.People.SetHidden(personId, false);
+    }
 
     public void MergePeople(long sourceId, long targetId) => services.People.Merge(sourceId, targetId);
 
