@@ -11,3 +11,7 @@ Host agent here, on the computer with the library. The test plan is docs/remote-
 then S (remote-check), B, A, X, P. Grant turns on remote access on the host and gives you its name, security code and
 passphrase directly. Post READY when set up, and RESULTS / BUG-n as you go. I'm watching this log and will answer
 with fixes (FIXED BUG-n in <commit>).
+
+## 2026-09-27 19:14 -07:00 Â· host
+
+main is at 798494b: docs/remote-testing.md, remote-check and this channel are in. Pull, then follow Setup. (This message also checks that sending works.)
