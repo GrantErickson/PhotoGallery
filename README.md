@@ -13,6 +13,8 @@ works out live in its own database.
 - **Timeline** of every photo and video, newest first, with day badges and a year/month jump list that follows the
   scrolling. It stays smooth with 250,000 items.
 - **Adjustable tiles** (slider or Ctrl+mouse wheel), cropped around faces. Video tiles play a preview in place.
+- **Stars without opening a photo**: right-click a photo (or a selection) › Rate › ★ to ★★★★★ or Clear rating, or
+  press 1–5 (0 clears) on the selected photos.
 - **Filters** on every gallery: photos or videos, minimum rating, Live Photos only, utility shots (none / with / only),
   and **people** (photos with everyone you pick, chosen from face avatars).
 - **Utility shots** stay out of the timeline and the map: screenshots, and photos of receipts, documents, screens,
@@ -34,7 +36,8 @@ works out live in its own database.
   back to where you started.
 
 ### Viewer
-- **Zoom**, next and previous, **ratings** (1–5), tags, albums, copy path, show in Explorer, open in OneDrive.
+- **Zoom**, next and previous, **ratings** (1–5; Clear or 0 removes them), tags, albums, copy path, show in Explorer,
+  open in OneDrive.
 - **Details**: date, camera, size, location with the **place name** (your place, the park or restaurant, and the
   town). Click the name or the coordinates to open the map there.
 - **Faces**: names on hover, face outlines, and a click takes you to that person.
@@ -101,6 +104,7 @@ works out live in its own database.
   - the filters: people, photos or videos, rating, Live Photos only, utility shots;
   - finding a place on the map, as in the app.
 - **Organize from there too**:
+  - right-click a photo to rate it or clear its stars;
   - select photos, then rate, add to an album, tag, mark as utility shots or delete them (to the main PC's Recycle
     Bin);
   - make, rename and delete albums;

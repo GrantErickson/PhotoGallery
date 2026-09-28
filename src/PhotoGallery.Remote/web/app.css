@@ -270,6 +270,29 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .stars button svg { width: 19px; height: 19px; }
 .stars button.on { color: var(--star); }
 .stars button.on svg { fill: currentColor; }
+.stars button.clear-stars { color: var(--muted); font-size: 12px; padding: 4px 6px; margin-left: 2px; }
+.stars button.clear-stars:hover { color: var(--text); }
+
+.tile-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 170px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.tile-menu p { margin: 4px 10px 2px; font-size: 12px; }
+.tile-menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
+.tile-menu button { justify-content: flex-start; border: 0; background: none; padding: 6px 10px; border-radius: 5px; text-align: left; }
+.tile-menu button:hover:not(:disabled), .tile-menu button:focus-visible { background: var(--surface-2); }
+.tile-menu button:disabled { opacity: .45; }
+.tile-menu .stars-choice { color: var(--star); letter-spacing: 1px; }
+.tile-menu .stars-choice.on { background: var(--surface-2); font-weight: 600; }
+.tile-menu svg { width: 14px; height: 14px; }
 .viewer-body { flex: 1; display: flex; min-height: 0; }
 .v-stage { flex: 1; position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; overflow: hidden; touch-action: pan-y pinch-zoom; }
 /* Pinned to the stage's edges and fitted inside it: as grid items, a big photo would stretch the grid to its own size. */

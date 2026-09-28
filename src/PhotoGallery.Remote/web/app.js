@@ -1578,18 +1578,86 @@
   $("sel-rate").addEventListener("click", async () => {
     const rating = await ask({
       title: `Rate ${plural(state.selected.size, "item", "items")}`,
-      choices: [5, 4, 3, 2, 1, 0].map(n => ({ label: n ? "★".repeat(n) : "No stars", value: n })),
+      choices: [5, 4, 3, 2, 1].map(n => ({ label: "★".repeat(n), value: n })).concat({ label: "Clear rating", value: 0 }),
     });
-    if (rating == null) return;
-    const ids = selectedIds();
+    if (rating != null && await rateIds(selectedIds(), rating)) clearSelection();
+  });
+
+  /** Sets (or with 0 clears) the stars of these items. */
+  async function rateIds(ids, rating) {
     try {
       await post("/api/media/rating", { ids, rating });
       setRatings(ids, rating);
-      clearSelection();
+      return true;
     } catch (error) {
       fail(error);
+      return false;
     }
+  }
+
+  // ---------- Right-click a tile: its stars (or the selection's, when it's part of it) ----------
+
+  let tileMenu = null;
+
+  $("sizer").addEventListener("contextmenu", event => {
+    const tile = event.target.closest(".tile");
+    if (!tile) return;
+    event.preventDefault();
+    const id = state.items.ids[Number(tile.dataset.index)];
+    showTileMenu(event.clientX, event.clientY, state.selected.has(id) && state.selected.size > 1 ? selectedIds() : [id]);
   });
+
+  function showTileMenu(x, y, ids) {
+    closeTileMenu();
+    const chosen = new Set(ids), ratings = new Set();
+    state.items.ids.forEach((id, i) => chosen.has(id) && ratings.add((state.items.flags[i] >> 2) & 7));
+    const menu = el("div", "tile-menu");
+    menu.setAttribute("role", "menu");
+    menu.append(el("p", "muted", ids.length > 1 ? `Rate ${plural(ids.length, "item", "items")}` : "Rate"));
+    const choose = rating => {
+      closeTileMenu();
+      rateIds(ids, rating);
+    };
+    for (let n = 5; n >= 1; n--) {
+      const item = button("★".repeat(n), null, () => choose(n), "stars-choice" + (ratings.size === 1 && ratings.has(n) ? " on" : ""));
+      item.setAttribute("role", "menuitemradio");
+      item.setAttribute("aria-checked", String(ratings.size === 1 && ratings.has(n)));
+      item.title = `${n} star${n > 1 ? "s" : ""} (${n})`;
+      menu.append(item);
+    }
+    const clear = button("Clear rating", "close", () => choose(0));
+    clear.setAttribute("role", "menuitem");
+    clear.title = "Clear rating (0)";
+    clear.disabled = ![...ratings].some(r => r > 0);
+    menu.append(el("hr"), clear);
+    menu.choose = choose; // Escape and 0–5 come through the page's keys
+    menu.addEventListener("keydown", e => {
+      const items = [...menu.querySelectorAll("button:not(:disabled)")];
+      const at = items.indexOf(document.activeElement);
+      if (e.key === "ArrowDown") items[(at + 1) % items.length]?.focus();
+      else if (e.key === "ArrowUp") items[(at - 1 + items.length) % items.length]?.focus();
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    document.body.append(menu);
+    const box = menu.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(x, innerWidth - box.width - 8)) + "px";
+    menu.style.top = Math.max(8, Math.min(y, innerHeight - box.height - 8)) + "px";
+    tileMenu = menu;
+    menu.querySelector("button:not(:disabled)").focus();
+  }
+
+  function closeTileMenu() {
+    tileMenu?.remove();
+    tileMenu = null;
+  }
+
+  document.addEventListener("pointerdown", event => {
+    if (tileMenu && !tileMenu.contains(event.target)) closeTileMenu();
+  }, true);
+  $("scroller").addEventListener("scroll", closeTileMenu, { passive: true });
+  addEventListener("blur", closeTileMenu);
   $("sel-album").addEventListener("click", async () => {
     try {
       const album = await chooseAlbum(`Add ${plural(state.selected.size, "item", "items")} to…`);
@@ -1902,6 +1970,13 @@
       star.append(icon("star"));
       star.addEventListener("click", () => rate(rating === n ? 0 : n));
       stars.append(star);
+    }
+    if (rating) {
+      const clear = el("button", "clear-stars", "Clear");
+      clear.type = "button";
+      clear.title = "Clear the rating (0)";
+      clear.addEventListener("click", () => rate(0));
+      stars.append(clear);
     }
   }
 
@@ -2847,6 +2922,13 @@
   // ---------- Keys ----------
 
   document.addEventListener("keydown", event => {
+    if (tileMenu) {
+      if (event.key === "Escape") closeTileMenu();
+      else if (/^[0-5]$/.test(event.key)) tileMenu.choose(Number(event.key));
+      else return;
+      event.preventDefault();
+      return;
+    }
     if (!$("dialog").hidden) return;
     if (!$("editor").hidden) {
       if (event.key === "Escape") cancelEditor();
@@ -2901,6 +2983,9 @@
     }
     if (event.key === "Escape" && state.selected.size) {
       clearSelection();
+      event.preventDefault();
+    } else if (/^[0-5]$/.test(event.key) && state.selected.size && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      rateIds(selectedIds(), Number(event.key));
       event.preventDefault();
     } else if (event.key === "Delete" && state.selected.size && state.changes) {
       deleteIds(selectedIds());

@@ -248,7 +248,13 @@
             </Grid.RowDefinitions>
         <ScrollViewer x:Name="DetailsScroll" Padding="16,8,16,16">
             <StackPanel Spacing="14">
-                <RatingControl x:Name="Rating" HorizontalAlignment="Left" IsClearEnabled="True" ValueChanged="OnRatingChanged" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <RatingControl x:Name="Rating" IsClearEnabled="True" ValueChanged="OnRatingChanged"
+                                   ToolTipService.ToolTip="Stars: click, or press 1 to 5" />
+                    <Button x:Name="ClearRatingButton" Content="Clear" Click="OnClearRating" Visibility="Collapsed" VerticalAlignment="Center"
+                            Padding="8,2" MinHeight="0" FontSize="12" Style="{StaticResource SubtleButtonStyle}"
+                            ToolTipService.ToolTip="Clear the rating (0)" />
+                </StackPanel>
 
                 <StackPanel Spacing="2">
                     <TextBlock Text="Taken" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

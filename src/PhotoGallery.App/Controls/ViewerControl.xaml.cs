@@ -251,6 +251,7 @@ public sealed partial class ViewerControl : UserControl
         _suppressRating = true;
         Rating.Value = item.Rating > 0 ? item.Rating : -1;
         _suppressRating = false;
+        ClearRatingButton.Visibility = item.Rating > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         RefreshTags();
         RefreshAlbums();
@@ -834,7 +835,10 @@ public sealed partial class ViewerControl : UserControl
         _suppressRating = true;
         Rating.Value = rating > 0 ? rating : -1;
         _suppressRating = false;
+        ClearRatingButton.Visibility = rating > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private void OnClearRating(object sender, RoutedEventArgs e) => SetRating(0);
 
     private void ShowUtility(MediaItem item)
     {

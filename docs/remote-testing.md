@@ -205,6 +205,7 @@ These need host step 6. Follow rule 2: change nothing outside the test folder.
 | F1 | With changes off on the host, select a photo | Only Rate shows. Add to album, Tag and Delete are gone, and in the viewer the album and delete buttons too. |
 | F2 | Changes on. Folders › C:\PhotoGalleryRemoteTest. Hover a tile, click its circle; Shift-click another; Ctrl+A; Esc | Selection bar with the count; a run selected; everything; cleared. |
 | F3 | Select 3 test photos › Rate › ★★★ | Stars on the tiles; still there after reloading the page. |
+| F3b | Right-click a test photo › ★★; right-click it again › Clear rating; select two › press 4, then 0; in the viewer, Clear next to the stars | The menu opens at the pointer with the current stars marked (Esc closes it). The tiles' stars follow each change; Clear rating is greyed out when there are none. |
 | F4 | Select 2 › Add to album › New album… "Remote test" | "Added 2 items…". Albums lists it with a cover. In the album: select one › Remove from album; Rename; Delete album (the photos stay). |
 | F5 | Select 2 › Tag "remote-test" | Tags lists it; the tag's page shows the 2. In the viewer's details the tag has an ×; remove it there. |
 | F6 | Select 1 › Delete (or the Del key) | A question naming the host's Recycle Bin, then the photo leaves the list, and the count updates. On the host it's in the Recycle Bin. |

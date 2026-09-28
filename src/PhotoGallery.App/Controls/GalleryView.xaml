@@ -105,13 +105,13 @@
                 <AppBarButton Icon="Favorite" Label="Rate">
                     <AppBarButton.Flyout>
                         <MenuFlyout>
-                            <MenuFlyoutItem Text="★★★★★" Tag="5" Click="OnRateSelection" />
-                            <MenuFlyoutItem Text="★★★★" Tag="4" Click="OnRateSelection" />
-                            <MenuFlyoutItem Text="★★★" Tag="3" Click="OnRateSelection" />
-                            <MenuFlyoutItem Text="★★" Tag="2" Click="OnRateSelection" />
-                            <MenuFlyoutItem Text="★" Tag="1" Click="OnRateSelection" />
+                            <MenuFlyoutItem Text="★★★★★" Tag="5" Click="OnRateSelection" KeyboardAcceleratorTextOverride="5" />
+                            <MenuFlyoutItem Text="★★★★" Tag="4" Click="OnRateSelection" KeyboardAcceleratorTextOverride="4" />
+                            <MenuFlyoutItem Text="★★★" Tag="3" Click="OnRateSelection" KeyboardAcceleratorTextOverride="3" />
+                            <MenuFlyoutItem Text="★★" Tag="2" Click="OnRateSelection" KeyboardAcceleratorTextOverride="2" />
+                            <MenuFlyoutItem Text="★" Tag="1" Click="OnRateSelection" KeyboardAcceleratorTextOverride="1" />
                             <MenuFlyoutSeparator />
-                            <MenuFlyoutItem Text="Clear rating" Tag="0" Click="OnRateSelection" />
+                            <MenuFlyoutItem Text="Clear rating" Tag="0" Click="OnRateSelection" KeyboardAcceleratorTextOverride="0" />
                         </MenuFlyout>
                     </AppBarButton.Flyout>
                 </AppBarButton>
@@ -173,7 +173,7 @@
             </GridView.GroupStyle>
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="data:MediaSummary">
-                    <!-- Children order matters to code-behind: [0] picture (an image brush, shifted to show faces) ... [^2] day accent bar, [^1] selection overlay. -->
+                    <!-- Children order matters to code-behind: [0] picture (an image brush, shifted to show faces) ... [^2] day accent bar, [^1] selection overlay; the stars are the only TextBlock child. -->
                     <Grid Background="{ThemeResource ControlAltFillColorSecondaryBrush}" CornerRadius="4" DoubleTapped="OnTileDoubleTapped" RightTapped="OnTileRightTapped">
                         <Border />
                         <StackPanel Orientation="Horizontal" Spacing="4" Margin="6" HorizontalAlignment="Left" VerticalAlignment="Top">

@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -530,6 +531,7 @@ public sealed partial class GalleryView : UserControl
         var menu = new MenuFlyout();
         if (ids.Count == 1)
             menu.Items.Add(MenuItem("Open", Symbol.OpenFile, () => Open(state.Item)));
+        menu.Items.Add(RateMenu(ids));
         menu.Items.Add(MenuItem(ids.Count == 1 ? "Copy path" : $"Copy {ids.Count:N0} paths", Symbol.Copy,
             () => Clipboard.CopyPaths(ids.Select(S.Media.GetPath).OfType<string>().ToList())));
         if (ids.Count == 1)
@@ -541,6 +543,79 @@ public sealed partial class GalleryView : UserControl
         menu.Items.Add(MenuItem(ids.Count == 1 ? "Delete" : $"Delete {ids.Count:N0}", Symbol.Delete, () => _ = DeleteAsync(ids)));
         menu.ShowAt(tile, e.GetPosition(tile));
         e.Handled = true;
+    }
+
+    /// <summary>Rate ▸ ★★★★★ … ★, Clear rating, with the current stars ticked (the keys 1–5 and 0 do the same).</summary>
+    private MenuFlyoutSubItem RateMenu(IReadOnlyList<long> ids)
+    {
+        var chosen = ids.ToHashSet();
+        var ratings = _items.Where(i => chosen.Contains(i.Id)).Select(i => i.Rating).Distinct().ToList();
+        var menu = new MenuFlyoutSubItem { Text = "Rate", Icon = new SymbolIcon(Symbol.Favorite) };
+        for (var stars = 5; stars >= 1; stars--)
+        {
+            var value = stars;
+            var item = new RadioMenuFlyoutItem
+            {
+                Text = Format.Stars(stars),
+                GroupName = "Rating",
+                IsChecked = ratings is [var only] && only == stars,
+                KeyboardAcceleratorTextOverride = stars.ToString(CultureInfo.InvariantCulture),
+            };
+            item.Click += (_, _) => Rate(ids, value);
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new MenuFlyoutSeparator());
+        var clear = MenuItem("Clear rating", Symbol.Clear, () => Rate(ids, 0));
+        clear.KeyboardAcceleratorTextOverride = "0";
+        clear.IsEnabled = ratings.Any(r => r > 0);
+        menu.Items.Add(clear);
+        return menu;
+    }
+
+    /// <summary>
+    /// Sets (or with 0 clears) the stars of these items. The tiles show them at once; the list is loaded again only
+    /// when it's filtered by rating, so items can come and go.
+    /// </summary>
+    private void Rate(IReadOnlyCollection<long> ids, int rating)
+    {
+        if (ids.Count == 0) return;
+        S.Media.SetRating(ids, rating);
+        App.MainWindow.ShowStatus(rating > 0
+            ? ids.Count == 1 ? $"Rated {Format.Stars(rating)}" : $"Rated {ids.Count:N0} items {Format.Stars(rating)}"
+            : ids.Count == 1 ? "Rating cleared" : $"Cleared the rating of {ids.Count:N0} items");
+        if (EffectiveFilter is { MinRating: > 0 })
+        {
+            _ = ReloadAsync(keepPosition: true);
+            return;
+        }
+        var chosen = ids.ToHashSet();
+        foreach (var item in _items)
+            if (chosen.Contains(item.Id)) item.Rating = rating;
+        if (Grid.ItemsPanelRoot is not { } panel) return;
+        foreach (var child in panel.Children)
+            if (child is SelectorItem { Content: MediaSummary shown, ContentTemplateRoot: Grid root } && chosen.Contains(shown.Id))
+                ShowStars(root, rating);
+    }
+
+    /// <summary>The tile's stars (its only text directly on the tile).</summary>
+    private static void ShowStars(Grid root, int rating)
+    {
+        if (root.Children.OfType<TextBlock>().FirstOrDefault() is not { } stars) return;
+        stars.Text = Format.Stars(rating);
+        stars.Visibility = Format.HasRating(rating);
+    }
+
+    /// <summary>0–5 on the number row or the keypad, without Ctrl or Alt: the stars to give the selection.</summary>
+    private static int? RatingKey(VirtualKey key)
+    {
+        static bool IsDown(VirtualKey k) => InputKeyboardSource.GetKeyStateForCurrentThread(k).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+        if (IsDown(VirtualKey.Control) || IsDown(VirtualKey.Menu)) return null;
+        return key switch
+        {
+            >= VirtualKey.Number0 and <= VirtualKey.Number5 => key - VirtualKey.Number0,
+            >= VirtualKey.NumberPad0 and <= VirtualKey.NumberPad5 => key - VirtualKey.NumberPad0,
+            _ => null,
+        };
     }
 
     private static MenuFlyoutItem MenuItem(string text, Symbol icon, Action action)
@@ -570,6 +645,11 @@ public sealed partial class GalleryView : UserControl
         else if (e.Key == VirtualKey.Delete && Grid.SelectedItems.Count > 0)
         {
             _ = DeleteAsync(SelectedIds());
+            e.Handled = true;
+        }
+        else if (Grid.SelectedItems.Count > 0 && RatingKey(e.Key) is { } rating)
+        {
+            Rate(SelectedIds(), rating);
             e.Handled = true;
         }
     }
@@ -813,8 +893,7 @@ public sealed partial class GalleryView : UserControl
     private void OnRateSelection(object sender, RoutedEventArgs e)
     {
         var rating = int.Parse((string)((FrameworkElement)sender).Tag, CultureInfo.InvariantCulture);
-        S.Media.SetRating(SelectedIds(), rating);
-        _ = ReloadAsync(keepPosition: true);
+        Rate(SelectedIds(), rating);
     }
 
     private void OnMarkUtility(object sender, RoutedEventArgs e)
