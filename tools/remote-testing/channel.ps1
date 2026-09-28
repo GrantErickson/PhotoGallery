@@ -44,7 +44,7 @@ function Get-RemoteHead {
     return ($line -split '\s+')[0]
 }
 
-# The log's messages, oldest first; each starts with a "## <time> · <from>" line.
+# The log's messages, oldest first; each starts with a "## <time> - <from>" line.
 function Get-Messages {
     Invoke-Git -C $repo fetch -q origin $branch
     $text = (& git -C $repo show "origin/${branch}:log.md") -join "`n"
@@ -87,7 +87,8 @@ switch ($Action) {
             # Start from what's there now each time, so a message posted meanwhile is kept (the log is append-only).
             Invoke-Git -C $worktree fetch -q origin $branch
             Invoke-Git -C $worktree reset -q --hard "origin/$branch"
-            $entry = "`n## $(Get-Date -Format 'yyyy-MM-dd HH:mm zzz') · $From`n`n$($Message.Trim())`n"
+            # ASCII only in this file: Windows PowerShell reads scripts without a BOM as ANSI.
+            $entry = "`n## $(Get-Date -Format 'yyyy-MM-dd HH:mm zzz') $([char]0x00B7) $From`n`n$($Message.Trim())`n"
             [IO.File]::AppendAllText((Join-Path $worktree 'log.md'), $entry, $utf8)
             Invoke-Git -C $worktree add log.md
             Invoke-Git -C $worktree commit -q -m "remote-testing: message from $From"
