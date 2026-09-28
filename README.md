@@ -231,6 +231,7 @@ Deleting that folder resets the app; your photos aren't touched. Caches are neve
 | `docs/plan.md` | Plan, decisions and findings |
 | `docs/store-plan.md` | What it would take to publish in the Microsoft Store |
 | `docs/remote-testing.md` | How to test remote access from another computer |
+| `docs/web-plan.md` | Ways to use the app on the web, away from home |
 
 ## Credits
 
