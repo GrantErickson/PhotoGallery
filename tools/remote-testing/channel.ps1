@@ -11,9 +11,12 @@
   powershell -NoProfile -ExecutionPolicy Bypass -File tools\remote-testing\channel.ps1 read
   powershell -NoProfile -ExecutionPolicy Bypass -File tools\remote-testing\channel.ps1 read -Last 3
   powershell -NoProfile -ExecutionPolicy Bypass -File tools\remote-testing\channel.ps1 send -From tester -Message "S1-S19 pass. BUG-1: ..."
+  powershell -NoProfile -ExecutionPolicy Bypass -File tools\remote-testing\channel.ps1 send -From tester -MessageFile results.txt
   powershell -NoProfile -ExecutionPolicy Bypass -File tools\remote-testing\channel.ps1 wait -Minutes 30
   powershell -NoProfile -ExecutionPolicy Bypass -File tools\remote-testing\channel.ps1 watch
 
+  Long messages, and any with double quotes in them, go in a file (-MessageFile, UTF-8): quotes inside -Message don't
+  survive being passed to powershell.exe.
   wait: returns (exit 0) with the new messages once someone posts, or exit 1 after -Minutes.
   watch: prints each new message as it arrives, until stopped (for a background monitor).
 #>
@@ -22,6 +25,7 @@ param(
     [Parameter(Position = 0)][ValidateSet('read', 'send', 'wait', 'watch')][string]$Action = 'read',
     [string]$From,
     [string]$Message,
+    [string]$MessageFile,
     [int]$Last = 0,
     [int]$Minutes = 30,
     [int]$PollSeconds = 30
@@ -76,7 +80,8 @@ switch ($Action) {
         Write-Messages $messages
     }
     'send' {
-        if (-not $From -or -not $Message) { throw 'send needs -From (host or tester) and -Message' }
+        if ($MessageFile) { $Message = [IO.File]::ReadAllText((Resolve-Path $MessageFile).Path, [Text.Encoding]::UTF8) }
+        if (-not $From -or -not $Message) { throw 'send needs -From (host or tester) and -Message or -MessageFile' }
         if (-not (Test-Path (Join-Path $worktree '.git'))) {
             & git -C $repo worktree prune
             Invoke-Git -C $repo fetch -q origin $branch
