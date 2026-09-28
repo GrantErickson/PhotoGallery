@@ -3,6 +3,7 @@
     <Project Path="src/PhotoGallery.App/PhotoGallery.App.csproj" />
     <Project Path="src/PhotoGallery.Core/PhotoGallery.Core.csproj" />
     <Project Path="src/PhotoGallery.Embedder/PhotoGallery.Embedder.csproj" />
+    <Project Path="src/PhotoGallery.Remote/PhotoGallery.Remote.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PhotoGallery.Core.Tests/PhotoGallery.Core.Tests.csproj" />

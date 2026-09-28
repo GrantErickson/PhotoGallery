@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PhotoGallery.App.Pages.RemotePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid>
+        <!-- Connect -->
+        <ScrollViewer x:Name="ConnectPanel">
+            <StackPanel MaxWidth="600" Padding="32,24" Spacing="12" HorizontalAlignment="Left">
+                <TextBlock Text="Another computer" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Browse, search and view the photos on another computer on your network, where Photo Gallery keeps your library. On that computer, turn on Settings → Remote access and set a passphrase there. It does the work; this one just shows the photos." />
+                <TextBox x:Name="ComputerBox" Header="Computer name or address" PlaceholderText="For example GRANT-PC, or 192.168.1.20"
+                         KeyDown="OnFieldKeyDown" />
+                <PasswordBox x:Name="PassphraseBox" Header="Passphrase" KeyDown="OnFieldKeyDown" />
+                <CheckBox x:Name="RememberBox" Content="Remember the passphrase on this PC" IsChecked="True" />
+                <CheckBox x:Name="OpenAtStartBox" Content="Open this computer's photos when Photo Gallery starts" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="ConnectButton" Content="Connect" Style="{StaticResource AccentButtonStyle}" Click="OnConnect" />
+                    <ProgressRing x:Name="ConnectBusy" IsActive="False" Width="20" Height="20" />
+                </StackPanel>
+                <InfoBar x:Name="ConnectError" Severity="Error" IsClosable="True" />
+                <HyperlinkButton x:Name="ForgetButton" Content="Forget the saved passphrase" Click="OnForget" Visibility="Collapsed" Padding="0" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- The other computer's library -->
+        <Grid x:Name="BrowserPanel" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid Padding="16,6" ColumnSpacing="8" Background="{ThemeResource LayerFillColorDefaultBrush}"
+                  BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="&#xE977;" FontSize="16" VerticalAlignment="Center" />
+                <TextBlock x:Name="ConnectedText" Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <Button Grid.Column="2" Content="Reload" Click="OnReload" />
+                <Button Grid.Column="3" Content="Disconnect" Click="OnDisconnect" />
+            </Grid>
+            <WebView2 x:Name="Web" Grid.Row="1" />
+        </Grid>
+    </Grid>
+</Page>

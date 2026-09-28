@@ -42,12 +42,14 @@ public partial class App : Application
         _window.Closed += (_, _) =>
         {
             _services.Transcription.Shutdown();
+            Task.Run(_services.Remote.StopAsync).Wait(TimeSpan.FromSeconds(3)); // off the UI thread: its awaits would need it
             _services.Similar.Dispose();
             _services.Thumbnails.Dispose();
         };
         _window.Activate();
 
         _services.Indexing.Start();
+        if (_services.Settings.RemoteEnabled) _ = _services.Remote.ApplyAsync();
         _ = SignInAndSyncAsync(_services);
     }
 

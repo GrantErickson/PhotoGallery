@@ -45,6 +45,7 @@ public sealed class AppServices
         Sharpness = new SharpnessService(this);
         Similar = new EmbeddingService(this);
         PlacesOnline = new PoiService(this);
+        Remote = new RemoteAccessService(this);
         Media.Removed += ForgetRemoved;
     }
 
@@ -88,6 +89,8 @@ public sealed class AppServices
     /// <summary>Named places from OpenStreetMap (parks, schools, restaurants…) and which photos were taken at them.</summary>
     public PoiRepository Pois { get; }
     public PoiService PlacesOnline { get; }
+    /// <summary>Other computers on the network opening this library (when turned on in Settings).</summary>
+    public RemoteAccessService Remote { get; }
     public PlaceNameService PlaceNames { get; }
     public Imaging.FaceCropper Faces { get; }
     public CloudSyncService CloudSync { get; }

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Remote access: an HTTPS server (Kestrel) on the computer with the library, so other computers on the network can
+    browse and search it in a browser or in Photo Gallery's "Another computer" page. Off unless turned on in Settings.
+  -->
+  <PropertyGroup>
+    <TargetFramework>$(WindowsTfm)</TargetFramework>
+    <RootNamespace>PhotoGallery.Remote</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PhotoGallery.Core\PhotoGallery.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The web app, served from the assembly so there's nothing to deploy beside it. -->
+    <EmbeddedResource Include="web\**" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PhotoGallery.Core.Tests" />
+  </ItemGroup>
+</Project>

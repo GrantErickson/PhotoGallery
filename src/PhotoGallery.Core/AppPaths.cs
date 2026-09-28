@@ -50,6 +50,19 @@ public sealed class AppSettings
     public bool ConfirmDelete { get; set; } = true;
     /// <summary>Make CLIP embeddings of the whole library in the background (Similar photos, searching by description).</summary>
     public bool FindSimilarInBackground { get; set; } = true;
+    /// <summary>Remote access (host): other computers on the network may open this library, with the passphrase.</summary>
+    public bool RemoteEnabled { get; set; }
+    public int RemotePort { get; set; } = 47813;
+    /// <summary>The passphrase as a salted PBKDF2 key (see PhotoGallery.Remote.RemoteSecret); never the passphrase itself.</summary>
+    public string? RemotePassphraseSalt { get; set; }
+    public int RemotePassphraseIterations { get; set; }
+    public string? RemotePassphraseKey { get; set; }
+    /// <summary>Remote access (client): the other computer last connected to, as typed ("GRANT-PC" or "192.168.1.20:47813").</summary>
+    public string? RemoteComputer { get; set; }
+    /// <summary>Open the other computer's photos when the app starts (for a computer that only looks at another's library).</summary>
+    public bool RemoteOpenAtStart { get; set; }
+    /// <summary>The certificate fingerprint accepted for each other computer ("host:port"), checked on every connection.</summary>
+    public Dictionary<string, string> RemotePins { get; set; } = [];
     /// <summary>Grid tile edge in DIPs.</summary>
     public double TileSize { get; set; } = 220;
     /// <summary>Bumped when a default changes, so saved settings can move to it once.</summary>

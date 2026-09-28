@@ -107,6 +107,14 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem x:Name="RemoteNavItem" Content="Another computer" Tag="remote"
+                                    ToolTipService.ToolTip="Photos on another computer on your network">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE977;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
 
             <Frame x:Name="ContentFrame" Navigated="OnFrameNavigated" Navigating="OnFrameNavigating" />
         </NavigationView>

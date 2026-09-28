@@ -34,7 +34,16 @@ public sealed partial class MainWindow : Window
         indexing.StatusChanged += s => DispatcherQueue.TryEnqueue(() => ShowStatus(s ?? "", sticky: true));
         App.Services.CloudSync.StatusChanged += s => DispatcherQueue.TryEnqueue(() => ShowStatus(s, sticky: true));
 
-        ContentFrame.Navigate(typeof(GalleryPage), TimelineRequest());
+        // A computer that only looks at another's library opens straight to it.
+        if (App.Services.Settings is { RemoteOpenAtStart: true, RemoteComputer: not null }) Nav.SelectedItem = RemoteNavItem;
+        else ContentFrame.Navigate(typeof(GalleryPage), TimelineRequest());
+    }
+
+    /// <summary>The menu pane (folded away while another computer's photos, with their own menu, show).</summary>
+    public bool IsPaneOpen
+    {
+        get => Nav.IsPaneOpen;
+        set => Nav.IsPaneOpen = value;
     }
 
     // ---------- History (back / forward) ----------
@@ -60,6 +69,10 @@ public sealed partial class MainWindow : Window
         {
             Viewer.Close(); // OnViewerClosed records it as "forward"
         }
+        else if (ContentFrame.Content is RemotePage { CanGoBack: true } remote)
+        {
+            remote.GoBack(); // within the other computer's page first
+        }
         else if (ContentFrame.CanGoBack)
         {
             ContentFrame.GoBack();
@@ -84,9 +97,12 @@ public sealed partial class MainWindow : Window
         UpdateBackButton();
     }
 
-    public bool CanGoBack => IsEditorOpen || Viewer.Visibility == Visibility.Visible || ContentFrame.CanGoBack;
+    public bool CanGoBack => IsEditorOpen || Viewer.Visibility == Visibility.Visible || ContentFrame.CanGoBack
+                             || ContentFrame.Content is RemotePage { CanGoBack: true };
 
     private void UpdateBackButton() => AppTitleBar.IsBackButtonEnabled = CanGoBack;
+
+    public void RefreshBackButton() => UpdateBackButton();
 
     private bool IsOnCurrentPage(FrameworkElement element)
     {
@@ -215,10 +231,11 @@ public sealed partial class MainWindow : Window
             : page == typeof(AlbumsPage) ? "albums"
             : page == typeof(DuplicatesPage) ? "duplicates"
             : page == typeof(SettingsPage) ? "settings"
+            : page == typeof(RemotePage) ? "remote"
             : null;
         object? item = tag == "settings"
             ? Nav.SettingsItem
-            : Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == tag);
+            : Nav.MenuItems.Concat(Nav.FooterMenuItems).OfType<NavigationViewItem>().FirstOrDefault(i => (i.Tag as string) == tag);
         if (ReferenceEquals(Nav.SelectedItem, item)) return;
         _syncingNav = true;
         try
@@ -318,6 +335,9 @@ public sealed partial class MainWindow : Window
             case "albums":
                 ContentFrame.Navigate(typeof(AlbumsPage));
                 break;
+            case "remote":
+                ContentFrame.Navigate(typeof(RemotePage));
+                break;
         }
     }
 
@@ -382,6 +402,11 @@ public sealed partial class MainWindow : Window
         _settingSearchText = false;
         SearchBox.IsSuggestionListOpen = false;
         SearchSuggestion.Remember(text, App.Services);
+        if (ContentFrame.Content is RemotePage { IsBrowsing: true } remote)
+        {
+            remote.Search(text); // searches the other computer's photos
+            return;
+        }
         if (Viewer.Visibility == Visibility.Visible) Viewer.Close();
         // A search started from search results keeps how they were being looked at (exact words, sort, filters).
         var carry = (ContentFrame.Content as GalleryPage)?.CurrentSearch;
@@ -398,6 +423,11 @@ public sealed partial class MainWindow : Window
         _settingSearchText = false;
         SearchBox.ItemsSource = null;
         SearchBox.IsSuggestionListOpen = false;
+        if (ContentFrame.Content is RemotePage { IsBrowsing: true } remote)
+        {
+            remote.ClearSearch();
+            return;
+        }
         if (Viewer.Visibility == Visibility.Visible) Viewer.Close();
         while (ContentFrame.Content is GalleryPage { SearchText: not null } && ContentFrame.CanGoBack) ContentFrame.GoBack();
         if (ContentFrame.Content is GalleryPage { SearchText: not null }) ContentFrame.Navigate(typeof(GalleryPage), TimelineRequest());

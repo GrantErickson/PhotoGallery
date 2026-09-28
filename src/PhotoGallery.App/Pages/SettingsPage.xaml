@@ -105,6 +105,21 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="Remote access" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Let other computers on your network browse, search and view this library: in a web browser, or in Photo Gallery on that computer (Another computer, at the bottom of the menu). This PC does the work (searching, decoding photos, fetching Live Photo videos), so it has to be on. Only computers on your local network can connect, only with the passphrase, and the connection is encrypted. They can rate photos, but not edit, move or delete anything." />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <PasswordBox x:Name="RemotePassphraseBox" Width="300" PlaceholderText="New passphrase (8 characters or more)" KeyDown="OnRemotePassphraseKeyDown" />
+                    <Button x:Name="RemotePassphraseButton" Content="Set passphrase" Click="OnSetRemotePassphrase" />
+                </StackPanel>
+                <TextBlock x:Name="RemotePassphraseText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ToggleSwitch x:Name="RemoteSwitch" Header="Let other computers on my network open this library" Toggled="OnRemoteToggled" />
+                <NumberBox x:Name="RemotePortBox" Header="Port" Minimum="1024" Maximum="65535" Width="140" HorizontalAlignment="Left"
+                           SpinButtonPlacementMode="Hidden" ValueChanged="OnRemotePortChanged" />
+                <TextBlock x:Name="RemoteStatusText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="Library" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock x:Name="StatsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 <TextBlock x:Name="PathsText" TextWrapping="Wrap" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}"

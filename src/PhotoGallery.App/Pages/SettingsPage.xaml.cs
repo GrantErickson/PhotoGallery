@@ -18,6 +18,7 @@ public sealed partial class SettingsPage : Page
         App.Services.PhotoText.Completed += _ => OnTranscriptionChanged();
         App.Services.Similar.StateChanged += OnTranscriptionChanged;
         App.Services.PlacesOnline.StateChanged += OnTranscriptionChanged;
+        App.Services.Remote.StateChanged += () => DispatcherQueue.TryEnqueue(RefreshRemote);
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -31,6 +32,9 @@ public sealed partial class SettingsPage : Page
         ConfirmDeleteSwitch.IsOn = App.Services.Settings.ConfirmDelete;
         ThemeChoice.SelectedIndex = App.Services.Settings.Theme switch { "Light" => 1, "System" => 2, _ => 0 };
         PoiSwitch.IsOn = App.Services.Settings.NamePlacesFromOsm;
+        RemoteSwitch.IsOn = App.Services.Settings.RemoteEnabled;
+        RemotePortBox.Value = App.Services.Settings.RemotePort;
+        RefreshRemote();
         _loadingSwitch = false;
         await RefreshTranscriptsAsync();
         var services = App.Services;
@@ -110,6 +114,86 @@ public sealed partial class SettingsPage : Page
     {
         App.Services.SaveSettings();
         Microsoft.Windows.AppLifecycle.AppInstance.Restart("");
+    }
+
+    // ---------- Remote access ----------
+
+    private void RefreshRemote()
+    {
+        var remote = App.Services.Remote;
+        RemotePassphraseText.Text = remote.HasPassphrase
+            ? "A passphrase is set. Setting a new one signs every other computer out."
+            : "Set a passphrase first: other computers need it to connect. Several words are easier to type and harder to guess than one.";
+        RemoteSwitch.IsEnabled = remote.HasPassphrase;
+        if (remote.LastError is { } error)
+        {
+            RemoteStatusText.Text = $"Remote access couldn't start: {error}";
+        }
+        else if (remote.IsRunning && remote.Fingerprint is { } fingerprint)
+        {
+            var port = remote.Port;
+            var addresses = PhotoGallery.Remote.LocalNetwork.Addresses().Select(a => $"https://{a}:{port}").ToList();
+            RemoteStatusText.Text =
+                $"On. On the other computer, open https://{Environment.MachineName}:{port} in a browser" +
+                (addresses.Count > 0 ? $" (or {string.Join(", ", addresses)})" : "") +
+                $", or use Another computer in Photo Gallery there, with the computer name {Environment.MachineName}.\n\n" +
+                $"Security code: {PhotoGallery.Remote.HostCertificate.SecurityCode(fingerprint)}\n" +
+                "The first time, check that the other computer shows this same code. Browsers warn that the connection isn't private " +
+                "(this PC made its own certificate): the certificate's SHA-256 fingerprint there should begin with the code.\n\n" +
+                "If Windows asks whether Photo Gallery may use the network, allow it on private networks.";
+        }
+        else
+        {
+            RemoteStatusText.Text = remote.HasPassphrase ? "Off." : "";
+        }
+    }
+
+    private void OnRemotePassphraseKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+    {
+        if (e.Key != Windows.System.VirtualKey.Enter) return;
+        OnSetRemotePassphrase(sender, e);
+        e.Handled = true;
+    }
+
+    private async void OnSetRemotePassphrase(object sender, RoutedEventArgs e)
+    {
+        var passphrase = RemotePassphraseBox.Password;
+        if (PhotoGallery.Remote.RemoteSecret.Normalize(passphrase).Length < PhotoGallery.Remote.RemoteSecret.MinLength)
+        {
+            RemotePassphraseText.Text = $"Use at least {PhotoGallery.Remote.RemoteSecret.MinLength} characters; a few words are best.";
+            return;
+        }
+        RemotePassphraseButton.IsEnabled = false;
+        try
+        {
+            await App.Services.Remote.SetPassphraseAsync(passphrase);
+            RemotePassphraseBox.Password = "";
+        }
+        finally
+        {
+            RemotePassphraseButton.IsEnabled = true;
+        }
+        RefreshRemote();
+        RemotePassphraseText.Text = "Passphrase set. Other computers that were connected need to sign in with it again.";
+    }
+
+    private async void OnRemoteToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingSwitch || RemoteSwitch.IsOn == App.Services.Settings.RemoteEnabled) return;
+        App.Services.Settings.RemoteEnabled = RemoteSwitch.IsOn;
+        App.Services.SaveSettings();
+        RemoteStatusText.Text = RemoteSwitch.IsOn ? "Starting…" : "";
+        await App.Services.Remote.ApplyAsync();
+    }
+
+    private async void OnRemotePortChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_loadingSwitch || double.IsNaN(args.NewValue)) return;
+        var port = (int)Math.Clamp(Math.Round(args.NewValue), 1024, 65535);
+        if (port == App.Services.Settings.RemotePort) return;
+        App.Services.Settings.RemotePort = port;
+        App.Services.SaveSettings();
+        if (App.Services.Settings.RemoteEnabled) await App.Services.Remote.ApplyAsync();
     }
 
     private void OnConfirmDeleteToggled(object sender, RoutedEventArgs e)

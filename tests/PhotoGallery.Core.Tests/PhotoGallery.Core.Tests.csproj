@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\PhotoGallery.Core\PhotoGallery.Core.csproj" />
+    <ProjectReference Include="..\..\src\PhotoGallery.Remote\PhotoGallery.Remote.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

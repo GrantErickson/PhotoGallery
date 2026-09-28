@@ -31,6 +31,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PhotoGallery.Core\PhotoGallery.Core.csproj" />
+    <!-- Remote access: the HTTPS server other computers on the network connect to (off unless turned on). -->
+    <ProjectReference Include="..\PhotoGallery.Remote\PhotoGallery.Remote.csproj" />
     <!-- CLIP runs in its own process (its ONNX Runtime is the DirectML build); built first, copied to .\embedder. -->
     <ProjectReference Include="..\PhotoGallery.Embedder\PhotoGallery.Embedder.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
