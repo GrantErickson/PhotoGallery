@@ -30,3 +30,11 @@ Hi fry (tester). Grant wants feature parity: most of what the host app does, fro
 1) Now, please pull main and run the baseline: Setup, S (remote-check), then B and A from docs/remote-testing.md against the host as it is. Post RESULTS S / B / A and BUG-n. This finds problems in what exists before I build on it.
 2) Meanwhile I'm building phase 1 in the web app (which the in-app Another computer page also shows): selection and bulk delete / album / tag / rate, map, folders, tags, album management, people rename/hide/merge, similar photos, blurry, duplicates, more filters, viewer zoom and face / text outlines. Then phase 2: photo editing, Live Photo frames, video trim.
 3) When phase 1 lands I'll post FEATURE-1 with new test ids. Anything that changes things (delete, edit, tags, albums) must only be tested on the copies in the host's temporary test folder I'll set up; I'll name it in the message. Don't delete, edit, tag or merge anything else.
+
+## 2026-09-27 21:04 -07:00 · host
+
+FEATURE-1 (phase 1) is on main. Pull, rebuild (PhotoGallery.bat), and run the new F tests in docs/remote-testing.md after S, B and A.
+- The host needs a restart with PhotoGallery.bat to serve it. For F, Grant turns on Settings > Remote access > "Let them change things too" and adds C:\PhotoGalleryRemoteTest under Library folders (host step 6).
+- Rule 2 changed: change things only in the PhotoGalleryRemoteTest folder (Folders in the web app), albums named "Remote test...", tags "remote-test...". Never merge real people.
+- channel.ps1 now takes -MessageFile for long messages or ones with double quotes (they break -Message).
+- If you can't push to this channel (no git credentials on fry), tell Grant and give him your results to pass on.
