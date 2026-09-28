@@ -3,7 +3,7 @@ using System.Globalization;
 namespace PhotoGallery.Core.Places;
 
 /// <summary>A town from the GeoNames list.</summary>
-public sealed record City(string Name, string CountryCode, string Admin1, double Latitude, double Longitude)
+public sealed record City(string Name, string CountryCode, string Admin1, double Latitude, double Longitude, long Population = 0)
 {
     /// <summary>"Spokane, WA" in the US (like OneDrive's names), "Vancouver, Canada" elsewhere.</summary>
     public string DisplayName
@@ -33,10 +33,13 @@ public sealed class CityIndex
     public const double MaxDistanceMeters = 40_000;
 
     private readonly Dictionary<(int, int), List<City>> _cells = [];
+    /// <summary>Every town with its name folded for searching (and its ASCII spelling, if different), biggest first.</summary>
+    private readonly List<(City City, string Name, string? Ascii)> _byName = [];
+    private bool _sorted;
 
     public int Count { get; private set; }
 
-    /// <summary>Reads the tab-separated GeoNames file (name at column 1, lat/lon at 4/5, country 8, admin1 10).</summary>
+    /// <summary>Reads the tab-separated GeoNames file (name at column 1, ASCII name 2, lat/lon 4/5, country 8, admin1 10, population 14).</summary>
     public static CityIndex Load(IEnumerable<string> lines)
     {
         var index = new CityIndex();
@@ -46,17 +49,61 @@ public sealed class CityIndex
             if (f.Length < 11 ||
                 !double.TryParse(f[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat) ||
                 !double.TryParse(f[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon)) continue;
-            index.Add(new City(f[1], f[8], f[10], lat, lon));
+            var population = f.Length > 14 && long.TryParse(f[14], NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 0;
+            index.Add(new City(f[1], f[8], f[10], lat, lon, population), f[2]);
         }
         return index;
     }
 
-    public void Add(City city)
+    public void Add(City city, string? asciiName = null)
     {
         var key = ((int)Math.Floor(city.Latitude), (int)Math.Floor(city.Longitude));
         if (!_cells.TryGetValue(key, out var cell)) _cells[key] = cell = [];
         cell.Add(city);
+        var name = PlaceSearch.Fold(city.Name);
+        var ascii = asciiName is { Length: > 0 } ? PlaceSearch.Fold(asciiName) : null;
+        _byName.Add((city, name, ascii == name ? null : ascii));
+        _sorted = false;
         Count++;
+    }
+
+    /// <summary>
+    /// Towns whose names match, best matches first and the biggest first among equals. "Spokane, WA" or
+    /// "Paris, France" narrows it to a state (US) or a country (name or code).
+    /// </summary>
+    public List<City> Search(string query, int max = PlaceSearch.MaxResults)
+    {
+        var (name, qualifier) = PlaceSearch.Split(query);
+        if (name.Length < 2) return [];
+        lock (_byName)
+        {
+            if (!_sorted)
+            {
+                _byName.Sort((a, b) => b.City.Population.CompareTo(a.City.Population));
+                _sorted = true;
+            }
+        }
+        return _byName
+            .Select(t => (t.City, Score: Math.Max(PlaceSearch.Score(t.Name, name), t.Ascii is null ? 0 : PlaceSearch.Score(t.Ascii, name))))
+            .Where(t => t.Score > 0 && (qualifier is null || InRegion(t.City, qualifier)))
+            .OrderByDescending(t => t.Score) // stable: the biggest first within each score
+            .Take(max)
+            .Select(t => t.City)
+            .ToList();
+    }
+
+    private static bool InRegion(City city, string qualifier)
+    {
+        if (PlaceSearch.Fold(city.Admin1).StartsWith(qualifier, StringComparison.Ordinal) ||
+            PlaceSearch.Fold(city.CountryCode) == qualifier) return true;
+        try
+        {
+            return PlaceSearch.Fold(new RegionInfo(city.CountryCode).EnglishName).StartsWith(qualifier, StringComparison.Ordinal);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     public City? Nearest(double latitude, double longitude)

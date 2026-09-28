@@ -3,7 +3,8 @@
     x:Class="PhotoGallery.App.Pages.MapPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:PhotoGallery.App.Controls">
+    xmlns:controls="using:PhotoGallery.App.Controls"
+    xmlns:places="using:PhotoGallery.Core.Places">
 
     <Grid Padding="20,12,8,0" RowSpacing="8" ColumnSpacing="12">
         <Grid.RowDefinitions>
@@ -26,6 +27,21 @@
                 </DropDownButton.Flyout>
             </DropDownButton>
         </StackPanel>
+
+        <!-- Finding a place by name: on this PC as you type, OpenStreetMap when asked -->
+        <AutoSuggestBox x:Name="PlaceSearchBox" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0" QueryIcon="Find"
+                        PlaceholderText="Find a place: a town, a park, an address…" TextMemberPath="Name"
+                        TextChanged="OnPlaceSearchChanged" QuerySubmitted="OnPlaceSearchSubmitted">
+            <AutoSuggestBox.ItemTemplate>
+                <DataTemplate x:DataType="places:PlaceHit">
+                    <StackPanel Padding="0,4">
+                        <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{x:Bind Caption}" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DataTemplate>
+            </AutoSuggestBox.ItemTemplate>
+        </AutoSuggestBox>
 
         <Border Grid.Row="1" CornerRadius="8" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" Margin="0,0,0,12">
             <WebView2 x:Name="Map" />

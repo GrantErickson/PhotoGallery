@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.Web.WebView2.Core;
 using PhotoGallery.Core.Data;
+using PhotoGallery.Core.Places;
 
 namespace PhotoGallery.App.Pages;
 
@@ -177,6 +178,78 @@ public sealed partial class MapPage : Page
     }
 
     private static string Js(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+
+    // ---------- Finding a place by name ----------
+
+    /// <summary>The list's last row: search OpenStreetMap (which sends the text there) instead of only this PC.</summary>
+    private const string OnlineKind = "online";
+    private const string NoteKind = "";
+    private CancellationTokenSource? _placeSearch;
+    private string _placeQuery = "";
+
+    private async void OnPlaceSearchChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+        _placeSearch?.Cancel();
+        var search = _placeSearch = new CancellationTokenSource();
+        _placeQuery = sender.Text.Trim();
+        if (_placeQuery.Length < 2)
+        {
+            sender.ItemsSource = null;
+            return;
+        }
+        try
+        {
+            await Task.Delay(200, search.Token); // until typing pauses
+            var hits = await App.Services.PlaceSearch.SearchAsync(_placeQuery, online: false, search.Token);
+            if (search.IsCancellationRequested) return;
+            hits.Add(new PlaceHit($"Search OpenStreetMap for “{_placeQuery}”", "Sends what you typed to OpenStreetMap", OnlineKind, 0, 0));
+            sender.ItemsSource = hits;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async void OnPlaceSearchSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+        var chosen = args.ChosenSuggestion as PlaceHit
+                     ?? (sender.ItemsSource as List<PlaceHit>)?.FirstOrDefault(h => h.Kind is not (OnlineKind or NoteKind));
+        if (chosen is { Kind: NoteKind }) return;
+        if (chosen is not null && chosen.Kind != OnlineKind)
+        {
+            sender.Text = chosen.Name;
+            await ShowFoundAsync(chosen);
+            return;
+        }
+        // OpenStreetMap: asked for (the last row), or nothing here matched.
+        var text = _placeQuery.Length >= 2 ? _placeQuery : args.QueryText.Trim();
+        if (text.Length < 2) return;
+        _placeSearch?.Cancel();
+        sender.Text = text;
+        sender.ItemsSource = new List<PlaceHit> { new("Searching OpenStreetMap…", "", NoteKind, 0, 0) };
+        sender.IsSuggestionListOpen = true;
+        try
+        {
+            var hits = await App.Services.PlaceSearch.SearchAsync(text, online: true);
+            sender.ItemsSource = hits.Count > 0 ? hits : new List<PlaceHit> { new($"Nothing found for “{text}”", "", NoteKind, 0, 0) };
+        }
+        catch (IOException ex)
+        {
+            sender.ItemsSource = new List<PlaceHit> { new(ex.Message, "", NoteKind, 0, 0) };
+        }
+        sender.IsSuggestionListOpen = true;
+    }
+
+    /// <summary>Moves the map to the place (fitting an area to it) and marks it; the list shows the photos there.</summary>
+    private Task ShowFoundAsync(PlaceHit hit)
+    {
+        var zoom = hit.Kind == "town" ? 12 : 17;
+        var label = JsonSerializer.Serialize(hit.Name);
+        return Script(hit.HasBounds
+            ? $"showFound({Js(hit.Latitude)},{Js(hit.Longitude)},{label},{zoom},{Js(hit.South!.Value)},{Js(hit.West!.Value)},{Js(hit.North!.Value)},{Js(hit.East!.Value)})"
+            : $"showFound({Js(hit.Latitude)},{Js(hit.Longitude)},{label},{zoom})");
+    }
 
     // ---------- Places you named ----------
 

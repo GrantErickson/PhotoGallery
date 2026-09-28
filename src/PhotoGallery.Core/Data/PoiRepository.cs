@@ -44,6 +44,22 @@ public sealed class PoiRepository(GalleryDatabase database)
             "SELECT p.Name FROM Media m JOIN Pois p ON p.Id = m.PoiId WHERE m.IsHidden = 0 GROUP BY p.Name ORDER BY count(*) DESC").AsList();
     }
 
+    /// <summary>Places whose names contain the text (for finding a place on the map), the ones photos were taken at first.</summary>
+    public List<Poi> Search(string text, int limit = 200)
+    {
+        var like = "%" + text.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        using var db = database.Open();
+        return db.Query<Poi>(
+            """
+            SELECT p.Id, p.OsmKey, p.Name, p.Kind, p.Latitude, p.Longitude, p.South, p.West, p.North, p.East, NULL AS Shape
+            FROM Pois p
+            LEFT JOIN (SELECT PoiId, count(*) AS Photos FROM Media WHERE PoiId > 0 GROUP BY PoiId) used ON used.PoiId = p.Id
+            WHERE p.Name LIKE @like ESCAPE '\'
+            ORDER BY coalesce(used.Photos, 0) DESC, p.Name
+            LIMIT @limit
+            """, new { like, limit }).AsList();
+    }
+
     /// <summary>The place a photo was taken at, if it's been matched to one.</summary>
     public Poi? GetFor(long mediaId)
     {

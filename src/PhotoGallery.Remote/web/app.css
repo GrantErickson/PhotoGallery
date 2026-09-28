@@ -415,6 +415,20 @@ button.danger { color: var(--error); }
 .map-status { position: absolute; z-index: 1000; left: 50%; top: 10px; transform: translateX(-50%); background: rgba(0, 0, 0, .65); color: #fff;
               padding: 3px 12px; border-radius: 12px; font-size: 13px; pointer-events: none; }
 .map-status:empty { display: none; }
+.map-search { position: absolute; z-index: 1000; left: 56px; top: 10px; width: min(360px, calc(100% - 70px)); }
+.map-search form { position: relative; display: flex; align-items: center; }
+.map-search input { width: 100%; padding-left: 32px; min-height: 34px; background: var(--surface); box-shadow: var(--shadow); }
+.map-search .search-icon { left: 9px; }
+.map-results { margin-top: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
+               max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; padding: 4px; }
+.map-results button { display: flex; flex-direction: column; align-items: flex-start; gap: 0; text-align: left; background: transparent;
+                      border-color: transparent; padding: 6px 10px; }
+.map-results button:hover, .map-results button:focus-visible { background: var(--surface-2); }
+.map-results button span { font-size: 12px; color: var(--muted); }
+.map-results .note { padding: 6px 10px; color: var(--muted); }
+.found-pin { background: #ff9f1c; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 1px 4px rgba(0, 0, 0, .6); }
+.found-label { background: #ff9f1c; color: #1b1b1b; border: 0; border-radius: 10px; padding: 2px 8px; font-weight: 600; }
+.found-label::before { display: none; }
 .photo-pin { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
              background: #ccc center / cover no-repeat; }
 .marker-cluster.selected div { background-color: rgba(0, 120, 212, .9) !important; color: #fff; }

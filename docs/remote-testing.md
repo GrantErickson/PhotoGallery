@@ -222,6 +222,7 @@ These need host step 6. Follow rule 2: change nothing outside the test folder.
 | F18 | Blurry photos | Blurriest first; grouping off. |
 | F19 | Type 2+ letters in the search box | Suggestions include people, places and tags. |
 | F20 | In the app on the tester (Another computer): repeat F3, F6 and F13 | The same, inside the app. |
+| F21 | Map › the Find a place box: type a town ("spokane", "paris, france"), a park near your photos; press Enter; then "Search OpenStreetMap for …" with an address | Matches from the host as you type (your places, places near photos, towns biggest first). Choosing one moves the map there with a labelled pin, and the list below shows the photos there. OpenStreetMap finds addresses and landmarks. |
 
 ### G: editing from the client (phase 2)
 Only on items in the test folder (rule 2). Everything saved lands next to the original there, and shows up in the

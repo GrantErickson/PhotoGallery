@@ -117,6 +117,18 @@ public sealed class PoiTests : IDisposable
     }
 
     [Fact]
+    public void Places_are_found_by_name_the_ones_with_photos_first()
+    {
+        Add("walk.jpg", 47.6380, -117.4120);
+        _pois.SaveTile(Overpass.TileOf(47.639, -117.41), [Diner with { Id = 0, Name = "Park Diner" }, Park with { Id = 0 }, Cafe with { Id = 0 }]);
+
+        Assert.Equal(["Manito Park", "Park Bench Café", "Park Diner"], _pois.Search("park").Select(p => p.Name));
+        Assert.Equal(["Manito Park"], _pois.Search("MANITO").Select(p => p.Name));
+        Assert.Empty(_pois.Search("100%"));
+        Assert.True(_pois.Search("manito")[0].IsArea);
+    }
+
+    [Fact]
     public void Photos_in_looked_up_tiles_are_named_after_the_place_and_searchable_by_name_and_kind()
     {
         var inPark = Add("walk.jpg", 47.6380, -117.4120);

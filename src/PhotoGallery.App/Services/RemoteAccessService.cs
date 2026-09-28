@@ -114,6 +114,9 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 
     public List<(long Id, double Latitude, double Longitude)> GetGeoPoints() => services.Media.GetGeoPoints();
 
+    public Task<List<PhotoGallery.Core.Places.PlaceHit>> SearchPlacesAsync(string query, bool online, CancellationToken ct) =>
+        services.PlaceSearch.SearchAsync(query, online, ct);
+
     public async Task<List<long>> FindSimilarAsync(long id, CancellationToken ct) =>
         (await services.Similar.FindSimilarAsync(id)).Select(s => s.Id).ToList();
 

@@ -522,7 +522,7 @@
     let videos = 0;
     for (const f of data.flags) if (f & 1) videos++;
     const photos = data.ids.length - videos;
-    if (!data.ids.length) return "none";
+    if (!data.ids.length) return "no photos";
     return [photos ? plural(photos, "photo", "photos") : "", videos ? plural(videos, "video", "videos") : ""].filter(Boolean).join(" and ");
   }
 
@@ -1129,6 +1129,7 @@
         listMap(e.layer.getAllChildMarkers().map(m => m.options.photoId));
       });
       map.view.on("click", () => {
+        $("map-results").hidden = true;
         if (!map.selected) return;
         map.selected.getElement()?.classList.remove("selected");
         map.selected = null;
@@ -1171,6 +1172,95 @@
       map.view.invalidateSize();
     }
     listMap();
+  }
+
+  // Finding a place by name: on the photo computer as you type; OpenStreetMap when asked (it sends the text there).
+  let placeToken = 0, placeTimer = 0, placeHits = [];
+
+  async function findPlaces(online) {
+    const text = $("map-search").value.trim();
+    const token = ++placeToken;
+    if (text.length < 2) {
+      $("map-results").hidden = true;
+      return;
+    }
+    if (online) showPlaceRows([{ note: "Searching OpenStreetMap…" }]);
+    try {
+      const hits = await json(`/api/places?q=${encodeURIComponent(text)}${online ? "&online=1" : ""}`);
+      if (token !== placeToken) return;
+      placeHits = hits;
+      showPlaceRows(online
+        ? (hits.length ? hits : [{ note: `Nothing found for “${text}”.` }])
+        : [...hits, { online: true, name: `Search OpenStreetMap for “${text}”`, caption: "Sends what you typed to OpenStreetMap" }]);
+    } catch (error) {
+      if (token === placeToken) showPlaceRows([{ note: error.message }]);
+    }
+  }
+
+  function showPlaceRows(rows) {
+    const list = $("map-results");
+    list.replaceChildren(...rows.map(row => {
+      if (row.note) return el("div", "note", row.note);
+      const b = el("button", null, row.name);
+      b.type = "button";
+      b.append(el("span", null, row.caption || ""));
+      b.addEventListener("click", () => (row.online ? findPlaces(true) : goToPlace(row)));
+      return b;
+    }));
+    list.hidden = false;
+  }
+
+  function goToPlace(hit) {
+    const L = window.L;
+    $("map-results").hidden = true;
+    $("map-search").value = hit.name;
+    if (map.found) map.view.removeLayer(map.found);
+    if (hit.s != null) map.view.fitBounds([[hit.s, hit.w], [hit.n, hit.e]], { maxZoom: 17 });
+    else map.view.setView([hit.lat, hit.lon], hit.kind === "town" ? 12 : 17);
+    map.found = L.marker([hit.lat, hit.lon], { icon: L.divIcon({ className: "found-pin", iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 1000 })
+      .bindTooltip(hit.name, { permanent: true, direction: "top", offset: [0, -10], className: "found-label" })
+      .addTo(map.view);
+    map.found.on("click", () => {
+      map.view.removeLayer(map.found);
+      map.found = null;
+    });
+  }
+
+  $("map-search").addEventListener("input", () => {
+    clearTimeout(placeTimer);
+    placeTimer = setTimeout(() => findPlaces(false), 250);
+  });
+  $("map-search").addEventListener("keydown", event => {
+    if (event.key === "ArrowDown") {
+      $("map-results").querySelector("button")?.focus();
+      event.preventDefault();
+    } else if (event.key === "Escape") {
+      $("map-results").hidden = true;
+    }
+  });
+  $("map-results").addEventListener("keydown", event => {
+    const buttons = [...$("map-results").querySelectorAll("button")];
+    const at = buttons.indexOf(document.activeElement);
+    if (event.key === "ArrowDown" && at < buttons.length - 1) buttons[at + 1].focus();
+    else if (event.key === "ArrowUp") (at > 0 ? buttons[at - 1] : $("map-search")).focus();
+    else if (event.key === "Escape") {
+      $("map-results").hidden = true;
+      $("map-search").focus();
+    } else return;
+    event.preventDefault();
+  });
+  $("map-search-form").addEventListener("submit", event => {
+    event.preventDefault();
+    // Enter: the best match here, or OpenStreetMap when nothing here matched.
+    const text = $("map-search").value.trim();
+    if (placeHits.length && !$("map-results").hidden && !$("map-results").querySelector(".note")) goToPlace(placeHits[0]);
+    else if (text.length >= 2) findPlaces(true);
+  });
+  // Clicks on the map close the list (and don't reach it through the search box).
+  for (const node of [$("map-search-form"), $("map-results")]) {
+    node.addEventListener("click", event => event.stopPropagation());
+    node.addEventListener("dblclick", event => event.stopPropagation());
+    node.addEventListener("wheel", event => event.stopPropagation());
   }
 
   /** The list under the map: a cluster's photos (ids), or the photos in view. */

@@ -489,6 +489,24 @@ public sealed class RemoteServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Finds_places_for_the_map()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        var here = (await _client.GetFromJsonAsync<JsonElement>("api/places?q=spokane", ct))[0];
+        Assert.Equal(("spokane", "here", 47.5), (here.GetProperty("name").GetString(), here.GetProperty("detail").GetString(), here.GetProperty("s").GetDouble()));
+        Assert.Equal("here · town", here.GetProperty("caption").GetString());
+        var online = (await _client.GetFromJsonAsync<JsonElement>("api/places?q=spokane&online=1", ct))[0];
+        Assert.Equal("from OpenStreetMap", online.GetProperty("detail").GetString());
+
+        using var failed = await _client.GetAsync("api/places?q=nowhere&online=1", ct);
+        Assert.Equal(HttpStatusCode.BadGateway, failed.StatusCode);
+        Assert.Contains("didn't answer", (await failed.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("error").GetString());
+        using var tooShort = await _client.GetAsync("api/places?q=s", ct);
+        Assert.Equal(HttpStatusCode.BadRequest, tooShort.StatusCode);
+    }
+
+    [Fact]
     public async Task Finds_duplicates_in_the_background()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -567,6 +585,11 @@ public sealed class RemoteServerTests : IAsyncLifetime
         public List<FolderRow> GetFolders() => [new FolderRow { Id = 5, Name = "Pictures", Path = @"C:\Pictures" }];
 
         public List<(long Id, double Latitude, double Longitude)> GetGeoPoints() => [(1, 47.658812, -117.4260)];
+
+        public Task<List<PhotoGallery.Core.Places.PlaceHit>> SearchPlacesAsync(string query, bool online, CancellationToken ct) =>
+            online && query == "nowhere"
+                ? throw new IOException("OpenStreetMap's place search didn't answer.")
+                : Task.FromResult(new List<PhotoGallery.Core.Places.PlaceHit> { new(query, online ? "from OpenStreetMap" : "here", "town", 47.6, -117.4, 47.5, -117.5, 47.7, -117.3) });
 
         public Task<List<long>> FindSimilarAsync(long id, CancellationToken ct) => Task.FromResult(new List<long> { 2 });
 

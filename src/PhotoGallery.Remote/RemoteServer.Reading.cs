@@ -51,6 +51,28 @@ public sealed partial class RemoteServer
                 lon = points.Select(p => Math.Round(p.Longitude, 5)),
             });
         });
+        app.MapGet("/api/places", async ctx =>
+        {
+            var query = ctx.Request.Query["q"].ToString().Trim();
+            if (query.Length is < 2 or > 200)
+            {
+                await WriteJsonAsync(ctx, new { error = "What place?" }, StatusCodes.Status400BadRequest);
+                return;
+            }
+            try
+            {
+                var hits = await _library.SearchPlacesAsync(query, ctx.Request.Query["online"] == "1", ctx.RequestAborted);
+                await WriteJsonAsync(ctx, hits.Select(h => new
+                {
+                    name = h.Name, detail = h.Detail, kind = h.Kind, caption = h.Caption, lat = h.Latitude, lon = h.Longitude,
+                    s = h.South, w = h.West, n = h.North, e = h.East,
+                }));
+            }
+            catch (IOException ex)
+            {
+                await WriteJsonAsync(ctx, new { error = ex.Message }, StatusCodes.Status502BadGateway);
+            }
+        });
         app.MapGet("/api/duplicates", ctx => WriteJsonAsync(ctx, DuplicatesJson()));
         app.MapPost("/api/duplicates/scan", async ctx =>
         {

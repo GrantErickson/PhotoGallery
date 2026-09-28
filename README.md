@@ -70,6 +70,9 @@ works out live in its own database.
   - All of them are searchable ("Manito Park", "restaurant").
 - **Map** with clustered photo markers. The photos in view are listed beside it, and clicking a cluster lists just
   those.
+- **Find a place on the map** by name: your places, the parks, schools and restaurants your photos were taken at,
+  and towns (GeoNames, biggest first; "Springfield, IL" or "Paris, France" narrows it down), as you type. Anywhere
+  else (an address, a landmark) comes from OpenStreetMap, only when you ask.
 
 ### Cleaning up
 - **Duplicates**: exact copies, and re-saved or resized versions of the same shot. Extra copies go to the Recycle Bin
@@ -90,7 +93,8 @@ works out live in its own database.
   - the timeline, best-match and exact-word search (sorted and grouped, with suggestions);
   - On this day, Favorites, Live Photos, Videos, People, Tags, Folders, the Map, Albums, Duplicates and Blurry
     photos;
-  - the filters: people, photos or videos, rating, Live Photos only, screenshots.
+  - the filters: people, photos or videos, rating, Live Photos only, screenshots;
+  - finding a place on the map, as in the app.
 - **Organize from there too**:
   - select photos, then rate, add to an album, tag or delete them (to the main PC's Recycle Bin);
   - make, rename and delete albums;
@@ -136,6 +140,8 @@ works out live in its own database.
 - Place names from OpenStreetMap are **off until you turn them on**. When on, they send the rough areas (squares of
   about 5 × 4 km) where your photos were taken to OpenStreetMap's Overpass service, once each.
 - The map shows OpenStreetMap tiles.
+- Finding a place on the map searches this PC as you type. Only "Search OpenStreetMap for …" sends what you typed to
+  OpenStreetMap's Nominatim service, one search at a time.
 - Remote access is **off until you turn it on**. When on, it serves your library only to computers on your local
   network that have the passphrase.
 

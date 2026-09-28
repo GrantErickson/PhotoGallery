@@ -20,6 +20,9 @@
     .place-label { background: rgba(0, 120, 212, .85); color: #fff; border: 0; border-radius: 10px; padding: 2px 8px;
                    font-weight: 600; box-shadow: none; }
     .place-label::before { display: none; }
+    .found-pin { background: #ff9f1c; border: 3px solid #fff; border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+    .found-label { background: #ff9f1c; color: #1b1b1b; border: 0; border-radius: 10px; padding: 2px 8px; font-weight: 600; }
+    .found-label::before { display: none; }
     /* Dark mode: the light OpenStreetMap tiles inverted (hue turned back so water stays blue), and dark controls. */
     body.dark #map { background: #1b1b1b; }
     body.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.9) saturate(.8); }
@@ -112,6 +115,18 @@
     }
     window.fitCircle = (lat, lon, r) => whenSettled(() => map.fitBounds(L.latLng(lat, lon).toBounds(r * 2.4), { animate: false }));
     window.focusOn = (lat, lon, zoom) => whenSettled(() => map.setView([lat, lon], zoom, { animate: false }));
+
+    // A place found by name: the map fitted to it (or centred on it) and a labelled pin; clicking the pin removes it.
+    let found = null;
+    window.showFound = (lat, lon, label, zoom, s, w, n, e) => whenSettled(() => {
+      if (found) map.removeLayer(found);
+      if (s != null) map.fitBounds([[s, w], [n, e]], { animate: false, maxZoom: 17 });
+      else map.setView([lat, lon], zoom, { animate: false });
+      found = L.marker([lat, lon], { icon: L.divIcon({ className: "found-pin", iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 1000 })
+        .bindTooltip(label, { permanent: true, direction: "top", offset: [0, -10], className: "found-label" })
+        .addTo(map);
+      found.on("click", () => { map.removeLayer(found); found = null; });
+    });
 
     map.on("click", e => {
       if (placing) {

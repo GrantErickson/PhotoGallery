@@ -27,7 +27,8 @@ public sealed class PlaceNameService(AppServices services)
         return (place, spot, area);
     }
 
-    private Task<CityIndex?> CitiesAsync() => _cities ??= Task.Run(LoadCitiesAsync);
+    /// <summary>The GeoNames town list (downloaded the first time), or null if it couldn't be had.</summary>
+    public Task<CityIndex?> CitiesAsync() => _cities ??= Task.Run(LoadCitiesAsync);
 
     private async Task<CityIndex?> LoadCitiesAsync()
     {

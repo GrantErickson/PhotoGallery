@@ -178,6 +178,13 @@
       <div id="map-pane" class="map-pane" hidden>
         <div id="map"></div>
         <div id="map-status" class="map-status"></div>
+        <div class="map-search">
+          <form id="map-search-form" role="search">
+            <svg class="search-icon"><use href="#i-search" /></svg>
+            <input id="map-search" type="search" placeholder="Find a place: a town, a park, an address…" autocomplete="off" aria-label="Find a place">
+          </form>
+          <div id="map-results" class="map-results" hidden></div>
+        </div>
       </div>
       <div id="scroller" class="scroller" tabindex="-1">
         <div id="sizer" class="sizer"></div>

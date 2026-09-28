@@ -27,6 +27,7 @@ public sealed class AppServices
         Places = new PlaceRepository(Database);
         Pois = new PoiRepository(Database);
         PlaceNames = new PlaceNameService(this);
+        PlaceSearch = new PlaceSearchService(this);
         Faces = new Imaging.FaceCropper(Path.Combine(Paths.Root, "faces"));
         Thumbnails = new ThumbnailCache(Paths.Thumbnails);
         Thumbnails.Failed += (path, ex) => Log.Error($"Thumbnail failed for {path}", ex);
@@ -92,6 +93,8 @@ public sealed class AppServices
     /// <summary>Other computers on the network opening this library (when turned on in Settings).</summary>
     public RemoteAccessService Remote { get; }
     public PlaceNameService PlaceNames { get; }
+    /// <summary>Finding a place on the map by name.</summary>
+    public PlaceSearchService PlaceSearch { get; }
     public Imaging.FaceCropper Faces { get; }
     public CloudSyncService CloudSync { get; }
     public ThumbnailCache Thumbnails { get; }
