@@ -37,6 +37,10 @@
   const params = new URLSearchParams(location.search);
   const embedded = params.get("embedded") === "1";
   if (embedded) document.body.classList.add("embedded");
+  // Inside Photo Gallery on another computer: tells the app about signing in and out.
+  const report = message => {
+    if (embedded) window.chrome?.webview?.postMessage(message);
+  };
 
   const state = {
     name: "",
@@ -151,6 +155,7 @@
     $("login-host").textContent = state.name ? `on ${state.name}` : "";
     $("login-error").textContent = message || "";
     $("passphrase").focus();
+    report({ signedIn: false, signedOut: true }); // the app may sign in again with the passphrase it saved
   }
 
   $("login-form").addEventListener("submit", async event => {
@@ -1133,7 +1138,6 @@
   // For Photo Gallery's "Another computer" page: its title bar's search box drives this one, and it signs in with the
   // passphrase it was given (telling the app how that went, so it only remembers a passphrase that worked).
   const started = start();
-  const report = message => window.chrome?.webview?.postMessage(message);
   window.photoGallery = {
     search,
     clearSearch,

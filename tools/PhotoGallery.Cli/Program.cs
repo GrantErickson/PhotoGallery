@@ -4,6 +4,7 @@
 //   dotnet run --project tools/PhotoGallery.Cli -- stats
 //   dotnet run --project tools/PhotoGallery.Cli -- thumbs [count] [skip]
 //   dotnet run --project tools/PhotoGallery.Cli -- motion <mediaId>
+//   dotnet run --project tools/PhotoGallery.Cli -- remote-check <computer> [--code "XXXX XXXX XXXX XXXX"]
 using System.Diagnostics;
 using PhotoGallery.Core;
 using PhotoGallery.Core.Cloud;
@@ -11,6 +12,9 @@ using PhotoGallery.Core.Data;
 using PhotoGallery.Core.Imaging;
 using PhotoGallery.Core.Indexing;
 using PhotoGallery.Core.Media;
+
+// Checks another computer's remote access; needs (and touches) nothing of this computer's library.
+if (args.FirstOrDefault() == "remote-check") Environment.Exit(await PhotoGallery.Cli.RemoteCheck.RunAsync(args[1..]));
 
 var paths = AppPaths.Default;
 paths.EnsureCreated();
@@ -106,7 +110,7 @@ switch (args.FirstOrDefault())
         break;
     }
     default:
-        Console.WriteLine("Commands: index [root...] | stats | thumbs [count] | motion <mediaId>");
+        Console.WriteLine("Commands: index [root...] | stats | thumbs [count] | motion <mediaId> | remote-check <computer> [--code ...]");
         break;
 }
 

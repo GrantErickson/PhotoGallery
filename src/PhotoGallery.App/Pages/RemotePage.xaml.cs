@@ -30,6 +30,8 @@ public sealed partial class RemotePage : Page
     /// <summary>Given to the other computer's page once it has loaded, then forgotten.</summary>
     private string? _passphrase;
     private bool _remember;
+    /// <summary>Signed in again with the saved passphrase after the other computer signed this one out (once, until it works).</summary>
+    private bool _signedInAgain;
     private bool _hooked;
     private bool? _paneWasOpen;
 
@@ -245,7 +247,7 @@ public sealed partial class RemotePage : Page
             core.WebMessageReceived += OnWebMessage;
             core.HistoryChanged += (_, _) => App.MainWindow.RefreshBackButton();
         }
-        (_address, _fingerprint, _passphrase) = (address, fingerprint, passphrase);
+        (_address, _fingerprint, _passphrase, _signedInAgain) = (address, fingerprint, passphrase, false);
         core.Profile.PreferredColorScheme = Scheme;
         ConnectedText.Text = $"Photos on {name}";
         ConnectPanel.Visibility = Visibility.Collapsed;
@@ -313,8 +315,25 @@ public sealed partial class RemotePage : Page
         try
         {
             using var message = JsonDocument.Parse(e.WebMessageAsJson);
-            if (!message.RootElement.TryGetProperty("signedIn", out var signedIn)) return;
-            if (signedIn.GetBoolean() && _remember && _passphrase is { } passphrase) SavePassphrase(address.Key, passphrase);
+            var root = message.RootElement;
+            if (root.TryGetProperty("signedOut", out _))
+            {
+                // Signed out over there (it restarted, or the session ran out): sign in again with the saved passphrase,
+                // unless a sign-in is already on its way.
+                if (_passphrase is null && !_signedInAgain && LoadPassphrase(address.Key) is { } saved)
+                {
+                    _signedInAgain = true;
+                    _passphrase = saved;
+                    _ = sender.ExecuteScriptAsync($"window.photoGallery && window.photoGallery.signIn({JsonSerializer.Serialize(saved)})");
+                }
+                return;
+            }
+            if (!root.TryGetProperty("signedIn", out var signedIn)) return;
+            if (signedIn.GetBoolean())
+            {
+                if (_remember && _passphrase is { } passphrase) SavePassphrase(address.Key, passphrase);
+                _signedInAgain = false;
+            }
             _passphrase = null; // the page asks for it itself from here on
         }
         catch (JsonException)

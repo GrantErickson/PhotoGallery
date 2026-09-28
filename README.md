@@ -134,8 +134,9 @@ works out live in its own database.
   250,000 photos: about 6 GB of thumbnails and a 1 GB database).
 
 ### Build and run
-Double-click **`PhotoGallery.bat`** in the repo root. It builds the app the first time, then starts it. Run
-`PhotoGallery.bat build` after pulling changes. It won't start a second copy.
+Double-click **`PhotoGallery.bat`** in the repo root. It builds the app (quick when nothing changed, so it's always
+the latest after pulling), then starts it. `PhotoGallery.bat nobuild` starts the last build as it is. It won't start
+a second copy, or build while one is running.
 
 Or from a terminal:
 
@@ -170,6 +171,9 @@ dotnet run --project src/PhotoGallery.App
      passphrase, and check that the security code matches. It can remember the passphrase (in Windows' Credential
      Manager) and open the other computer's photos at start.
 3. The main PC has to be on and awake, with Photo Gallery running.
+4. To test it from another computer (with a Claude Code agent there), follow
+   [docs/remote-testing.md](docs/remote-testing.md). `dotnet run --project tools/PhotoGallery.Cli -- remote-check
+   <computer>` checks a host from the command line.
 
 ### Keyboard
 | Where | Keys |
@@ -195,10 +199,12 @@ Deleting that folder resets the app; your photos aren't touched. Caches are neve
 | `src/PhotoGallery.Embedder` | CLIP on the graphics card (DirectML), a separate process so its ONNX Runtime doesn't clash with the app's |
 | `src/PhotoGallery.Remote` | Remote access: the HTTPS server (Kestrel) and the web app it serves (`web/`) |
 | `tests/PhotoGallery.Core.Tests` | xUnit v3 tests (`dotnet test --project tests/PhotoGallery.Core.Tests`) |
-| `tools/PhotoGallery.Cli` | Headless indexing, stats and a thumbnail benchmark (`dotnet run --project tools/PhotoGallery.Cli -- stats`) |
+| `tools/PhotoGallery.Cli` | Headless indexing, stats, a thumbnail benchmark and a remote access check (`dotnet run --project tools/PhotoGallery.Cli -- stats`) |
+| `tools/remote-testing` | The message channel for testing remote access from another computer |
 | `spikes/` | Early experiments (OneDrive Live Photo video) |
 | `docs/plan.md` | Plan, decisions and findings |
 | `docs/store-plan.md` | What it would take to publish in the Microsoft Store |
+| `docs/remote-testing.md` | How to test remote access from another computer |
 
 ## Credits
 
