@@ -223,6 +223,26 @@ These need host step 6. Follow rule 2: change nothing outside the test folder.
 | F19 | Type 2+ letters in the search box | Suggestions include people, places and tags. |
 | F20 | In the app on the tester (Another computer): repeat F3, F6 and F13 | The same, inside the app. |
 
+### G: editing from the client (phase 2)
+Only on items in the test folder (rule 2). Everything saved lands next to the original there, and shows up in the
+folder after a moment.
+
+| Id | Do | Expect |
+|---|---|---|
+| G1 | Viewer on a test photo › Edit (E) | The editor, with the preview rendered by the host within a second or so. With changes off on the host, there's no Edit button. |
+| G2 | Move each slider; double-click one; Auto; Reset | The preview follows within about half a second; double-click resets it; Auto sets light and colour. |
+| G3 | Rotate left and right ([ and ]), Flip | The preview turns and mirrors. |
+| G4 | Crop: drag the corners and the middle; choose Square, then 16:9; Whole photo; Done (Enter) | The box follows the pointer and keeps the shape; Done shows the cropped photo. |
+| G5 | Save as copy (Ctrl+S) | "Saved <name>_1.jpg next to the original." The new photo appears in the folder, and matches the preview. |
+| G6 | Edit another › Keep in gallery | The photo shows with the edits (in the grid too, after a moment); no new file. Edit again and Reset everything, Keep: back to the original. |
+| G7 | On a test JPEG: Overwrite original | A question; then the photo shows the edits, and the old version is in the host's Recycle Bin. For HEIC there's no Overwrite. |
+| G8 | Edit, change something, Esc | "Discard your changes?"; Discard closes without saving. |
+| G9 | The test video in the viewer: play it, pause, , and . | Steps a frame back and forward. |
+| G10 | Save frame (S, or the camera button) | "Saved …_frame_….jpg"; the new photo appears in the folder. |
+| G11 | Sharpest frame (the sparkle button) on the video, and on a Live Photo if the test folder has one | Pauses on a sharp frame with its time; for a Live Photo its video appears, paused there. Save frame keeps it. |
+| G12 | Trim (scissors): Start here (I), End here (O), turn right, Remove the sound, Save as MP4 | A progress bar, then "Saved … next to the original."; the new MP4 is trimmed, turned and silent. Closing while it saves asks to stop. |
+| G13 | In the app on the tester (Another computer): G1, G5 and G12 | The same, inside the app. |
+
 ### X: refusals (last, since X1 locks the tester out for a minute)
 | Id | Do | Expect |
 |---|---|---|
@@ -243,8 +263,10 @@ These need host step 6. Follow rule 2: change nothing outside the test folder.
   Extensions*, or hardware support. The download always works.
 - The host must be on and awake, with Photo Gallery running. Restarting it signs everyone out: browsers ask again,
   and the app signs in again by itself.
-- Remote users can always rate. Deleting, tags, albums and people need the host's "Let them change things too".
-  Editing photos and trimming videos aren't there yet (phase 2).
+- Remote users can always rate. Editing, deleting, tags, albums and people need the host's "Let them change things
+  too".
+- Host-only, by design: Settings (library folders, OneDrive, background work, remote access itself), Show in
+  Explorer, and exporting to a place of your choice (Download the original instead).
 - Only computers on the local network can connect (not over the internet, VPN or Tailscale).
 
 ## For the host agent

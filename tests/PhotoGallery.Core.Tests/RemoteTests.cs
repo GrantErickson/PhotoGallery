@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using PhotoGallery.Core.Data;
 using PhotoGallery.Core.Duplicates;
+using PhotoGallery.Core.Editing;
 using PhotoGallery.Core.Media;
 using PhotoGallery.Core.Ocr;
 using PhotoGallery.Core.Transcripts;
@@ -429,6 +430,65 @@ public sealed class RemoteServerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Edits_preview_freely_but_save_only_when_allowed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        var edits = await _client.GetFromJsonAsync<JsonElement>("api/media/1/edits", ct);
+        Assert.Equal(90, edits.GetProperty("ops").GetProperty("Rotation").GetInt32());
+
+        // Out-of-range values are brought back into range, and choosing the crop shows the whole picture.
+        var ops = new { Rotation = 450, Exposure = 7.0, Crop = new { X = 0.1, Y = 0.1, Width = 0.5, Height = 0.5 } };
+        using (var preview = await _client.SendAsync(Post("api/media/1/preview", new { ops, crop = false }), ct))
+        {
+            Assert.Equal("image/jpeg", preview.Content.Headers.ContentType!.MediaType);
+            Assert.Equal((90, 2.0, null), (_library.LastRendered!.Rotation, _library.LastRendered.Exposure, _library.LastRendered.Crop));
+        }
+        using (var preview = await _client.SendAsync(Post("api/media/1/preview", new { ops }), ct))
+            Assert.NotNull(_library.LastRendered!.Crop);
+        using var video = await _client.SendAsync(Post("api/media/2/preview", new { ops }), ct);
+        Assert.Equal(HttpStatusCode.BadRequest, video.StatusCode);
+
+        using (var auto = await _client.SendAsync(Post("api/media/1/auto", new { ops = new { Rotation = 180 } }), ct))
+        {
+            var result = (await auto.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("ops");
+            Assert.Equal((180, 0.5), (result.GetProperty("Rotation").GetInt32(), result.GetProperty("Exposure").GetDouble()));
+        }
+
+        using var refused = await _client.SendAsync(Post("api/media/1/edit", new { ops, mode = "copy" }), ct);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        _library.AllowChanges = true;
+        using var bad = await _client.SendAsync(Post("api/media/1/edit", new { ops, mode = "sideways" }), ct);
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+        using var saved = await _client.SendAsync(Post("api/media/1/edit", new { ops, mode = "copy" }), ct);
+        Assert.Equal("Saved.", (await saved.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("message").GetString());
+        Assert.Contains("edit 1 Copy 90 2", _library.Changes);
+    }
+
+    [Fact]
+    public async Task Frames_and_video_saves()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await SignInAsync();
+        using (var sharpest = await _client.SendAsync(Post("api/media/2/sharpest", new { }), ct))
+            Assert.Equal(1.25, (await sharpest.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("seconds").GetDouble());
+        using (var none = await _client.SendAsync(Post("api/media/1/sharpest", new { }), ct))
+            Assert.Equal(HttpStatusCode.NotFound, none.StatusCode);
+
+        _library.AllowChanges = true;
+        using (var frame = await _client.SendAsync(Post("api/media/2/frame", new { seconds = 3.5 }), ct))
+            Assert.Equal(HttpStatusCode.OK, frame.StatusCode);
+        using (var backwards = await _client.SendAsync(Post("api/media/2/export", new { start = 5.0, end = 2.0 }), ct))
+            Assert.Equal(HttpStatusCode.BadRequest, backwards.StatusCode);
+        using var started = await _client.SendAsync(Post("api/media/2/export", new { rotation = -90, start = 1.0, end = 4.0, mute = true }), ct);
+        var job = (await started.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("job").GetString();
+        var status = await _client.GetFromJsonAsync<JsonElement>($"api/jobs/{job}", ct);
+        Assert.True(status.GetProperty("done").GetBoolean());
+        Assert.Equal("Saved clip.mp4.", status.GetProperty("message").GetString());
+        Assert.Equal(["frame 2 3.5", "export 2 270 1-4 True"], _library.Changes);
+    }
+
+    [Fact]
     public async Task Finds_duplicates_in_the_background()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -554,6 +614,43 @@ public sealed class RemoteServerTests : IAsyncLifetime
         public void HidePerson(long personId, bool hidden) => Changes.Add($"person {personId} hidden {hidden}");
 
         public void MergePeople(long sourceId, long targetId) => Changes.Add($"person {sourceId} into {targetId}");
+
+        public EditOperations GetEdits(MediaItem item) => new() { Rotation = 90 };
+
+        public bool CanOverwrite(MediaItem item) => false;
+
+        public EditOperations? LastRendered { get; private set; }
+
+        public Task<byte[]?> RenderEditAsync(MediaItem item, EditOperations ops, int maxSize, CancellationToken ct)
+        {
+            LastRendered = ops;
+            return Task.FromResult<byte[]?>([0xFF, 0xD8, 0xFF, 0xD9]);
+        }
+
+        public Task<EditOperations> AutoAdjustAsync(MediaItem item, EditOperations ops, CancellationToken ct) => Task.FromResult(ops with { Exposure = 0.5 });
+
+        public Task<string> SaveEditAsync(MediaItem item, EditOperations ops, EditSave mode)
+        {
+            Changes.Add($"edit {item.Id} {mode} {ops.Rotation} {ops.Exposure}");
+            return Task.FromResult("Saved.");
+        }
+
+        public Task<TimeSpan?> FindSharpestAsync(MediaItem item, CancellationToken ct) =>
+            Task.FromResult<TimeSpan?>(item.Kind == MediaKind.Video ? TimeSpan.FromSeconds(1.25) : null);
+
+        public Task<string> SaveFrameAsync(MediaItem item, TimeSpan position)
+        {
+            Changes.Add($"frame {item.Id} {position.TotalSeconds}");
+            return Task.FromResult("Saved a frame.");
+        }
+
+        public VideoJob StartVideoExport(MediaItem item, VideoEdits edits)
+        {
+            Changes.Add($"export {item.Id} {edits.Rotation} {edits.TrimStart.TotalSeconds}-{edits.TrimEnd?.TotalSeconds} {edits.Mute}");
+            var job = new VideoJob { Progress = 1 };
+            job.Finish("Saved clip.mp4.");
+            return job;
+        }
     }
 }
 

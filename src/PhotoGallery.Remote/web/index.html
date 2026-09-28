@@ -41,6 +41,14 @@
     <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7.5V19l-4 2v-8.5z" /></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
     <symbol id="i-signout" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h10" /></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" /></symbol>
+    <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5" /><circle cx="6" cy="17" r="2.5" /><path d="M8 8.5 20 18M8 15.5 20 6" /></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.5" /></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" /></symbol>
+    <symbol id="i-rotl" viewBox="0 0 24 24"><path d="M4 4v5h5" /><path d="M4.6 14A8 8 0 1 0 6 7.4L4 9" /></symbol>
+    <symbol id="i-rotr" viewBox="0 0 24 24"><path d="M20 4v5h-5" /><path d="M19.4 14A8 8 0 1 1 18 7.4L20 9" /></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24"><path d="M12 3v18M9 7 4 17h5zM15 7l5 10h-5z" /></symbol>
+    <symbol id="i-crop" viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14" /></symbol>
   </svg>
 
   <!-- Sign in -->
@@ -197,6 +205,10 @@
         <div id="v-stars" class="stars" role="group" aria-label="Rating"></div>
         <button id="v-faces" class="icon-button toggle" type="button" title="Show faces (F)" aria-label="Show faces" hidden><svg><use href="#i-face" /></svg></button>
         <button id="v-text" class="icon-button toggle" type="button" title="Show text in the photo (T)" aria-label="Show text" hidden><svg><use href="#i-text" /></svg></button>
+        <button id="v-sharpest" class="icon-button" type="button" title="Find the sharpest frame" aria-label="Find the sharpest frame" hidden><svg><use href="#i-sparkle" /></svg></button>
+        <button id="v-frame" class="icon-button" type="button" title="Save this frame as a photo (S)" aria-label="Save this frame" data-change hidden><svg><use href="#i-camera" /></svg></button>
+        <button id="v-trim" class="icon-button" type="button" title="Trim, rotate and save the video" aria-label="Trim and save the video" data-change hidden><svg><use href="#i-scissors" /></svg></button>
+        <button id="v-edit" class="icon-button" type="button" title="Edit (E)" aria-label="Edit" data-change hidden><svg><use href="#i-edit" /></svg></button>
         <button id="v-similar" class="icon-button" type="button" title="Similar photos" aria-label="Similar photos"><svg><use href="#i-similar" /></svg></button>
         <button id="v-album" class="icon-button" type="button" title="Add to album" aria-label="Add to album" data-change><svg><use href="#i-album" /></svg></button>
         <a id="v-download" class="icon-button" title="Download the original" aria-label="Download the original"><svg><use href="#i-download" /></svg></a>
@@ -217,6 +229,94 @@
         <button id="v-next" class="v-nav next" type="button" aria-label="Next"><svg><use href="#i-right" /></svg></button>
       </div>
       <aside id="v-panel" class="v-panel" hidden></aside>
+    </div>
+  </div>
+
+  <!-- Photo editor: previews are rendered on the photo computer, with the app's own renderer -->
+  <div id="editor" class="editor" hidden>
+    <div class="editor-top">
+      <button id="e-cancel" class="icon-button" type="button" title="Cancel (Esc)" aria-label="Cancel"><svg><use href="#i-back" /></svg></button>
+      <div class="e-title">Edit</div>
+      <div class="e-actions">
+        <button id="e-keep" type="button" title="Keep the edits in the gallery; no file changes">Keep in gallery</button>
+        <button id="e-overwrite" type="button" title="Replace the original; the current version goes to the Recycle Bin">Overwrite original</button>
+        <button id="e-copy" type="button" class="primary" title="Save as a new photo next to the original (Ctrl+S)">Save as copy</button>
+      </div>
+    </div>
+    <div class="editor-body">
+      <div id="e-stage" class="e-stage">
+        <img id="e-img" alt="" draggable="false">
+        <div id="e-crop" class="e-crop" hidden>
+          <div id="e-box" class="e-box">
+            <span data-h="nw"></span><span data-h="n"></span><span data-h="ne"></span><span data-h="e"></span>
+            <span data-h="se"></span><span data-h="s"></span><span data-h="sw"></span><span data-h="w"></span>
+          </div>
+        </div>
+        <div id="e-busy" class="e-busy" hidden>Rendering…</div>
+      </div>
+      <aside class="e-panel">
+        <h3>Rotate and crop</h3>
+        <div class="e-row">
+          <button id="e-rotl" type="button" title="Rotate left ([)"><svg><use href="#i-rotl" /></svg></button>
+          <button id="e-rotr" type="button" title="Rotate right (])"><svg><use href="#i-rotr" /></svg></button>
+          <button id="e-flip" type="button" title="Flip"><svg><use href="#i-flip" /></svg></button>
+          <button id="e-crop-button" type="button"><svg><use href="#i-crop" /></svg>Crop</button>
+        </div>
+        <div id="e-crop-tools" class="e-row" hidden>
+          <select id="e-aspect" aria-label="Shape">
+            <option value="">Free</option>
+            <option value="original">Original</option>
+            <option value="1">Square</option>
+            <option value="1.3333">4:3</option>
+            <option value="1.5">3:2</option>
+            <option value="1.7778">16:9</option>
+            <option value="0.75">3:4 (tall)</option>
+          </select>
+          <button id="e-crop-reset" type="button">Whole photo</button>
+          <button id="e-crop-done" type="button" class="primary">Done</button>
+        </div>
+        <h3>Light and colour</h3>
+        <div class="e-row">
+          <button id="e-auto" type="button"><svg><use href="#i-sparkle" /></svg>Auto</button>
+          <button id="e-reset-light" type="button">Reset</button>
+        </div>
+        <div id="e-sliders"></div>
+        <p class="fine">Double-click a slider to reset it. Nothing changes on the photo computer until you save.</p>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Video editor: trim, rotate, mute; saved as an MP4 on the photo computer -->
+  <div id="vedit" class="editor" hidden>
+    <div class="editor-top">
+      <button id="ve-cancel" class="icon-button" type="button" title="Close (Esc)" aria-label="Close"><svg><use href="#i-back" /></svg></button>
+      <div class="e-title">Trim and save</div>
+      <div class="e-actions">
+        <button id="ve-save" type="button" class="primary">Save as MP4</button>
+      </div>
+    </div>
+    <div class="editor-body">
+      <div class="e-stage"><video id="ve-video" controls playsinline></video></div>
+      <aside class="e-panel">
+        <h3>Keep</h3>
+        <div class="e-row"><span class="ve-label">Start</span><span id="ve-start" class="ve-time"></span><button id="ve-set-start" type="button" title="Start here (I)">Start here</button></div>
+        <div class="e-row"><span class="ve-label">End</span><span id="ve-end" class="ve-time"></span><button id="ve-set-end" type="button" title="End here (O)">End here</button></div>
+        <div class="e-row"><button id="ve-reset" type="button">Keep it all</button></div>
+        <h3>Turn</h3>
+        <div class="e-row">
+          <button id="ve-rotl" type="button" title="Rotate left"><svg><use href="#i-rotl" /></svg></button>
+          <button id="ve-rotr" type="button" title="Rotate right"><svg><use href="#i-rotr" /></svg></button>
+        </div>
+        <h3>Sound</h3>
+        <label class="check-inline"><input id="ve-mute" type="checkbox"> Remove the sound</label>
+        <div id="ve-progress" hidden>
+          <h3>Saving</h3>
+          <div class="progress"><div id="ve-fill"></div></div>
+          <p id="ve-status" class="fine"></p>
+          <button id="ve-stop" type="button">Stop</button>
+        </div>
+        <p class="fine">Saved next to the original on the photo computer, which does the work.</p>
+      </aside>
     </div>
   </div>
 

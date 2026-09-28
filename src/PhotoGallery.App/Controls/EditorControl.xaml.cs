@@ -65,7 +65,7 @@ public sealed partial class EditorControl : UserControl
     {
         _item = item;
         FileText.Text = item.FileName;
-        CopyNameRun.Text = Path.GetFileName(NextCopyPath(item.Path));
+        CopyNameRun.Text = Path.GetFileName(EditSaving.NextCopyPath(item.Path));
         OverwriteButton.IsEnabled = EditRenderer.CanWriteFormat(item.Path);
         _ops = S.Edits.Get(item.Id) ?? EditOperations.None;
         _openedWith = _ops;
@@ -431,8 +431,7 @@ public sealed partial class EditorControl : UserControl
     private void Save()
     {
         if (_item is null) return;
-        S.Edits.Save(_item.Id, _ops);
-        S.Thumbnails.Invalidate([_item.Id]);
+        EditSaving.Keep(S, _item, _ops);
         App.MainWindow.ShowStatus(_ops.IsIdentity
             ? "Edits removed — showing the original."
             : "Edits kept in the gallery only. No file was changed; use Save as copy or Overwrite to write them to a file.");
@@ -450,16 +449,10 @@ public sealed partial class EditorControl : UserControl
             App.MainWindow.ShowStatus("Nothing to save — make an edit first.");
             return;
         }
-        var target = NextCopyPath(item.Path);
         Busy.IsActive = true;
         try
         {
-            await EditRenderer.WriteFileAsync(item.Path, _ops, target, item.TakenLocal, Location(item));
-            var copy = await Task.Run(() => S.Indexing.IndexFileNow(target));
-            if (copy is not null) S.Media.SetDerivedFrom(copy.Id, item.Id);
-            // The copy carries the edits; the original goes back to showing itself.
-            S.Edits.Save(item.Id, EditOperations.None);
-            S.Thumbnails.Invalidate([item.Id]);
+            var target = await EditSaving.SaveCopyAsync(S, item, _ops);
             App.MainWindow.ShowStatus($"Saved {Path.GetFileName(target)} next to the original.");
             Close(saved: true);
         }
@@ -471,21 +464,6 @@ public sealed partial class EditorControl : UserControl
         finally
         {
             Busy.IsActive = false;
-        }
-    }
-
-    private static (double, double)? Location(MediaItem item) =>
-        item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : null;
-
-    /// <summary>"D:\x\IMG_0840.HEIC" → "D:\x\IMG_0840_1.jpg" (the next free number).</summary>
-    internal static string NextCopyPath(string original)
-    {
-        var folder = Path.GetDirectoryName(original)!;
-        var name = Path.GetFileNameWithoutExtension(original);
-        for (var n = 1; ; n++)
-        {
-            var candidate = Path.Combine(folder, $"{name}_{n}.jpg");
-            if (!File.Exists(candidate)) return candidate;
         }
     }
 
@@ -509,17 +487,7 @@ public sealed partial class EditorControl : UserControl
         Busy.IsActive = true;
         try
         {
-            var temp = Path.Combine(Path.GetDirectoryName(item.Path)!, $".{Guid.NewGuid():N}{Path.GetExtension(item.Path)}");
-            await EditRenderer.WriteFileAsync(item.Path, _ops, temp, item.TakenLocal, Location(item));
-            if (!RecycleBin.Recycle(item.Path))
-            {
-                File.Delete(temp);
-                throw new IOException("The original couldn't be moved to the Recycle Bin, so it was left unchanged.");
-            }
-            File.Move(temp, item.Path);
-            S.Edits.Save(item.Id, EditOperations.None);
-            S.Thumbnails.Invalidate([item.Id]);
-            S.Indexing.RequestIndex();
+            await EditSaving.OverwriteAsync(S, item, _ops);
             App.MainWindow.ShowStatus("Original overwritten. The previous version is in the Recycle Bin.");
             Close(saved: true);
         }

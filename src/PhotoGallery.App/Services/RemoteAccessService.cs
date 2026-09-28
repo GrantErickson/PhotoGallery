@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
 using PhotoGallery.Core;
 using PhotoGallery.Core.Data;
+using PhotoGallery.App.Editing;
 using PhotoGallery.Core.Duplicates;
+using PhotoGallery.Core.Editing;
 using PhotoGallery.Core.Media;
 using PhotoGallery.Core.Transcripts;
 using PhotoGallery.Remote;
@@ -190,6 +192,97 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
     public void HidePerson(long personId, bool hidden) => services.People.SetHidden(personId, hidden);
 
     public void MergePeople(long sourceId, long targetId) => services.People.Merge(sourceId, targetId);
+
+    // ---------- Editing, with the app's own renderer and saving (see EditSaving, VideoFrames, VideoExport) ----------
+
+    public EditOperations GetEdits(MediaItem item) => services.Edits.Get(item.Id) ?? EditOperations.None;
+
+    public bool CanOverwrite(MediaItem item) => EditRenderer.CanWriteFormat(item.Path);
+
+    public async Task<byte[]?> RenderEditAsync(MediaItem item, EditOperations ops, int maxSize, CancellationToken ct)
+    {
+        try
+        {
+            using var rendered = await EditRenderer.RenderPreviewAsync(item.Path, ops, maxSize);
+            return await DisplayRenderer.EncodeAsync(rendered, 0.85f);
+        }
+        catch (Exception ex) when (ex is COMException or ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            Log.Error($"Remote access: couldn't render edits of {item.Path}", ex);
+            return null;
+        }
+    }
+
+    public async Task<EditOperations> AutoAdjustAsync(MediaItem item, EditOperations ops, CancellationToken ct)
+    {
+        using var source = await EditRenderer.LoadAsync(item.Path, 1024);
+        var (bgra, width) = EditRenderer.Sample(source, ops.WithoutColor, 256);
+        return AutoAdjust.Apply(ops, bgra, width);
+    }
+
+    public async Task<string> SaveEditAsync(MediaItem item, EditOperations ops, EditSave mode)
+    {
+        switch (mode)
+        {
+            case EditSave.Keep:
+                EditSaving.Keep(services, item, ops);
+                return ops.IsIdentity ? "Edits removed; it shows the original again." : $"Edits kept in the gallery on {Name}. No file was changed.";
+            case EditSave.Copy:
+                if (ops.IsIdentity) throw new InvalidOperationException("Nothing to save; make an edit first.");
+                return $"Saved {Path.GetFileName(await EditSaving.SaveCopyAsync(services, item, ops))} next to the original.";
+            default:
+                if (ops.IsIdentity) throw new InvalidOperationException("Nothing to save; make an edit first.");
+                await EditSaving.OverwriteAsync(services, item, ops);
+                return $"Original overwritten. The previous version is in the Recycle Bin on {Name}.";
+        }
+    }
+
+    /// <summary>A video's own file, or a Live Photo's video (fetched from OneDrive if need be).</summary>
+    private async Task<string?> VideoPathAsync(MediaItem item, CancellationToken ct) =>
+        item.Kind == MediaKind.Video ? item.Path
+        : await services.Motion.GetVideoAsync(item, ct) is (MotionResult.Ready, { } path) ? path : null;
+
+    public async Task<TimeSpan?> FindSharpestAsync(MediaItem item, CancellationToken ct) =>
+        await VideoPathAsync(item, ct) is { } video ? await VideoFrames.FindSharpestAsync(video) : null;
+
+    public async Task<string> SaveFrameAsync(MediaItem item, TimeSpan position)
+    {
+        var video = await VideoPathAsync(item, CancellationToken.None) ?? throw new InvalidOperationException("It has no video.");
+        var saved = await VideoFrames.SaveSnapshotAsync(item, video, position, isLivePhoto: item.Kind != MediaKind.Video);
+        var indexed = await Task.Run(() => services.Indexing.IndexFileNow(saved));
+        if (indexed is not null) services.Media.SetDerivedFrom(indexed.Id, item.Id);
+        return $"Saved {Path.GetFileName(saved)} in {Path.GetFileName(Path.GetDirectoryName(saved))}.";
+    }
+
+    public VideoJob StartVideoExport(MediaItem item, VideoEdits edits)
+    {
+        var job = new VideoJob();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var source = await VideoPathAsync(item, job.Cancellation.Token) ?? throw new InvalidOperationException("It has no video.");
+                var livePhoto = item.Kind != MediaKind.Video;
+                var target = VideoExport.NextPath(item.Path, livePhoto);
+                var taken = livePhoto ? item.TakenLocal : item.TakenLocal + edits.TrimStart;
+                var location = item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : ((double, double)?)null;
+                await VideoExport.ExportAsync(source, edits, target, taken, location, new Progress<double>(p => job.Progress = p), job.Cancellation.Token);
+                var indexed = await Task.Run(() => services.Indexing.IndexFileNow(target));
+                if (indexed is not null) services.Media.SetDerivedFrom(indexed.Id, item.Id);
+                job.Finish($"Saved {Path.GetFileName(target)} next to the original.");
+            }
+            catch (OperationCanceledException)
+            {
+                job.Fail("Stopped; nothing was saved.");
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or COMException or ArgumentException)
+            {
+                Log.Error($"Remote access: saving a video of {item.Path} failed", ex);
+                job.Fail($"Couldn't save the video: {ex.Message}");
+            }
+        });
+        return job;
+    }
 
     public Task<string?> GetThumbnailAsync(MediaItem item, CancellationToken ct) => services.Thumbnails.GetOrCreateAsync(item.Id, item.Path, ct);
 

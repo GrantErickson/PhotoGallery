@@ -106,7 +106,10 @@
 
   const post = (path, body = {}) => json(path, { method: "POST", body });
 
-  const thumbUrl = id => `/api/media/${id}/thumb`;
+  // Photos edited from here get a new address, so the browser doesn't show what it kept from before.
+  const bust = new Map();
+  const thumbUrl = id => `/api/media/${id}/thumb` + (bust.has(id) ? `?v=${bust.get(id)}` : "");
+  const displayUrl = (id, size) => `/api/media/${id}/display?size=${size}` + (bust.has(id) ? `&v=${bust.get(id)}` : "");
   const displaySize = () => {
     const pixels = Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1);
     return Math.min(4096, Math.max(1024, Math.ceil(pixels / 512) * 512));
@@ -1570,6 +1573,14 @@
     }
   }
 
+  /** Loads the current list again (keeping the place), after the photo computer saved something new into it. */
+  function reloadList() {
+    if (state.route?.section === "map") return listMap();
+    if (state.listKey) state.scrollMemory.set(state.listKey, $("scroller").scrollTop);
+    state.listKey = null;
+    routeNow();
+  }
+
   // ---------- Viewer ----------
 
   const viewer = { index: -1, id: 0, token: 0, pushed: false, details: null, zoom: { scale: 1, x: 0, y: 0 }, big: false };
@@ -1605,6 +1616,9 @@
       history.replaceState(null, "", hashOf(current));
     }
     viewer.pushed = false;
+    // Back from an editor leaves it too (a video being saved carries on on the photo computer).
+    if (!$("editor").hidden) closeEditor();
+    if (!$("vedit").hidden) closeVideoEditor(true);
     stopVideo();
     $("viewer").hidden = true;
     viewer.index = -1;
@@ -1666,6 +1680,7 @@
     $("v-download").href = `/api/media/${id}/original`;
     $("v-download").setAttribute("download", "");
     $("v-date").textContent = dates[index] ? formats.full.format(new Date(dates[index] * 1000)) : "";
+    updateVideoTools(f);
     $("v-place").textContent = "";
     renderStars((f >> 2) & 7);
 
@@ -1689,6 +1704,7 @@
       preload(index + 1);
       preload(index - 1);
     }
+    updateVideoTools(f); // now that the video (if any) is on screen
     loadDetails(id, token);
   }
 
@@ -1707,13 +1723,13 @@
         message("This photo can't be shown here.", true);
       }
     };
-    full.src = `/api/media/${id}/display?size=${size}`;
+    full.src = displayUrl(id, size);
   }
 
   function preload(index) {
     const { ids, flags } = state.items;
     if (index < 0 || index >= ids.length || flags[index] & 1) return;
-    new Image().src = `/api/media/${ids[index]}/display?size=${displaySize()}`;
+    new Image().src = displayUrl(ids[index], displaySize());
   }
 
   async function playLive() {
@@ -1741,15 +1757,18 @@
         if (token === viewer.token) {
           video.hidden = true;
           video.classList.remove("live");
+          updateVideoTools();
         }
       };
       video.onerror = () => {
         if (token === viewer.token) {
           video.hidden = true;
+          updateVideoTools();
           toast("This browser can't play the Live Photo's video.");
         }
       };
       video.src = url;
+      updateVideoTools();
       await video.play();
     } catch (error) {
       if (error.name !== "AbortError") fail(error);
@@ -2191,10 +2210,512 @@
     if (event.target.closest(".people a, .tag-chip")) viewer.pushed = false; // following a link replaces the viewer's entry
   });
 
+  // ---------- Video tools in the viewer: the sharpest frame, saving a frame, stepping ----------
+
+  const videoShown = () => !$("v-video").hidden;
+
+  function updateVideoTools(flags = state.items.flags[viewer.index] || 0) {
+    const hasVideo = (flags & 1) || (flags & 2);
+    $("v-sharpest").hidden = !hasVideo;
+    $("v-trim").hidden = !hasVideo;
+    $("v-frame").hidden = !videoShown();
+    $("v-edit").hidden = !!(flags & 1);
+  }
+
+  async function sharpestFrame() {
+    const id = viewer.id, token = viewer.token, flags = state.items.flags[viewer.index] || 0;
+    const button = $("v-sharpest");
+    button.disabled = true;
+    toast("Looking through the video for its sharpest frame…");
+    try {
+      const found = await post(`/api/media/${id}/sharpest`);
+      if (token !== viewer.token) return;
+      const video = $("v-video");
+      if (!(flags & 1) && (video.hidden || !video.src.includes("/motion"))) {
+        // A Live Photo: its video, paused on that frame.
+        resetZoom();
+        video.onended = null;
+        video.classList.add("live");
+        video.controls = true;
+        video.hidden = false;
+        video.src = `/api/media/${id}/motion`;
+        await new Promise(resolve => video.addEventListener("loadedmetadata", resolve, { once: true }));
+        if (token !== viewer.token) return;
+      }
+      video.pause();
+      video.currentTime = found.seconds;
+      updateVideoTools();
+      toast(`Sharpest frame at ${clock(found.seconds)}${state.changes ? " · Save frame (S) keeps it as a photo" : ""}`);
+    } catch (error) {
+      fail(error);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function saveFrame() {
+    if (!state.changes || !videoShown()) return;
+    const video = $("v-video");
+    video.pause();
+    try {
+      const saved = await post(`/api/media/${viewer.id}/frame`, { seconds: video.currentTime });
+      toast(saved.message);
+      reloadList();
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  function stepFrame(delta) {
+    const video = $("v-video");
+    if (!videoShown()) return;
+    video.pause();
+    video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + delta / 30));
+  }
+
+  $("v-sharpest").addEventListener("click", sharpestFrame);
+  $("v-frame").addEventListener("click", saveFrame);
+
+  // ---------- Photo editor: the preview comes from the photo computer, rendered as the app renders it ----------
+
+  const signed = (v, digits) => (v > 0 ? "+" : "") + v.toFixed(digits);
+  const SLIDERS = [
+    ["Exposure", "Exposure", -2, 2, 0.05, v => signed(v, 2) + " EV"],
+    ["Brightness", "Brightness", -1, 1, 0.02, v => signed(v * 100, 0)],
+    ["Contrast", "Contrast", -1, 1, 0.02, v => signed(v * 100, 0)],
+    ["Saturation", "Saturation", -1, 1, 0.02, v => signed(v * 100, 0)],
+    ["Temperature", "Warmth", -1, 1, 0.02, v => signed(v * 100, 0)],
+    ["Tint", "Tint", -1, 1, 0.02, v => signed(v * 100, 0)],
+  ];
+  const editor = { id: 0, ops: {}, saved: "", canOverwrite: false, cropping: false, crop: null, aspect: null, token: 0, url: null, timer: 0 };
+  const isFull = c => !c || (c.X <= 0.0001 && c.Y <= 0.0001 && c.Width >= 0.9999 && c.Height >= 0.9999);
+  /** The edits in the app's own format, with every field (the photo computer leaves out the ones at their defaults). */
+  const normal = o => ({
+    Rotation: o.Rotation || 0,
+    FlipHorizontal: !!o.FlipHorizontal,
+    Crop: isFull(o.Crop) ? null : { X: o.Crop.X, Y: o.Crop.Y, Width: o.Crop.Width, Height: o.Crop.Height },
+    ...Object.fromEntries(SLIDERS.map(([key]) => [key, o[key] || 0])),
+  });
+
+  for (const [key, label, min, max, stepSize, show] of SLIDERS) {
+    const row = el("label", "e-slider");
+    const input = el("input");
+    Object.assign(input, { type: "range", min, max, step: stepSize, value: 0 });
+    input.dataset.key = key;
+    const output = el("output");
+    row.append(el("span", null, label), output, input);
+    input.addEventListener("input", () => {
+      editor.ops[key] = Number(input.value);
+      output.textContent = show(editor.ops[key]);
+      schedulePreview();
+    });
+    input.addEventListener("dblclick", () => {
+      input.value = 0;
+      input.dispatchEvent(new Event("input"));
+    });
+    $("e-sliders").append(row);
+  }
+
+  function syncSliders() {
+    for (const input of $("e-sliders").querySelectorAll("input")) {
+      const [, , , , , show] = SLIDERS.find(([key]) => key === input.dataset.key);
+      input.value = editor.ops[input.dataset.key] || 0;
+      input.previousElementSibling.textContent = show(Number(input.value));
+    }
+  }
+
+  async function openEditor() {
+    const d = viewer.details;
+    if (!state.changes || !d || d.video) return;
+    try {
+      const info = await json(`/api/media/${d.id}/edits`);
+      editor.id = d.id;
+      editor.ops = normal(info.ops);
+      editor.saved = JSON.stringify(editor.ops);
+      editor.canOverwrite = info.canOverwrite;
+    } catch (error) {
+      fail(error);
+      return;
+    }
+    $("e-overwrite").hidden = !editor.canOverwrite;
+    editor.cropping = false;
+    showCropTools(false);
+    syncSliders();
+    $("editor").hidden = false;
+    preview();
+  }
+
+  function schedulePreview() {
+    clearTimeout(editor.timer);
+    editor.timer = setTimeout(preview, 120);
+  }
+
+  async function preview() {
+    const token = ++editor.token;
+    const stage = $("e-stage");
+    const size = Math.min(2560, Math.ceil(Math.max(stage.clientWidth, stage.clientHeight) * (window.devicePixelRatio || 1) / 256) * 256) || 1600;
+    $("e-busy").hidden = false;
+    try {
+      const response = await api(`/api/media/${editor.id}/preview`, { method: "POST", body: { ops: normal(editor.ops), crop: !editor.cropping, size } });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "The preview couldn't be made.");
+      }
+      const blob = await response.blob();
+      if (token !== editor.token) return;
+      const url = URL.createObjectURL(blob);
+      const img = $("e-img");
+      await new Promise(resolve => {
+        img.onload = img.onerror = resolve;
+        img.src = url;
+      });
+      if (editor.url) URL.revokeObjectURL(editor.url);
+      editor.url = url;
+      if (editor.cropping) placeCrop();
+    } catch (error) {
+      if (token === editor.token) fail(error);
+    } finally {
+      if (token === editor.token) $("e-busy").hidden = true;
+    }
+  }
+
+  const turn = (c, clockwise) => c && (clockwise
+    ? { X: 1 - c.Y - c.Height, Y: c.X, Width: c.Height, Height: c.Width }
+    : { X: c.Y, Y: 1 - c.X - c.Width, Width: c.Height, Height: c.Width });
+  const mirror = c => c && { ...c, X: 1 - c.X - c.Width };
+
+  function rotateEdit(clockwise) {
+    const o = editor.ops;
+    o.Rotation = (o.Rotation + (clockwise ? 90 : 270)) % 360;
+    o.Crop = turn(o.Crop, clockwise);
+    if (editor.cropping) editor.crop = turn(editor.crop, clockwise);
+    preview();
+  }
+
+  function flipEdit() {
+    const o = editor.ops;
+    // Mirrors the picture as it looks now (after turning), as the app does.
+    if (o.Rotation === 90 || o.Rotation === 270) o.Rotation = (o.Rotation + 180) % 360;
+    o.FlipHorizontal = !o.FlipHorizontal;
+    o.Crop = mirror(o.Crop);
+    if (editor.cropping) editor.crop = mirror(editor.crop);
+    preview();
+  }
+
+  function showCropTools(on) {
+    $("e-crop-tools").hidden = !on;
+    $("e-crop").hidden = !on;
+    $("e-crop-button").hidden = on;
+  }
+
+  function startCrop() {
+    editor.cropping = true;
+    editor.crop = editor.ops.Crop ? { ...editor.ops.Crop } : { X: 0, Y: 0, Width: 1, Height: 1 };
+    $("e-aspect").value = "";
+    editor.aspect = null;
+    showCropTools(true);
+    preview();
+  }
+
+  function finishCrop() {
+    editor.ops.Crop = isFull(editor.crop) ? null : { ...editor.crop };
+    editor.cropping = false;
+    showCropTools(false);
+    preview();
+  }
+
+  /** Where the picture is drawn in the stage (it's fitted inside the image element). */
+  function pictureRect() {
+    const img = $("e-img"), stage = $("e-stage").getBoundingClientRect(), box = img.getBoundingClientRect();
+    const nw = img.naturalWidth || 1, nh = img.naturalHeight || 1;
+    const fit = Math.min(box.width / nw, box.height / nh);
+    const w = nw * fit, h = nh * fit;
+    return { left: box.left - stage.left + (box.width - w) / 2, top: box.top - stage.top + (box.height - h) / 2, width: w, height: h };
+  }
+
+  function placeCrop() {
+    const r = pictureRect(), layer = $("e-crop"), box = $("e-box"), c = editor.crop;
+    Object.assign(layer.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
+    Object.assign(box.style, { left: c.X * r.width + "px", top: c.Y * r.height + "px", width: c.Width * r.width + "px", height: c.Height * r.height + "px" });
+  }
+
+  /** The crop's width over its height, in the picture's own fractions, for the shape chosen (or null: any shape). */
+  function cropRatio() {
+    const value = $("e-aspect").value;
+    if (!value) return null;
+    const r = pictureRect();
+    const pixels = value === "original" ? r.width / r.height : Number(value);
+    return pixels * r.height / r.width;
+  }
+
+  /** Keeps the crop inside the picture, moving it back in, then shrinking it if it's still too big. */
+  function fitCrop(c) {
+    let { X, Y, Width, Height } = c;
+    if (Width > 1) {
+      Height /= Width;
+      Width = 1;
+    }
+    if (Height > 1) {
+      Width /= Height;
+      Height = 1;
+    }
+    X = Math.min(Math.max(0, X), 1 - Width);
+    Y = Math.min(Math.max(0, Y), 1 - Height);
+    return { X, Y, Width, Height };
+  }
+
+  function dragCrop(start, handle, dx, dy) {
+    if (handle === "move") return fitCrop({ ...start, X: start.X + dx, Y: start.Y + dy });
+    const min = 0.03;
+    let left = start.X, top = start.Y, right = start.X + start.Width, bottom = start.Y + start.Height;
+    if (handle.includes("w")) left = Math.min(Math.max(0, left + dx), right - min);
+    if (handle.includes("e")) right = Math.max(Math.min(1, right + dx), left + min);
+    if (handle.includes("n")) top = Math.min(Math.max(0, top + dy), bottom - min);
+    if (handle.includes("s")) bottom = Math.max(Math.min(1, bottom + dy), top + min);
+    const ratio = cropRatio();
+    if (!ratio) return { X: left, Y: top, Width: right - left, Height: bottom - top };
+    let width = right - left, height = bottom - top;
+    if (handle === "n" || handle === "s") width = height * ratio;
+    else height = width / ratio;
+    // Anchored on the side (or corner) that isn't being dragged.
+    if (handle === "n" || handle === "s") left = start.X + start.Width / 2 - width / 2;
+    else if (handle.includes("w")) left = right - width;
+    if (handle === "e" || handle === "w") top = start.Y + start.Height / 2 - height / 2;
+    else if (handle.includes("n")) top = bottom - height;
+    return fitCrop({ X: left, Y: top, Width: width, Height: height });
+  }
+
+  let cropDrag = null;
+  $("e-box").addEventListener("pointerdown", event => {
+    event.preventDefault();
+    const r = pictureRect();
+    cropDrag = { handle: event.target.dataset.h || "move", x: event.clientX, y: event.clientY, start: { ...editor.crop }, w: r.width, h: r.height };
+    $("e-box").setPointerCapture(event.pointerId);
+  });
+  $("e-box").addEventListener("pointermove", event => {
+    if (!cropDrag) return;
+    editor.crop = dragCrop(cropDrag.start, cropDrag.handle, (event.clientX - cropDrag.x) / cropDrag.w, (event.clientY - cropDrag.y) / cropDrag.h);
+    placeCrop();
+  });
+  const endCropDrag = () => (cropDrag = null);
+  $("e-box").addEventListener("pointerup", endCropDrag);
+  $("e-box").addEventListener("pointercancel", endCropDrag);
+  $("e-aspect").addEventListener("change", () => {
+    const ratio = cropRatio();
+    if (!ratio) return;
+    // The biggest crop of that shape, centred on the one there was.
+    const c = editor.crop;
+    let width = c.Width, height = width / ratio;
+    if (height > c.Height) {
+      height = c.Height;
+      width = height * ratio;
+    }
+    editor.crop = fitCrop({ X: c.X + (c.Width - width) / 2, Y: c.Y + (c.Height - height) / 2, Width: width, Height: height });
+    placeCrop();
+  });
+  new ResizeObserver(() => {
+    if (!$("editor").hidden && editor.cropping) placeCrop();
+  }).observe($("e-stage"));
+
+  async function autoEdit() {
+    try {
+      const result = await post(`/api/media/${editor.id}/auto`, { ops: normal(editor.ops) });
+      const auto = normal(result.ops);
+      for (const [key] of SLIDERS) editor.ops[key] = auto[key];
+      syncSliders();
+      preview();
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  async function saveEdit(mode) {
+    if (editor.cropping) finishCrop();
+    if (mode === "overwrite" && !await ask({
+      title: "Overwrite the original?",
+      text: `The edited photo replaces the file on ${state.name} (and in OneDrive). The current version goes to the Recycle Bin there first, so it can be restored.`,
+      ok: "Overwrite",
+      danger: true,
+    })) return;
+    const buttons = ["e-keep", "e-overwrite", "e-copy"].map($);
+    buttons.forEach(b => (b.disabled = true));
+    try {
+      const saved = await post(`/api/media/${editor.id}/edit`, { ops: normal(editor.ops), mode });
+      toast(saved.message);
+      bust.set(editor.id, Date.now());
+      closeEditor();
+      if (mode === "copy") reloadList();
+      else {
+        refreshRows();
+        if (viewer.id === editor.id) show(viewer.index);
+      }
+    } catch (error) {
+      fail(error);
+    } finally {
+      buttons.forEach(b => (b.disabled = false));
+    }
+  }
+
+  async function cancelEditor() {
+    if (JSON.stringify(normal(editor.ops)) !== editor.saved &&
+        !await ask({ title: "Discard your changes?", text: "Nothing was saved on the photo computer.", ok: "Discard", danger: true })) return;
+    closeEditor();
+  }
+
+  function closeEditor() {
+    $("editor").hidden = true;
+    editor.token++;
+    clearTimeout(editor.timer);
+    $("e-img").removeAttribute("src");
+    if (editor.url) URL.revokeObjectURL(editor.url);
+    editor.url = null;
+  }
+
+  $("v-edit").addEventListener("click", openEditor);
+  $("e-cancel").addEventListener("click", cancelEditor);
+  $("e-rotl").addEventListener("click", () => rotateEdit(false));
+  $("e-rotr").addEventListener("click", () => rotateEdit(true));
+  $("e-flip").addEventListener("click", flipEdit);
+  $("e-crop-button").addEventListener("click", startCrop);
+  $("e-crop-done").addEventListener("click", finishCrop);
+  $("e-crop-reset").addEventListener("click", () => {
+    editor.crop = { X: 0, Y: 0, Width: 1, Height: 1 };
+    $("e-aspect").value = "";
+    placeCrop();
+  });
+  $("e-auto").addEventListener("click", autoEdit);
+  $("e-reset-light").addEventListener("click", () => {
+    for (const [key] of SLIDERS) editor.ops[key] = 0;
+    syncSliders();
+    preview();
+  });
+  $("e-keep").addEventListener("click", () => saveEdit("keep"));
+  $("e-overwrite").addEventListener("click", () => saveEdit("overwrite"));
+  $("e-copy").addEventListener("click", () => saveEdit("copy"));
+
+  // ---------- Video editor: trim, turn, mute; the photo computer saves an MP4 next to the original ----------
+
+  const vedit = { id: 0, start: 0, end: null, rotation: 0, job: null };
+  const clock = seconds => `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
+
+  function openVideoEditor() {
+    if (!state.changes) return;
+    const flags = state.items.flags[viewer.index] || 0;
+    if (!(flags & 3)) return;
+    $("v-video").pause();
+    Object.assign(vedit, { id: viewer.id, start: 0, end: null, rotation: 0, job: null });
+    const video = $("ve-video");
+    video.style.transform = "";
+    video.src = flags & 1 ? `/api/media/${vedit.id}/video` : `/api/media/${vedit.id}/motion`;
+    $("ve-mute").checked = false;
+    $("ve-progress").hidden = true;
+    $("ve-save").disabled = false;
+    showTrim();
+    $("vedit").hidden = false;
+  }
+
+  function showTrim() {
+    $("ve-start").textContent = clock(vedit.start);
+    $("ve-end").textContent = vedit.end == null ? "the end" : clock(vedit.end);
+  }
+
+  function turnVideo(clockwise) {
+    vedit.rotation = (vedit.rotation + (clockwise ? 90 : 270)) % 360;
+    const video = $("ve-video"), box = video.getBoundingClientRect();
+    const sideways = vedit.rotation % 180 !== 0;
+    const scale = sideways && box.width && box.height ? Math.min(box.width / box.height, box.height / box.width) : 1;
+    video.style.transform = vedit.rotation ? `rotate(${vedit.rotation}deg) scale(${scale})` : "";
+  }
+
+  async function saveVideo() {
+    const video = $("ve-video");
+    video.pause();
+    $("ve-save").disabled = true;
+    try {
+      const started = await post(`/api/media/${vedit.id}/export`, { rotation: vedit.rotation, start: vedit.start, end: vedit.end, mute: $("ve-mute").checked });
+      vedit.job = started.job;
+      $("ve-progress").hidden = false;
+      $("ve-status").textContent = `Saving on ${state.name}…`;
+      while (vedit.job === started.job) {
+        await new Promise(r => setTimeout(r, 700));
+        const job = await json(`/api/jobs/${started.job}`);
+        $("ve-fill").style.width = Math.round(job.progress * 100) + "%";
+        if (!job.done) continue;
+        vedit.job = null;
+        if (job.error) {
+          $("ve-status").textContent = job.error;
+          $("ve-save").disabled = false;
+          return;
+        }
+        toast(job.message);
+        closeVideoEditor(true);
+        reloadList();
+      }
+    } catch (error) {
+      fail(error);
+      vedit.job = null;
+      $("ve-save").disabled = false;
+    }
+  }
+
+  async function closeVideoEditor(saved) {
+    if (vedit.job && !saved) {
+      if (!await ask({ title: "Stop saving?", text: "The video is still being saved on the photo computer.", ok: "Stop", danger: true })) return;
+      await post(`/api/jobs/${vedit.job}/cancel`).catch(() => {});
+      vedit.job = null;
+    }
+    const video = $("ve-video");
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    $("vedit").hidden = true;
+  }
+
+  $("v-trim").addEventListener("click", openVideoEditor);
+  $("ve-cancel").addEventListener("click", () => closeVideoEditor(false));
+  $("ve-set-start").addEventListener("click", () => {
+    vedit.start = $("ve-video").currentTime;
+    if (vedit.end != null && vedit.end <= vedit.start) vedit.end = null;
+    showTrim();
+  });
+  $("ve-set-end").addEventListener("click", () => {
+    const at = $("ve-video").currentTime;
+    if (at <= vedit.start) return toast("The end has to come after the start.");
+    vedit.end = at;
+    showTrim();
+  });
+  $("ve-reset").addEventListener("click", () => {
+    vedit.start = 0;
+    vedit.end = null;
+    showTrim();
+  });
+  $("ve-rotl").addEventListener("click", () => turnVideo(false));
+  $("ve-rotr").addEventListener("click", () => turnVideo(true));
+  $("ve-save").addEventListener("click", saveVideo);
+  $("ve-stop").addEventListener("click", () => vedit.job && post(`/api/jobs/${vedit.job}/cancel`).catch(() => {}));
+
   // ---------- Keys ----------
 
   document.addEventListener("keydown", event => {
     if (!$("dialog").hidden) return;
+    if (!$("editor").hidden) {
+      if (event.key === "Escape") cancelEditor();
+      else if ((event.ctrlKey || event.metaKey) && (event.key === "s" || event.key === "S")) saveEdit("copy");
+      else if (event.key === "[" && !event.target.closest?.("input")) rotateEdit(false);
+      else if (event.key === "]" && !event.target.closest?.("input")) rotateEdit(true);
+      else if (event.key === "Enter" && editor.cropping) finishCrop();
+      else return;
+      event.preventDefault();
+      return;
+    }
+    if (!$("vedit").hidden) {
+      if (event.key === "Escape") closeVideoEditor(false);
+      else if (event.key === "i" || event.key === "I") $("ve-set-start").click();
+      else if (event.key === "o" || event.key === "O") $("ve-set-end").click();
+      else return;
+      event.preventDefault();
+      return;
+    }
     if (event.target instanceof Element && event.target.closest("input, select, textarea")) {
       if (event.key === "Escape") event.target.blur();
       return;
@@ -2213,6 +2734,10 @@
         case "+": case "=": zoomAt(viewer.zoom.scale * 1.5, innerWidth / 2, innerHeight / 2); break;
         case "-": zoomAt(viewer.zoom.scale / 1.5, innerWidth / 2, innerHeight / 2); break;
         case "Delete": deleteCurrent(); break;
+        case "e": case "E": if (!$("v-edit").hidden) openEditor(); break;
+        case "s": case "S": if (!$("v-frame").hidden) saveFrame(); break;
+        case ",": stepFrame(-1); break;
+        case ".": stepFrame(1); break;
         case " ":
           if (!$("v-live").hidden) playLive();
           else return;

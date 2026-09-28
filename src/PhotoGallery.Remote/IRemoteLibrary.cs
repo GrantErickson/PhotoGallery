@@ -1,5 +1,6 @@
 using PhotoGallery.Core.Data;
 using PhotoGallery.Core.Duplicates;
+using PhotoGallery.Core.Editing;
 using PhotoGallery.Core.Media;
 using PhotoGallery.Core.Ocr;
 using PhotoGallery.Core.Transcripts;
@@ -85,6 +86,57 @@ public interface IRemoteLibrary
     void HidePerson(long personId, bool hidden);
 
     void MergePeople(long sourceId, long targetId);
+
+    // ---------- Editing (previews and finding frames are read-only; saving needs AllowChanges) ----------
+
+    /// <summary>The edits kept in the gallery for a photo (None if there are none).</summary>
+    EditOperations GetEdits(MediaItem item);
+
+    /// <summary>Whether the photo's format can be written back (JPEG and the like), for "Overwrite the original".</summary>
+    bool CanOverwrite(MediaItem item);
+
+    /// <summary>The photo with these edits, as a JPEG no bigger than this.</summary>
+    Task<byte[]?> RenderEditAsync(MediaItem item, EditOperations ops, int maxSize, CancellationToken ct);
+
+    /// <summary>The edits with light and colour set automatically (as the editor's Auto button).</summary>
+    Task<EditOperations> AutoAdjustAsync(MediaItem item, EditOperations ops, CancellationToken ct);
+
+    /// <summary>Keeps the edits in the gallery, saves a copy next to the original, or overwrites it; says what happened.</summary>
+    Task<string> SaveEditAsync(MediaItem item, EditOperations ops, EditSave mode);
+
+    /// <summary>Where the sharpest frame of a video or Live Photo is, or null if it has no video.</summary>
+    Task<TimeSpan?> FindSharpestAsync(MediaItem item, CancellationToken ct);
+
+    /// <summary>Saves the frame at this point of a video or Live Photo as a photo next to it; says what was saved.</summary>
+    Task<string> SaveFrameAsync(MediaItem item, TimeSpan position);
+
+    /// <summary>Starts saving a video (or a Live Photo's video) with these edits as an MP4 next to it.</summary>
+    VideoJob StartVideoExport(MediaItem item, VideoEdits edits);
+}
+
+public enum EditSave
+{
+    /// <summary>In the gallery only; no file changes.</summary>
+    Keep,
+    /// <summary>A new photo next to the original.</summary>
+    Copy,
+    /// <summary>Replaces the original (which goes to the Recycle Bin first).</summary>
+    Overwrite,
+}
+
+/// <summary>A video being saved on the host: its progress, then what happened.</summary>
+public sealed class VideoJob
+{
+    public string Id { get; } = Guid.NewGuid().ToString("N");
+    public double Progress { get; set; }
+    public bool Done { get; private set; }
+    public string? Message { get; private set; }
+    public string? Error { get; private set; }
+    public CancellationTokenSource Cancellation { get; } = new();
+
+    public void Finish(string message) => (Message, Done) = (message, true);
+
+    public void Fail(string error) => (Error, Done) = (error, true);
 }
 
 /// <summary>A face in a photo: who, and where (fractions of the upright picture's longer side, like OneDrive's boxes).</summary>

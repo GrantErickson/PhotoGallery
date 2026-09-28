@@ -114,7 +114,7 @@
                 </StackPanel>
                 <TextBlock x:Name="RemotePassphraseText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <ToggleSwitch x:Name="RemoteSwitch" Header="Let other computers on my network open this library" Toggled="OnRemoteToggled" />
-                <ToggleSwitch x:Name="RemoteChangesSwitch" Header="Let them change things too: delete (to this PC's Recycle Bin), tags, albums and people"
+                <ToggleSwitch x:Name="RemoteChangesSwitch" Header="Let them change things too: edit photos and videos, delete (to this PC's Recycle Bin), tags, albums and people"
                               Toggled="OnRemoteChangesToggled" />
                 <NumberBox x:Name="RemotePortBox" Header="Port" Minimum="1024" Maximum="65535" Width="140" HorizontalAlignment="Left"
                            SpinButtonPlacementMode="Hidden" ValueChanged="OnRemotePortChanged" />

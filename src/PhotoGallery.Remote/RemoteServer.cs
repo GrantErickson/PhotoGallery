@@ -257,6 +257,7 @@ public sealed partial class RemoteServer : IAsyncDisposable
         });
         MapReading(app);
         MapChanging(app);
+        MapEditing(app);
         // The web app's own files (scripts, styles, icons, the map library).
         app.MapGet("/{*path}", ctx => ResourceAsync(ctx, ctx.Request.RouteValues["path"]?.ToString() ?? ""));
     }

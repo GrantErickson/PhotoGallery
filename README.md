@@ -96,6 +96,12 @@ works out live in its own database.
   - make, rename and delete albums;
   - rename, hide and merge people;
   - clear out duplicates.
+- **Edit from there too**:
+  - photos: rotate, flip, crop (free or a fixed shape), light and colour, Auto; save as a copy, overwrite the
+    original, or keep the edits in the gallery. The main PC renders the previews and the result, with the app's own
+    renderer, so it looks the same as editing there.
+  - Live Photos and videos: find the sharpest frame, step frame by frame, and save a frame as a photo;
+  - videos: trim, turn and remove the sound, saved as an MP4 next to the original.
 
   Everything but rating needs the main PC's permission (Settings › Remote access › *Let them change things too*).
 - **The viewer**:
@@ -110,8 +116,8 @@ works out live in its own database.
 - **The main PC does the work**: searching by description on its graphics card, decoding HEIC for browsers,
   fetching Live Photo videos from OneDrive. The other computer needs nothing installed but a browser.
 - **Off until you turn it on** (Settings › Remote access, with a passphrase). Other computers can browse, search,
-  view, download and rate; changing anything else is a separate switch. Editing photos and trimming videos stay on
-  the main PC for now. OneDrive's sign-in never leaves the main PC.
+  view, download and rate; changing or editing anything else is a separate switch. OneDrive's sign-in never leaves
+  the main PC.
 - **Secured for a home network**:
   - it only answers computers on the local network;
   - the connection is encrypted (HTTPS, with a certificate the main PC makes for itself);
@@ -198,7 +204,7 @@ dotnet run --project src/PhotoGallery.App
 | Viewer, video | **,** / **.** previous/next frame · **S** save frame |
 | Photo editor | **[** / **]** rotate · **Ctrl+S** save as copy · **Esc** close |
 | Video editor | **Space** play/pause · **I** / **O** set start/end · **Ctrl+S** save · **Esc** close |
-| Remote (web) | **/** or **Ctrl+E** search · viewer: **←/→**, **Space** play Live Photo, **1–5** rate, **0** clear, **I** info, **Esc** close |
+| Remote (web) | **/** or **Ctrl+E** search · grid: **Ctrl+A** select all, **Del** delete, **Esc** clear · viewer: **←/→**, **Space** play Live Photo, **1–5** rate, **0** clear, **I** info, **F** faces, **T** text, **+/−** zoom, **E** edit, **,** / **.** frames, **S** save frame, **Del** delete, **Esc** close · editor: **[** / **]** rotate, **Ctrl+S** save as copy |
 
 ### Your data
 The database, thumbnail and video caches, AI models, settings and `app.log` live in `%LocalAppData%\PhotoGallery`.
