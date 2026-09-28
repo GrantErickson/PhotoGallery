@@ -202,17 +202,32 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 
     public bool CanOverwrite(MediaItem item) => EditRenderer.CanWriteFormat(item.Path);
 
+    private readonly SemaphoreSlim _editGate = new(1);
+    /// <summary>The photo being edited from another computer, decoded once (decoding a big HEIC is most of a preview's time).</summary>
+    private (long Id, long Modified, int Size, Microsoft.Graphics.Canvas.CanvasBitmap Source)? _editing;
+
     public async Task<byte[]?> RenderEditAsync(MediaItem item, EditOperations ops, int maxSize, CancellationToken ct)
     {
+        await _editGate.WaitAsync(ct);
         try
         {
-            using var rendered = await EditRenderer.RenderPreviewAsync(item.Path, ops, maxSize);
+            if (_editing is not { } open || open.Id != item.Id || open.Modified != item.FileModified || open.Size != maxSize)
+            {
+                _editing?.Source.Dispose();
+                _editing = null;
+                _editing = (item.Id, item.FileModified, maxSize, await EditRenderer.LoadAsync(item.Path, maxSize));
+            }
+            using var rendered = await EditRenderer.RenderAsync(_editing.Value.Source, ops);
             return await DisplayRenderer.EncodeAsync(rendered, 0.85f);
         }
         catch (Exception ex) when (ex is COMException or ArgumentException or IOException or UnauthorizedAccessException)
         {
             Log.Error($"Remote access: couldn't render edits of {item.Path}", ex);
             return null;
+        }
+        finally
+        {
+            _editGate.Release();
         }
     }
 
