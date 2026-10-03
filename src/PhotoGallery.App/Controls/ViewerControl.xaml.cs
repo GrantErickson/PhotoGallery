@@ -865,13 +865,19 @@ public sealed partial class ViewerControl : UserControl
         ShowUtility(_current);
     }
 
+    /// <summary>The tags already in use, before anything is typed.</summary>
+    private void OnTagBoxGotFocus(object sender, RoutedEventArgs e) => ShowTagSuggestions(TagBox);
+
     private void OnTagBoxTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
-        var text = sender.Text.Trim();
-        sender.ItemsSource = text.Length == 0
-            ? null
-            : S.Collections.GetTags().Where(t => t.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)).Select(t => t.Name).Take(8).ToList();
+        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput) ShowTagSuggestions(sender);
+    }
+
+    private void ShowTagSuggestions(AutoSuggestBox box)
+    {
+        var names = S.Collections.SuggestTagNames(box.Text);
+        box.ItemsSource = names;
+        box.IsSuggestionListOpen = names.Count > 0;
     }
 
     private void OnTagSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)

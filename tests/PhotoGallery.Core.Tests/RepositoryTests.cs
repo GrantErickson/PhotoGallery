@@ -152,6 +152,37 @@ public sealed class RepositoryTests : IDisposable
     }
 
     [Fact]
+    public void Tag_suggestions_offer_the_tags_in_use_then_match_what_is_typed()
+    {
+        var a = Add("a.jpg");
+        var b = Add("b.jpg");
+        _collections.AddTag([a.Id], "Chelsea");
+        _collections.AddTag([a.Id, b.Id], "Beach");
+        _collections.AddTag([b.Id], "Seaside");
+
+        Assert.Equal(["Beach", "Chelsea", "Seaside"], _collections.SuggestTagNames("")); // most used first
+        Assert.Equal(["Seaside", "Chelsea"], _collections.SuggestTagNames(" sea ")); // starting with it first
+        Assert.Equal(["Beach"], _collections.SuggestTagNames("BEACH"));
+        Assert.Empty(_collections.SuggestTagNames("zebra"));
+
+        _collections.AddTag([b.Id], "beach"); // the same tag, whatever the case
+        Assert.Equal(["Beach", "Chelsea", "Seaside"], _collections.SuggestTagNames(""));
+
+        // OneDrive's tags come after the ones added here, however often they're used.
+        using (var db = _db.Open())
+        {
+            var insert = db.CreateCommand();
+            insert.CommandText = """
+                INSERT INTO Tags (Name, Source) VALUES ('Outdoor', 1);
+                INSERT INTO MediaTags (MediaId, TagId) SELECT Id, (SELECT Id FROM Tags WHERE Source = 1) FROM Media;
+                """;
+            insert.ExecuteNonQuery();
+        }
+        Assert.Equal(["Beach", "Chelsea", "Seaside", "Outdoor"], _collections.SuggestTagNames(""));
+        Assert.Equal(["Outdoor"], _collections.SuggestTagNames("out"));
+    }
+
+    [Fact]
     public void Timeline_is_newest_first_and_hides_screenshots_unless_asked()
     {
         var old = Add("old.jpg", taken: new DateTime(2010, 1, 1));

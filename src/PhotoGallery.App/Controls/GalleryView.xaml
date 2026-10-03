@@ -92,12 +92,18 @@
                     </AppBarButton.Flyout>
                 </AppBarButton>
                 <AppBarButton x:Name="RemoveFromAlbumButton" Icon="Remove" Label="Remove from album" Click="OnRemoveFromAlbum" Visibility="Collapsed" />
-                <AppBarButton Icon="Tag" Label="Tag">
+                <!-- AllowFocusOnInteraction: a command bar's buttons don't take focus, and without it neither can the box in the flyout. -->
+                <AppBarButton Icon="Tag" Label="Tag" AllowFocusOnInteraction="True">
                     <AppBarButton.Flyout>
-                        <Flyout x:Name="TagFlyout">
+                        <Flyout x:Name="TagFlyout" Opened="OnTagFlyoutOpened">
                             <StackPanel Spacing="8" Width="240">
                                 <TextBlock Text="Add a tag to the selection" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <AutoSuggestBox x:Name="TagBox" PlaceholderText="Tag name" TextChanged="OnTagBoxTextChanged" QuerySubmitted="OnTagSubmitted" />
+                                <AutoSuggestBox x:Name="TagBox" PlaceholderText="Pick a tag or type a new one" GotFocus="OnTagBoxGotFocus"
+                                                TextChanged="OnTagBoxTextChanged" QuerySubmitted="OnTagSubmitted">
+                                    <AutoSuggestBox.QueryIcon>
+                                        <SymbolIcon Symbol="Add" />
+                                    </AutoSuggestBox.QueryIcon>
+                                </AutoSuggestBox>
                             </StackPanel>
                         </Flyout>
                     </AppBarButton.Flyout>

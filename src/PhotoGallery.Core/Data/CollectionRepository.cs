@@ -124,6 +124,22 @@ public sealed class CollectionRepository(GalleryDatabase database)
     /// <summary>Tags added in this app (for suggestions when tagging).</summary>
     public List<TagRow> GetUserTags() => GetTags().Where(t => t.IsUserTag).ToList();
 
+    /// <summary>
+    /// Tag names to offer while tagging. With no text: the tags added in this app, then OneDrive's, each most used
+    /// first. With text: every tag containing it, those starting with it first, then this app's.
+    /// </summary>
+    public List<string> SuggestTagNames(string text, int count = 10)
+    {
+        text = text.Trim();
+        var tags = GetTags();
+        var offered = text.Length == 0
+            ? tags.OrderBy(t => t.IsUserTag ? 0 : 1).ThenByDescending(t => t.Count)
+            : tags.Where(t => t.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase))
+                .OrderBy(t => t.Name.StartsWith(text, StringComparison.CurrentCultureIgnoreCase) ? 0 : 1)
+                .ThenBy(t => t.IsUserTag ? 0 : 1);
+        return offered.Select(t => t.Name).Distinct(StringComparer.CurrentCultureIgnoreCase).Take(count).ToList();
+    }
+
     public List<TagRow> GetTagsFor(long mediaId)
     {
         using var db = database.Open();

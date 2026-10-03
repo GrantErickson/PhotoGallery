@@ -334,7 +334,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <AutoSuggestBox x:Name="TagBox" PlaceholderText="Add a tag" TextChanged="OnTagBoxTextChanged" QuerySubmitted="OnTagSubmitted">
+                    <AutoSuggestBox x:Name="TagBox" PlaceholderText="Add a tag" GotFocus="OnTagBoxGotFocus" TextChanged="OnTagBoxTextChanged" QuerySubmitted="OnTagSubmitted">
                         <AutoSuggestBox.QueryIcon>
                             <SymbolIcon Symbol="Add" />
                         </AutoSuggestBox.QueryIcon>
