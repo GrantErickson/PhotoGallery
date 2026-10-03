@@ -304,11 +304,11 @@ below).
 - **Dark-first**, matching the app's default: near-black surfaces, and photos as the colour.
 - **One warm accent**, for example amber (#F2A33A), for selection and highlights. It stands out against the blues
   of most photo tools.
-- **Icon:** a simple mark that reads at 16 px. Ideas:
-  - a photo frame with a small magnifier in one corner;
-  - for Cairn, three stacked rounded stones, the top one a photo.
+- **Icon:** a simple mark that reads at 16 px. The app has one now (`tools/icons`): a sunset photo with an amber
+  magnifier on one corner, with no letters, so it survives a rename. Another idea, for Cairn: three stacked rounded
+  stones, the top one a photo.
 
-  Provide it in the Store's logo sizes and as the app's tile and taskbar icon.
+  For the Store, add the MSIX logo sizes (tiles, Store logo, splash screen) to `MakeIcons.cs`.
 - **Screenshots:**
   - lead with search ("birthday cake" finding cakes);
   - then people, the map, a transcript beside a video, and Blurry photos with Sharpest frame.

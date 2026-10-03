@@ -244,6 +244,7 @@ Deleting that folder resets the app; your photos aren't touched. Caches are neve
 | `tests/PhotoGallery.Core.Tests` | xUnit v3 tests (`dotnet test --project tests/PhotoGallery.Core.Tests`) |
 | `tools/PhotoGallery.Cli` | Headless indexing, stats, a thumbnail benchmark and a remote access check (`dotnet run --project tools/PhotoGallery.Cli -- stats`) |
 | `tools/remote-testing` | The message channel for testing remote access from another computer |
+| `tools/icons` | The app icon's SVGs, and `MakeIcons.cs`, which renders the `.ico` and the web icons from them (`dotnet run tools/icons/MakeIcons.cs`) |
 | `spikes/` | Early experiments (OneDrive Live Photo video) |
 | `docs/plan.md` | Plan, decisions and findings |
 | `docs/store-plan.md` | What it would take to publish in the Microsoft Store |

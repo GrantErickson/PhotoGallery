@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Photo Gallery's icon, redrawn for 16 px (also the title bar and the browser tab). Edit it in tools/icons, then run: dotnet run tools/icons/MakeIcons.cs -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="2" x2="0" y2="9.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#33287F"/>
+      <stop offset="0.5" stop-color="#A04C96"/>
+      <stop offset="0.85" stop-color="#F59168"/>
+      <stop offset="1" stop-color="#FFC979"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="2" width="13" height="10" rx="2" fill="url(#sky)"/>
+  <circle cx="4.5" cy="6.25" r="1.75" fill="#FFF4D8"/>
+  <path d="M0 9.75 C 2.5 8.75 5 8.75 7 9 C 9 9.25 11 7.5 13 7 V10 A2 2 0 0 1 11 12 H2 A2 2 0 0 1 0 10 Z" fill="#261C57"/>
+  <line x1="12.6" y1="12.6" x2="14.75" y2="14.75" stroke="#D27615" stroke-width="2.25" stroke-linecap="round"/>
+  <circle cx="10" cy="10" r="2.25" fill="#EAF4FF" fill-opacity="0.3"/>
+  <circle cx="10" cy="10" r="2.75" fill="none" stroke="#F6A63C" stroke-width="1.5"/>
+</svg>

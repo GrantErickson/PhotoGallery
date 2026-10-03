@@ -20,6 +20,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ExtendsContentIntoTitleBar = true; // the search box lives in the title bar
         SetTitleBar(AppTitleBar);
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "PhotoGallery.ico")); // taskbar and Alt+Tab
         ApplyTheme(App.Services.Settings.Theme);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1500, 950));
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.Maximize();

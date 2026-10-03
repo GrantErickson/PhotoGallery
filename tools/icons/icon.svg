@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Photo Gallery's icon: a sunset photo under an amber magnifier. Edit it in tools/icons, then run: dotnet run tools/icons/MakeIcons.cs -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="28" x2="0" y2="124" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#33287F"/>
+      <stop offset="0.5" stop-color="#A04C96"/>
+      <stop offset="0.85" stop-color="#F59168"/>
+      <stop offset="1" stop-color="#FFC979"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="88" cy="112" r="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE9B8" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#FFE9B8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="far" x1="0" y1="100" x2="0" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B0507F"/>
+      <stop offset="1" stop-color="#6A3478"/>
+    </linearGradient>
+    <linearGradient id="near" x1="0" y1="128" x2="0" y2="176" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34246A"/>
+      <stop offset="1" stop-color="#1C1640"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="130" y1="118" x2="214" y2="202" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD77F"/>
+      <stop offset="0.5" stop-color="#F6A63C"/>
+      <stop offset="1" stop-color="#DE7F17"/>
+    </linearGradient>
+    <linearGradient id="handle" x1="200" y1="188" x2="238" y2="226" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E5861A"/>
+      <stop offset="1" stop-color="#B25C0E"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="158" cy="144" r="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EAF4FF" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#EAF4FF" stop-opacity="0.06"/>
+    </radialGradient>
+    <radialGradient id="shadow" cx="176" cy="166" r="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0.72" stop-color="#000000" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="card"><rect x="16" y="28" width="192" height="148" rx="24"/></clipPath>
+    <clipPath id="lens"><circle cx="172" cy="160" r="34"/></clipPath>
+    <!-- Sunset over hills; drawn past the card's edges so the lens has scene to magnify beyond them. -->
+    <g id="scene">
+      <rect x="0" y="0" width="256" height="256" fill="url(#sky)"/>
+      <circle cx="88" cy="112" r="64" fill="url(#glow)"/>
+      <circle cx="88" cy="106" r="20" fill="#FFF4D8"/>
+      <path d="M0 126 C 26 116 50 108 76 112 C 100 116 116 124 140 120 C 164 116 184 104 212 106 L 256 110 V 256 H 0 Z" fill="url(#far)"/>
+      <path d="M0 150 C 34 138 66 132 98 140 C 128 148 150 162 182 158 C 208 155 228 146 256 148 V 256 H 0 Z" fill="url(#near)"/>
+    </g>
+  </defs>
+
+  <!-- The photo -->
+  <g clip-path="url(#card)"><use xlink:href="#scene"/></g>
+
+  <!-- The magnifier: its shadow on the photo, the handle, the lens (the scene, magnified, under glass) and its ring -->
+  <circle cx="176" cy="166" r="60" fill="url(#shadow)" clip-path="url(#card)"/>
+  <line x1="202" y1="190" x2="234" y2="222" stroke="url(#handle)" stroke-width="24" stroke-linecap="round"/>
+  <g clip-path="url(#lens)"><use xlink:href="#scene" transform="translate(172 160) scale(1.6) translate(-172 -160)"/></g>
+  <circle cx="172" cy="160" r="34" fill="url(#glass)"/>
+  <circle cx="172" cy="160" r="34.5" fill="none" stroke="#7A3F0A" stroke-opacity="0.45" stroke-width="3"/>
+  <path d="M147 152 A 26 26 0 0 1 164 135" fill="none" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="172" cy="160" r="42" fill="none" stroke="url(#ring)" stroke-width="16"/>
+</svg>
