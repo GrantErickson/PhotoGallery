@@ -129,7 +129,7 @@ public static class VideoFrames
         var target = SnapshotPath(item.Path, position);
         // A Live Photo's clip surrounds the still, so its date is the photo's; a video's frame is start + position.
         var taken = isLivePhoto ? item.TakenLocal : item.TakenLocal + position;
-        var location = item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : ((double, double)?)null;
+        var location = item.FileLocation; // never an estimated one
         await EditRenderer.SaveBitmapAsync(bitmap, target, taken, location, EditRenderer.CameraMetadata(item.CameraMake, item.CameraModel));
         return target;
     }

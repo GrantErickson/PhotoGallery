@@ -85,6 +85,28 @@ works out live in its own database.
   - All of them are searchable ("Manito Park", "restaurant").
 - **Map** with clustered photo markers. The photos in view are listed beside it, and clicking a cluster lists just
   those.
+- **Approximate locations** for photos without one, often ones someone else shared with the location taken out. They
+  take the place of your photo taken nearest in time: within 15 minutes, or within an hour when the photos before and
+  after were taken in the same area. Details shows how close it should be ("within about 150 m") and when that photo
+  was taken; the map gives them a dashed outline. They count toward your places, place names and search, like any
+  location, but are never written to a file (saved copies and exported videos keep only the file's own).
+  - Only phones' photos are placed: a phone sets its clock from the network, a camera keeps whatever time it was given
+    (a camera model whose photos carry GPS counts as a phone).
+  - Photos are lined up by when they were really taken, not by the hour on their clocks, so your family's photo at
+    1 pm in Spokane isn't put where you were at 1 pm in Nairobi. Most phones record their clock's time zone. A photo
+    is placed from one whose clock was in another zone only if that zone is in effect within 50 km (near a border).
+  - When the photos taken within the hour show people in more than one place, only the photo's own camera model's
+    located photos are used. If there are none, or they disagree too, it's left without a location.
+  - **Not taken there** in Details removes one for good (**Estimate it again** undoes it), or select photos ›
+    Map › Remove approximate locations. Settings › Approximate locations turns them all off.
+- **Tracks** (Map › Track): where photos were taken, in order, between two dates; optionally only in the part of the
+  map in view. Photos taken one after another close together are one stop, numbered on the map and listed with the
+  place's name and the time spent there; a line joins them, dashed where only the order is known (a long gap, a
+  flight). Click a stop to list its photos. Also from a selection (Map › Show their track on the map) and from the
+  viewer (That day on the map).
+  - When photos were taken in more than one place at once (you on a trip, your family at home), the track follows one
+    group: the phone with the most photos, and every photo that could have been taken in the same place at the same
+    time (so everyone's from before and after you were apart). A list switches to the other groups ("Around Spokane, WA · 240 photos · iPhone 15 Pro Max, iPad Pro").
 - **Find a place on the map** by name: your places, the parks, schools and restaurants your photos were taken at,
   and towns (GeoNames, biggest first; "Springfield, IL" or "Paris, France" narrows it down), as you type. Anywhere
   else (an address, a landmark) comes from OpenStreetMap, only when you ask.
@@ -106,8 +128,8 @@ works out live in its own database.
 ### Remote access (another computer on your network)
 - **Open the library from another computer** on the same network:
   - the timeline, best-match and exact-word search (sorted and grouped, with suggestions);
-  - On this day, Favorites, Live Photos, Videos, People, Tags, Folders, the Map, Albums, Duplicates and Blurry
-    photos;
+  - On this day, Favorites, Live Photos, Videos, People, Tags, Folders, the Map (approximate locations outlined
+    dashed, and marked in the details), Albums, Duplicates and Blurry photos;
   - the filters: people, photos or videos, rating, Live Photos only, utility shots;
   - finding a place on the map, as in the app.
 - **Organize from there too**:

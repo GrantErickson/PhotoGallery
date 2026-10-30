@@ -28,3 +28,14 @@ public enum DateSource
     Container = 2,
     Exif = 3,
 }
+
+/// <summary>Where an item's Latitude/Longitude came from.</summary>
+public enum LocationSource
+{
+    /// <summary>The file's own GPS (or no location at all).</summary>
+    File = 0,
+    /// <summary>Estimated from a located photo taken around the same time (<see cref="Places.LocationEstimator"/>); never written to files.</summary>
+    Estimated = 1,
+    /// <summary>An estimate removed by hand: no location, and none is estimated again.</summary>
+    Removed = 2,
+}

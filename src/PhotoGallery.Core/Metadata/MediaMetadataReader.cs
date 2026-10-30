@@ -10,6 +10,8 @@ public sealed class MediaMetadata
 {
     public DateTime? Taken { get; set; }
     public DateSource DateSource { get; set; }
+    /// <summary>How far the clock that dated it was ahead of UTC (minutes), when the file says.</summary>
+    public int? UtcOffset { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
     public int Orientation { get; set; }
@@ -47,7 +49,20 @@ public static class MediaMetadataReader
 
         if (result.Taken is null && FileNameDates.Parse(Path.GetFileName(path)) is { } fromName && IsPlausible(fromName))
             (result.Taken, result.DateSource) = (fromName, DateSource.FileName);
+        else if (result is { Taken: { } taken, UtcOffset: null } && FileNameDates.ParseUtc(Path.GetFileName(path)) is { } utc)
+            result.UtcOffset = OffsetBetween(taken, utc);
         return result;
+    }
+
+    /// <summary>
+    /// The clock's zone from its time and the real time (a name in UTC): a whole number of quarter hours, else
+    /// (the name isn't the moment it was taken) none.
+    /// </summary>
+    internal static int? OffsetBetween(DateTime clock, DateTime utc)
+    {
+        var seconds = (clock - utc).TotalSeconds;
+        var minutes = (int)Math.Round(seconds / 900) * 15;
+        return Math.Abs(seconds - minutes * 60) <= 120 && minutes is >= -12 * 60 and <= 14 * 60 ? minutes : null;
     }
 
     /// <summary>Metadata for a file whose content must not be read (cloud-only placeholder): the name's date only.</summary>
@@ -72,9 +87,9 @@ public static class MediaMetadataReader
         result.Latitude = qt.Latitude;
         result.Longitude = qt.Longitude;
         if (qt.AppleCreationDate is { } apple && IsPlausible(apple.DateTime))
-            (result.Taken, result.DateSource) = (apple.DateTime, DateSource.Container); // wall clock where it was shot
+            (result.Taken, result.DateSource, result.UtcOffset) = (apple.DateTime, DateSource.Container, (int)apple.Offset.TotalMinutes); // wall clock where it was shot
         else if (qt.CreatedUtc is { } utc && IsPlausible(utc.ToLocalTime()))
-            (result.Taken, result.DateSource) = (utc.ToLocalTime(), DateSource.Container);
+            (result.Taken, result.DateSource, result.UtcOffset) = (utc.ToLocalTime(), DateSource.Container, (int)TimeZoneInfo.Local.GetUtcOffset(utc).TotalMinutes);
     }
 
     private static void ReadImage(Stream stream, string path, MediaMetadata result)
@@ -85,9 +100,9 @@ public static class MediaMetadataReader
         var sub = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
 
         if (sub is not null && sub.TryGetDateTime(ExifDirectoryBase.TagDateTimeOriginal, out var taken) && IsPlausible(taken))
-            (result.Taken, result.DateSource) = (taken, DateSource.Exif);
+            (result.Taken, result.DateSource, result.UtcOffset) = (taken, DateSource.Exif, ParseOffset(sub.GetString(ExifDirectoryBase.TagTimeZoneOriginal)));
         else if (ifd0 is not null && ifd0.TryGetDateTime(ExifDirectoryBase.TagDateTime, out taken) && IsPlausible(taken))
-            (result.Taken, result.DateSource) = (taken, DateSource.Exif);
+            (result.Taken, result.DateSource, result.UtcOffset) = (taken, DateSource.Exif, ParseOffset(sub?.GetString(ExifDirectoryBase.TagTimeZone)));
 
         if (sub?.GetDescription(ExifDirectoryBase.TagUserComment) is { } comment && comment.Contains("Screenshot", StringComparison.OrdinalIgnoreCase))
             result.ScreenshotHint = true;
@@ -135,6 +150,19 @@ public static class MediaMetadataReader
                 best = (dw.Value, dh.Value);
         }
         return best;
+    }
+
+    /// <summary>EXIF's OffsetTime tags: "-07:00", "+05:30"; null for anything else.</summary>
+    internal static int? ParseOffset(string? value)
+    {
+        value = value?.Trim('\0', ' ');
+        if (value is not { Length: 6 } || value[0] is not ('+' or '-') || value[3] != ':'
+            || !int.TryParse(value.AsSpan(1, 2), NumberStyles.None, CultureInfo.InvariantCulture, out var hours)
+            || !int.TryParse(value.AsSpan(4, 2), NumberStyles.None, CultureInfo.InvariantCulture, out var minutes)
+            || minutes >= 60)
+            return null;
+        var offset = (hours * 60 + minutes) * (value[0] == '-' ? -1 : 1);
+        return offset is >= -12 * 60 and <= 14 * 60 ? offset : null;
     }
 
     /// <summary>Rejects corrupt dates (the library has JPEGs whose EXIF says 3913) so the next source is used.</summary>

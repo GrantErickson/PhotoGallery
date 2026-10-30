@@ -42,6 +42,8 @@ public sealed class AppSettings
     public bool ReadPhotoTextInBackground { get; set; } = true;
     /// <summary>Look up park, school, restaurant… names from OpenStreetMap (sends the rough areas where photos were taken).</summary>
     public bool NamePlacesFromOsm { get; set; }
+    /// <summary>Give photos without a location an approximate one, from photos taken around the same time (kept in the database only).</summary>
+    public bool EstimateLocations { get; set; } = true;
     /// <summary>"Dark" (the default), "Light", or "System" (follow Windows).</summary>
     public string Theme { get; set; } = "Dark";
     /// <summary>The last searches, most recent first (offered in the search box).</summary>

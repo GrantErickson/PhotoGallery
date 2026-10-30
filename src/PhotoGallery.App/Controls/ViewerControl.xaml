@@ -276,8 +276,17 @@
                                      ToolTipService.ToolTip="Show the area on the map" />
                     <HyperlinkButton x:Name="LocationLink" Padding="0" FontSize="12" Click="OnOpenMap"
                                      ToolTipService.ToolTip="Show this photo on the map" />
+                    <!-- An estimated location: how close, and the photo it came from (or that it was removed). -->
+                    <TextBlock x:Name="EstimateText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Visibility="Collapsed"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <HyperlinkButton x:Name="NamePlaceLink" Padding="0" FontSize="12" Content="Name this place…" Click="OnNamePlace"
                                      ToolTipService.ToolTip="Name the place (e.g. Home) with a radius; photos taken there get the name" />
+                    <HyperlinkButton x:Name="DayTrackLink" Padding="0" FontSize="12" Content="That day on the map" Click="OnDayTrack"
+                                     ToolTipService.ToolTip="The places photos were taken that day, in order, and the way between them" />
+                    <HyperlinkButton x:Name="RemoveEstimateLink" Padding="0" FontSize="12" Content="Not taken there: remove the location" Click="OnRemoveEstimate"
+                                     Visibility="Collapsed" ToolTipService.ToolTip="It won't be given an approximate location again" />
+                    <HyperlinkButton x:Name="AllowEstimateLink" Padding="0" FontSize="12" Content="Estimate it again" Click="OnAllowEstimate"
+                                     Visibility="Collapsed" ToolTipService.ToolTip="From photos taken around the same time" />
                 </StackPanel>
                 <StackPanel x:Name="EditedPanel" Spacing="2" Visibility="Collapsed">
                     <TextBlock Text="Unsaved edits" Style="{StaticResource CaptionTextBlockStyle}" Foreground="#C75000" />

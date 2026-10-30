@@ -59,6 +59,7 @@ public sealed partial class RemoteServer
                 ids = points.Select(p => p.Id),
                 lat = points.Select(p => Math.Round(p.Latitude, 5)),
                 lon = points.Select(p => Math.Round(p.Longitude, 5)),
+                approx = points.Where(p => p.Approximate).Select(p => p.Id),
             });
         });
         app.MapGet("/api/places", async ctx =>
@@ -125,6 +126,8 @@ public sealed partial class RemoteServer
                 live = HasMotion(item.Motion),
                 latitude = item.Latitude,
                 longitude = item.Longitude,
+                // An estimated location: within about this many metres (from photos taken around the same time).
+                approximate = item.LocationSource == LocationSource.Estimated ? item.LocationAccuracy : null,
                 place = details.Place,
                 people = details.People?.Select(p => new { id = p.Id, name = p.Name }),
                 faces = details.Faces?.Select(f => new { id = f.PersonId, name = f.Name, x = f.X, y = f.Y, w = f.Width, h = f.Height }),

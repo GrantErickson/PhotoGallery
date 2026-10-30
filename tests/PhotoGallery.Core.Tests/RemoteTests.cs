@@ -443,6 +443,7 @@ public sealed class RemoteServerTests : IAsyncLifetime
         await SignInAsync();
         var map = await _client.GetFromJsonAsync<JsonElement>("api/map", ct);
         Assert.Equal(47.65881, map.GetProperty("lat")[0].GetDouble());
+        Assert.Equal([2], map.GetProperty("approx").EnumerateArray().Select(a => a.GetInt64()));
         Assert.Equal("Pictures", (await _client.GetFromJsonAsync<JsonElement>("api/folders", ct))[0].GetProperty("name").GetString());
         var tags = await _client.GetFromJsonAsync<JsonElement>("api/tags", ct);
         Assert.Equal(1, tags.GetArrayLength()); // empty tags are left out
@@ -621,7 +622,8 @@ public sealed class RemoteServerTests : IAsyncLifetime
 
         public List<FolderRow> GetFolders() => [new FolderRow { Id = 5, Name = "Pictures", Path = @"C:\Pictures" }];
 
-        public List<(long Id, double Latitude, double Longitude)> GetGeoPoints() => [(1, 47.658812, -117.4260)];
+        public List<(long Id, double Latitude, double Longitude, bool Approximate)> GetGeoPoints() =>
+            [(1, 47.658812, -117.4260, false), (2, 47.658812, -117.4260, true)];
 
         public Task<List<PhotoGallery.Core.Places.PlaceHit>> SearchPlacesAsync(string query, bool online, CancellationToken ct) =>
             online && query == "nowhere"

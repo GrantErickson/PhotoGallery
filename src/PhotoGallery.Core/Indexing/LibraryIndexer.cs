@@ -27,8 +27,8 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
 {
     private const int BatchSize = 500;
 
-    /// <summary>Bump when metadata extraction rules change; every file is then re-read once.</summary>
-    public const int MetadataVersion = 2;
+    /// <summary>Bump when metadata extraction rules change; every file is then re-read once (3: clocks' time zones).</summary>
+    public const int MetadataVersion = 3;
     private const string MetadataVersionKey = "MetadataVersion";
 
     /// <summary>Raised (from the writer thread) with the ids of files whose content changed, so caches can drop them.</summary>
@@ -190,6 +190,7 @@ public sealed class LibraryIndexer(GalleryDatabase database, MediaRepository med
             FileModified = modifiedTicks,
             Kind = kind,
             DateTaken = MediaRepository.ToUnix(taken),
+            UtcOffset = md.Taken is null ? null : md.UtcOffset,
             DateSource = md.Taken is null ? DateSource.FileModified : md.DateSource,
             Width = md.Width,
             Height = md.Height,

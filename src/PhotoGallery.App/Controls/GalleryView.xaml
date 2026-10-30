@@ -131,6 +131,23 @@
                         </MenuFlyout>
                     </AppBarButton.Flyout>
                 </AppBarButton>
+                <AppBarButton Icon="Map" Label="Map">
+                    <AppBarButton.Flyout>
+                        <MenuFlyout>
+                            <MenuFlyoutItem Text="Show their track on the map" Click="OnTrackSelection"
+                                            ToolTipService.ToolTip="Where they were taken, in order, and the way between">
+                                <MenuFlyoutItem.Icon>
+                                    <SymbolIcon Symbol="Directions" />
+                                </MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutItem Text="Remove approximate locations" Click="OnRemoveEstimates"
+                                            ToolTipService.ToolTip="Locations estimated from photos taken around the same time; they won't be estimated again" />
+                            <MenuFlyoutItem Text="Estimate their locations again" Click="OnAllowEstimates"
+                                            ToolTipService.ToolTip="For ones whose approximate location was removed" />
+                        </MenuFlyout>
+                    </AppBarButton.Flyout>
+                </AppBarButton>
                 <AppBarButton Icon="Delete" Label="Delete" Click="OnDeleteSelection" ToolTipService.ToolTip="Move to the Recycle Bin (Del)" />
                 <AppBarButton Icon="Copy" Label="Copy paths" Click="OnCopySelectedPaths" />
                 <AppBarButton Icon="Clear" Label="Clear selection" Click="OnClearSelection" />

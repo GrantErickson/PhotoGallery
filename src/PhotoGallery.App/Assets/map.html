@@ -17,6 +17,18 @@
     .photo-pin { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
                  background: #ccc center/cover no-repeat; }
     .photo-pin.focused { border-color: #ff9f1c; border-width: 3px; }
+    /* An approximate location (estimated from photos taken around the same time). */
+    .photo-pin.approx { border-style: dashed; }
+    /* A track: one colour (the order is in the numbers), on a casing that keeps it clear of the map. */
+    body { --track: #6250d6; --track-text: #fff; --track-casing: #fff; }
+    body.dark { --track: #9085e9; --track-text: #1b1b1b; --track-casing: #1b1b1b; }
+    .stop-pin { border-radius: 11px; background: var(--track); color: var(--track-text); border: 2px solid var(--track-casing);
+                box-shadow: 0 1px 3px rgba(0,0,0,.5); font: 600 11px/18px "Segoe UI Variable", "Segoe UI", sans-serif; text-align: center;
+                box-sizing: border-box; }
+    .stop-pin.selected { box-shadow: 0 0 0 3px #ff9f1c, 0 1px 4px rgba(0,0,0,.6); }
+    /* While a track is shown its stops lead; the photo clusters stay, fainter, behind them. */
+    body.tracking .marker-cluster { opacity: .45; }
+    body.tracking .marker-cluster:hover { opacity: 1; }
     .place-label { background: rgba(0, 120, 212, .85); color: #fff; border: 0; border-radius: 10px; padding: 2px 8px;
                    font-weight: 600; box-shadow: none; }
     .place-label::before { display: none; }
@@ -43,7 +55,10 @@
     const post = m => window.chrome?.webview?.postMessage(m);
     // The app's theme: from the address at load, then setTheme(true/false) when it changes.
     document.body.classList.toggle("dark", new URLSearchParams(location.search).get("dark") === "1");
-    window.setTheme = dark => document.body.classList.toggle("dark", dark);
+    window.setTheme = dark => {
+      document.body.classList.toggle("dark", dark);
+      if (shownTrack) { const stop = selectedStop; showTrack(shownTrack, false); if (stop != null) selectStop(stop, false); }
+    };
     const statusBox = document.getElementById("status");
     const map = L.map("map", { worldCopyJump: true, preferCanvas: true }).setView([20, 0], 2);
     // OSM has tiles to level 19; allow two more levels of over-zoom to separate photos taken close together.
@@ -69,9 +84,11 @@
       post({ type: "selection", ids: e.layer.getAllChildMarkers().map(m => m.options.photoId) });
     });
     function clearSelection() {
-      if (!selected) return;
-      selected.getElement()?.classList.remove("selected");
+      if (!selected && selectedStop == null) return;
+      selected?.getElement()?.classList.remove("selected");
       selected = null;
+      markStop(selectedStop, false);
+      selectedStop = null;
       post({ type: "clear" });
       sendBounds();
     }
@@ -147,11 +164,84 @@
     });
 
     // Individual photos show their thumbnail once you zoom in far enough to see them unclustered.
-    const pin = id => L.divIcon({
+    const pin = (id, approx) => L.divIcon({
       className: "",
-      html: `<div class="photo-pin" style="background-image:url('https://gallery.local/thumbs/${(id & 255).toString(16).padStart(2, "0")}/${id}.jpg')"></div>`,
+      html: `<div class="photo-pin${approx ? " approx" : ""}" style="background-image:url('https://gallery.local/thumbs/${(id & 255).toString(16).padStart(2, "0")}/${id}.jpg')"></div>`,
       iconSize: [44, 44], iconAnchor: [22, 22]
     });
+    let allMarkers = [];
+
+    // A track: the places photos were taken, numbered in order, and the way between them: solid where it's known,
+    // dashed where only the order is (overnight, a flight). Only its photos stay on the map while it's shown.
+    // track = { stops: [{ lat, lon, name, when }], legs: [[from, to, known]] }
+    const trackLayer = L.layerGroup().addTo(map);
+    let shownTrack = null, stopMarkers = [], selectedStop = null;
+    const cssColor = name => getComputedStyle(document.body).getPropertyValue(name).trim();
+    window.showTrack = (track, fit) => {
+      trackLayer.clearLayers();
+      shownTrack = track;
+      stopMarkers = [];
+      selectedStop = null;
+      document.body.classList.add("tracking");
+      const color = cssColor("--track"), casing = cssColor("--track-casing");
+      const at = i => [track.stops[i].lat, track.stops[i].lon];
+      const known = track.legs.filter(l => l[2]).map(l => [at(l[0]), at(l[1])]);
+      const unknown = track.legs.filter(l => !l[2]).map(l => [at(l[0]), at(l[1])]);
+      if (unknown.length) L.polyline(unknown, { color, weight: 2, dashArray: "6 6", interactive: false }).addTo(trackLayer);
+      if (known.length) {
+        L.polyline(known, { color: casing, weight: 7, opacity: .85, interactive: false }).addTo(trackLayer);
+        L.polyline(known, { color, weight: 3, interactive: false }).addTo(trackLayer);
+      }
+      // Numbered pins while they can be told apart; past that, dots (drawn on the canvas, so thousands stay quick).
+      const numbered = track.stops.length <= 500;
+      track.stops.forEach((s, i) => {
+        const marker = numbered
+          ? L.marker([s.lat, s.lon], {
+              icon: L.divIcon({ className: "stop-pin", html: String(i + 1), iconSize: [i + 1 >= 100 ? 30 : 22, 22], iconAnchor: [i + 1 >= 100 ? 15 : 11, 11] }),
+              zIndexOffset: 500, keyboard: false })
+          : L.circleMarker([s.lat, s.lon], { radius: 5, color: casing, weight: 2, fillColor: color, fillOpacity: 1 });
+        const tip = document.createElement("div"), name = document.createElement("b");
+        name.textContent = `${i + 1}. ${s.name}`;
+        tip.append(name, document.createElement("br"), s.when);
+        marker.bindTooltip(tip, { direction: "top", offset: [0, numbered ? -12 : -6] });
+        marker.on("click", e => { L.DomEvent.stopPropagation(e); post({ type: "stop", index: i }); });
+        marker.addTo(trackLayer);
+        stopMarkers.push(marker);
+      });
+      if (fit && track.stops.length)
+        whenSettled(() => map.fitBounds(L.latLngBounds(track.stops.map(s => [s.lat, s.lon])), { animate: false, maxZoom: 16, padding: [40, 40] }));
+    };
+    window.clearTrack = () => {
+      trackLayer.clearLayers();
+      shownTrack = null;
+      stopMarkers = [];
+      selectedStop = null;
+      document.body.classList.remove("tracking");
+    };
+    function markStop(i, on) {
+      const marker = i == null ? null : stopMarkers[i];
+      if (!marker) return;
+      if (marker instanceof L.CircleMarker) marker.setStyle({ color: on ? "#ff9f1c" : cssColor("--track-casing"), weight: on ? 3 : 2 });
+      else {
+        marker.getElement()?.classList.toggle("selected", on);
+        marker.setZIndexOffset(on ? 1000 : 500);
+      }
+    }
+    // A stop chosen (here or in the app's list): marked, and brought into view if it's off the map.
+    window.selectStop = (i, reveal) => {
+      markStop(selectedStop, false);
+      selectedStop = i;
+      markStop(i, true);
+      const s = shownTrack?.stops[i];
+      if (reveal && s && !map.getBounds().contains([s.lat, s.lon])) whenSettled(() => map.setView([s.lat, s.lon], Math.max(map.getZoom(), 14), { animate: false }));
+    };
+    // Only these photos on the map (the track's), or all of them again (null).
+    window.onlyPhotos = ids => {
+      const keep = ids ? new Set(ids) : null;
+      selected = null;
+      clusters.clearLayers();
+      clusters.addLayers(keep ? allMarkers.filter(m => keep.has(m.options.photoId)) : allMarkers);
+    };
 
     function sendBounds() {
       const b = map.getBounds();
@@ -164,13 +254,16 @@
     fetch("https://gallery.local/map/points.json")
       .then(r => r.json())
       .then(points => {
-        const markers = points.map(([id, lat, lon]) => {
-          const m = L.marker([lat, lon], { icon: pin(id), photoId: id });
+        const markers = points.map(([id, lat, lon, approx]) => {
+          const m = L.marker([lat, lon], { icon: pin(id, approx), photoId: id });
           m.on("click", () => post({ type: "open", id }));
           return m;
         });
+        allMarkers = markers;
         clusters.addLayers(markers);
-        statusBox.textContent = `${points.length.toLocaleString()} photos with a location`;
+        const approximate = points.filter(p => p[3]).length;
+        statusBox.textContent = `${points.length.toLocaleString()} photos with a location` +
+          (approximate ? ` (${approximate.toLocaleString()} approximate)` : "");
         setTimeout(() => statusBox.style.display = "none", 4000);
         // Fit to the points themselves: the cluster layer's bounds are empty while chunked loading runs.
         if (points.length) {

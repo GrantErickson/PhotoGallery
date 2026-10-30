@@ -222,11 +222,13 @@ public sealed partial class ViewerControl : UserControl
         CameraPanel.Visibility = camera.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         CameraText.Text = camera;
 
-        LocationPanel.Visibility = item.Latitude is not null ? Visibility.Visible : Visibility.Collapsed;
+        LocationPanel.Visibility = Format.Visible(item.Latitude is not null || item.LocationSource == LocationSource.Removed);
         LocationLink.Content = item.Latitude is { } lat && item.Longitude is { } lon
             ? string.Create(CultureInfo.InvariantCulture, $"{lat:F5}, {lon:F5}")
             : null;
+        LocationLink.Visibility = Format.Visible(item.Latitude is not null);
         ShowPlaceName(item);
+        ShowEstimate(item);
 
         LiveButton.Visibility = item.Motion is MotionSource.LocalPair or MotionSource.Embedded or MotionSource.Cloud
             ? Visibility.Visible
@@ -525,7 +527,7 @@ public sealed partial class ViewerControl : UserControl
         try
         {
             var progress = new Progress<double>(p => SaveVideoText.Text = $"Saving… {p:P0}");
-            var location = item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : ((double, double)?)null;
+            var location = item.FileLocation; // never an estimated one
             await VideoExport.ExportAsync(source, Core.Editing.VideoEdits.None, target, item.TakenLocal, location, progress, CancellationToken.None);
             var indexed = await Task.Run(() => S.Indexing.IndexFileNow(target));
             if (indexed is not null) S.Media.SetDerivedFrom(indexed.Id, item.Id);
@@ -1039,6 +1041,76 @@ public sealed partial class ViewerControl : UserControl
             ? new PhotoGallery.App.Pages.MapRequest(lat, lon, 15, PlaceId: place.Id)
             : new PhotoGallery.App.Pages.MapRequest(lat, lon, 13);
         App.MainWindow.NavigateFromViewer(() => App.MainWindow.Navigate(typeof(PhotoGallery.App.Pages.MapPage), request));
+    }
+
+    /// <summary>An estimated location: how close it should be, and when the photo it came from was taken; or that it was removed.</summary>
+    private void ShowEstimate(MediaItem item)
+    {
+        var estimated = item.LocationSource == LocationSource.Estimated;
+        var removed = item.LocationSource == LocationSource.Removed;
+        DayTrackLink.Visibility = Format.Visible(item.Latitude is not null);
+        RemoveEstimateLink.Visibility = Format.Visible(estimated);
+        AllowEstimateLink.Visibility = Format.Visible(removed);
+        EstimateText.Visibility = Format.Visible(estimated || removed);
+        if (removed) EstimateText.Text = "No location: you removed the approximate one.";
+        if (!estimated) return;
+        var from = item.LocationFromId is { } id ? S.Media.Get(id) : null;
+        EstimateText.Text = $"Approximate, within about {Format.Distance(item.LocationAccuracy ?? 0)}: where a photo was taken " +
+                            (from is null ? "around the same time." : When(item, from) + ".");
+    }
+
+    /// <summary>
+    /// "4 minutes later", "a minute earlier", "at the same time": in real time when the photo says its clock's zone (the
+    /// located one's is where it was taken, if its file doesn't say), else by the two clocks.
+    /// </summary>
+    private static string When(MediaItem item, MediaItem other)
+    {
+        var seconds = item.UtcOffset is { } offset && other is { Latitude: { } lat, Longitude: { } lon }
+            ? other.DateTaken - (other.UtcOffset ?? Core.Places.TimeZones.OffsetAtLocal(lat, lon, other.DateTaken)) * 60L - (item.DateTaken - offset * 60L)
+            : other.DateTaken - item.DateTaken;
+        var minutes = (int)Math.Round(seconds / 60.0);
+        var size = Math.Abs(minutes);
+        if (size == 0) return "at the same time";
+        var amount = size switch { 1 => "a minute", 60 => "an hour", _ => $"{size} minutes" };
+        return $"{amount} {(minutes > 0 ? "later" : "earlier")}";
+    }
+
+    private void OnRemoveEstimate(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { LocationSource: LocationSource.Estimated } item) return;
+        S.Locations.RemoveEstimates([item.Id]);
+        _changed = true;
+        ShowAgain(item.Id);
+    }
+
+    private async void OnAllowEstimate(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { LocationSource: LocationSource.Removed } item) return;
+        AllowEstimateLink.IsEnabled = false;
+        S.Locations.AllowEstimates([item.Id]);
+        await Task.Run(S.Indexing.EstimateLocations);
+        AllowEstimateLink.IsEnabled = true;
+        _changed = true;
+        if (_current?.Id != item.Id) return;
+        ShowAgain(item.Id);
+        if (_current.Latitude is null) ShowToast("No located photo was taken near enough in time to place it.");
+    }
+
+    /// <summary>The details of the photo shown, read again after its location changed.</summary>
+    private void ShowAgain(long id)
+    {
+        if (S.Media.Get(id) is not { } fresh) return;
+        _current = fresh;
+        ShowDetails(fresh);
+    }
+
+    /// <summary>Where photos were taken that day, in order.</summary>
+    private void OnDayTrack(object sender, RoutedEventArgs e)
+    {
+        if (_current is not { } item) return;
+        var day = item.TakenLocal.Date;
+        App.MainWindow.NavigateFromViewer(() => App.MainWindow.Navigate(typeof(PhotoGallery.App.Pages.MapPage),
+            new PhotoGallery.App.Pages.TrackRequest(day, day, SelectId: item.Id)));
     }
 
     private void OnNamePlace(object sender, RoutedEventArgs e)

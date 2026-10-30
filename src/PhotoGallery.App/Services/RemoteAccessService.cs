@@ -112,7 +112,7 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
 
     public List<FolderRow> GetFolders() => services.Media.GetFolders();
 
-    public List<(long Id, double Latitude, double Longitude)> GetGeoPoints() => services.Media.GetGeoPoints();
+    public List<(long Id, double Latitude, double Longitude, bool Approximate)> GetGeoPoints() => services.Media.GetGeoPoints();
 
     public Task<List<PhotoGallery.Core.Places.PlaceHit>> SearchPlacesAsync(string query, bool online, CancellationToken ct) =>
         services.PlaceSearch.SearchAsync(query, online, ct);
@@ -305,7 +305,7 @@ public sealed class RemoteAccessService(AppServices services) : IRemoteLibrary
                 var livePhoto = item.Kind != MediaKind.Video;
                 var target = VideoExport.NextPath(item.Path, livePhoto);
                 var taken = livePhoto ? item.TakenLocal : item.TakenLocal + edits.TrimStart;
-                var location = item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : ((double, double)?)null;
+                var location = item.FileLocation; // never an estimated one
                 await VideoExport.ExportAsync(source, edits, target, taken, location, new Progress<double>(p => job.Progress = p), job.Cancellation.Token);
                 var indexed = await Task.Run(() => services.Indexing.IndexFileNow(target));
                 if (indexed is not null) services.Media.SetDerivedFrom(indexed.Id, item.Id);

@@ -52,6 +52,8 @@ public sealed record MediaFilter
     /// <summary>"On this day": match month/day across all years.</summary>
     public (int Month, int Day)? MonthDay { get; init; }
     public (double South, double West, double North, double East)? Bounds { get; init; }
+    /// <summary>Only items with a location (their own or an estimated one).</summary>
+    public bool Located { get; init; }
     /// <summary>An explicit set of items (e.g. the photos in a map cluster).</summary>
     public IReadOnlyCollection<long>? Ids { get; init; }
 

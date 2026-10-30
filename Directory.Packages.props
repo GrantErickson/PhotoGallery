@@ -5,6 +5,7 @@
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageVersion Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <PackageVersion Include="MetadataExtractor" Version="2.9.3" />
+    <PackageVersion Include="GeoTimeZone" Version="6.1.0" />
     <PackageVersion Include="Dapper" Version="2.1.89" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Identity.Client" Version="4.90.0" />

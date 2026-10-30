@@ -186,6 +186,70 @@ Local speech to text, nothing uploaded. Pipeline per video (`SpeechTranscriber`)
 - Similar: nearest 200 with cosine ≥ 0.55 (a photo not yet reached is embedded on demand). Description: CLIP BPE
   tokenizer in Core, nearest 300 with cosine ≥ 0.19, offered from word-search results as "Photos that look like …".
 
+## Approximate locations and tracks (2026-10-28)
+Of 253k items, 118k have GPS (almost all iPhone); the 135k without are mostly Canon/Nikon/Kodak cameras, plus phones'
+photos shared with the location stripped (one iPhone 14 model: 2 % of 1,036 with GPS).
+- **Estimating** (`LocationEstimator`): the located photo nearest in time, not a line between the ones before and after.
+  Tested by hiding the location of 60k located photos and estimating it from the rest: interpolating between a photo
+  2 min away and one 4 h away put the photo in the middle of a drive (p80 error 122 m vs 22 m for the nearest).
+  Rules: within 15 min on one side; within 1 h when there are photos on both sides within 2 h. The radius is
+  max(25 m, drift × gap + spread × min(1, 2 × gap / (gap before + gap after))), drift 0.25 m/s with both sides,
+  0.8 m/s with one, capped at 1 km. About 80 % of estimates fall inside their radius in every band; median error 2 m
+  (most are in the middle of a burst). Lone GPS spikes (a fix km away from neighbours that agree, > 30 m/s each way,
+  ~0.1 % of photos) are left out.
+- **Clocks**: lining up by local wall-clock time only works for clocks that are set for you. Comparing the Canon EOS
+  Rebel XTi's shot times with the iPhone's showed it an hour out for months at a time (2010, 2016) and 2–6 h in 2015;
+  per-month offsets from timing alone were noise (any offset that lines one burst up with another "wins" when phone
+  photos are sparse). So only phone makers' photos, and camera models with GPS in ≥ 1 % of their photos, are placed
+  or used to place others: 4,010 photos (3,766 iPhone, 185 Pixel, 57 Samsung) instead of 20,541. Still open: lining
+  up a camera's clock with the phone's by matching the same scene (CLIP) shot by both, which would place ~13k Canon
+  photos.
+- **Storage**: estimates live in `Media.Latitude/Longitude` with `LocationSource` = 1 (removed by hand = 2), so the map,
+  your places, OpenStreetMap names and search include them; the file's GPS always wins on re-index; never written to
+  files (`MediaItem.FileLocation` for saving). Recomputed after every index run: 2.0 s the first time, 0.4–0.6 s when
+  nothing changed.
+- **Tracks** (`TrackBuilder`): photos in time order; a stop is consecutive photos within 200 m of its middle without a
+  2 h pause; legs are known (≤ 2 h, ≤ 250 km/h), dashed (up to 36 h, or faster: a flight) or not drawn (separate
+  visits). Estimated photos join the stop of the photo they came from. Stops are named after your place, the
+  OpenStreetMap place most of their photos were matched to, or the nearest town. A day: ~1 ms; all 40 years: 24k
+  stops in 250 ms.
+
+## People apart: real time, time zones and track groups (2026-10-29)
+Your family's photos at home while you were in Africa (6–27 Oct 2026) were lined up with yours by the hour on their
+clocks: an iPhone 17 photo taken at 1:01 pm in Spokane was placed in Kenya from yours at 1:15 pm Kenya time, ten hours
+earlier. Across the library, ~300 days have located photos no one person could have taken (too far apart for the time
+between, even flying); 60 of them in 2026. Of 4,010 estimates, 97 came from a photo whose clock was in another time
+zone, 16 from where the photo's own phone wasn't, and 180 from one of two places people were in within the hour. A
+track of 6–27 Oct jumped between continents 75 times.
+- **Real time** (`Media.UtcOffset`, v21; `LibraryIndexer.MetadataVersion` 3 re-reads every file once, ~5.6 ms a file):
+  EXIF OffsetTimeOriginal (OffsetTime with DateTime), an iPhone video's creation date, other videos' UTC, or a OneDrive
+  upload's / Pixel's UTC name against the clock (a whole number of quarter hours). 60 % of iPhone photos and all iPhone
+  videos say. A located photo that doesn't is taken to be on the time where it was (GeoTimeZone, offline): true of
+  99.7 % of the 66,844 that do say; the rest are near borders or on another zone's time.
+- **Time zones**: a photo is placed from one whose clock was in another zone only if that zone is in effect within
+  50 km of it (`TimeZones.BorderMeters`), or the located photo's clock was in the same one. Of the 0.3 % of located
+  photos whose clock didn't match where they were, those near a border were all within 50 km (Libby, MT 30 km from
+  Idaho; West Wendover, NV keeps Mountain time); the rest were 150 km or more away (a phone in Spokane on Central time,
+  a 2016 iPhone in Kenya on Pacific time): phones on another zone's time, not borders.
+- **Together** (`Travel.Possible`): two located photos could be one person's if they're within 50 km plus 100 km/h, or
+  900 km/h after an hour at airports. If the located photos within the hour of a photo can't all be one person's, only
+  the photo's own camera model's are used, and only if they can; otherwise no estimate.
+- **Track groups** (`TrackBuilder.Split`): each camera model's photos are followed as far as travel allows (two
+  phones of one model apart become two: an iPhone 17 Pro Max was in Coeur d'Alene while yours was in Uganda). The one
+  with the most photos leads a group; what no lead so far could have been with leads the next (at most 6; fewer than
+  3 photos and under a tenth are a glitch). A photo joins every group whose lead has a photo within 2 h it could be
+  reached from (together: all of them). Otherwise it joins the possible group its own phone was mostly in, then the
+  one with a photo nearest in time. With no lead's photo within 36 h it joins them all. "Possible" alone wasn't
+  enough: a lead with days between photos made the other continent reachable by air, and your Africa photos joined
+  the home group's track (11 jumps between continents); and nearest-in-time alone put your second phone's photos at
+  JFK on the way home into the home group, as your first phone had none for three days.
+- **Results** on a copy of the library (zones read for 241,691 files in 223 s on 8 threads; 94,513 say theirs):
+  - estimates 4,010 → 3,837 (208 no longer made, 35 new, 15 from a different photo). Both wrong trip photos are
+    unplaced. Estimating takes 1.6 s the first time, 0.9 s when nothing changed.
+  - 6–27 Oct 2026: your group 1,161 photos (iPhone 17 Pro Max, Pixel 11 Pro XL, iPhone 13), 322 stops, its 6
+    jumps over 3,000 km your flights; home 202 photos, 40 stops, none. 35 ms.
+  - A day together: no groups, unchanged. All years: 2 groups, the first with 105,759 of 114,096 photos, 0.6 s.
+
 ## Media formats (from the library census)
 | Kind | Extensions (count) | Decode / handling |
 |---|---|---|

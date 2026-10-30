@@ -26,6 +26,7 @@ public sealed class AppServices
         Embeddings = new EmbeddingRepository(Database);
         Places = new PlaceRepository(Database);
         Pois = new PoiRepository(Database);
+        Locations = new LocationRepository(Database);
         PlaceNames = new PlaceNameService(this);
         PlaceSearch = new PlaceSearchService(this);
         Faces = new Imaging.FaceCropper(Path.Combine(Paths.Root, "faces"));
@@ -91,6 +92,8 @@ public sealed class AppServices
     /// <summary>Named places from OpenStreetMap (parks, schools, restaurants…) and which photos were taken at them.</summary>
     public PoiRepository Pois { get; }
     public PoiService PlacesOnline { get; }
+    /// <summary>Approximate locations (from photos taken around the same time) and tracks.</summary>
+    public LocationRepository Locations { get; }
     /// <summary>Other computers on the network opening this library (when turned on in Settings).</summary>
     public RemoteAccessService Remote { get; }
     public PlaceNameService PlaceNames { get; }

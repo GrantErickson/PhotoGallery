@@ -103,6 +103,14 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="Approximate locations" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Photos without a location, often ones someone else shared with the location taken out, are placed where your photos taken around the same time were: within 15 minutes, or within an hour when the photos before and after were taken in the same area. They show as approximate in Details and on the map, and count toward your places and place names. Only phones' photos are placed this way (a phone sets its clock from the network; a camera keeps whatever time it was given). Nothing is written to the files." />
+                <ToggleSwitch x:Name="EstimateSwitch" Header="Give photos an approximate location" Toggled="OnEstimateToggled" />
+                <TextBlock x:Name="EstimateStatsText" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="Similar photos and searching by description" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                            Text="Every photo and video is compared by what's in it, on this PC with OpenAI's CLIP (ViT-L/14) on the graphics card; nothing is uploaded. The model (about 860 MB) downloads once. Then the viewer can show similar photos, searches offer photos that look like what you typed, and utility shots (photos of receipts, documents, screens, boxes, tickets, whiteboards, instructions…) are left out of the timeline and the map, like screenshots. Show them with the filter above the photos, and mark or unmark one in the viewer's details." />

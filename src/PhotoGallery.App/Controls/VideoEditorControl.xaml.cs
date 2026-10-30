@@ -256,7 +256,7 @@ public sealed partial class VideoEditorControl : UserControl
         try
         {
             var taken = _livePhoto ? item.TakenLocal : item.TakenLocal + _edits.TrimStart;
-            var location = item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : ((double, double)?)null;
+            var location = item.FileLocation; // never an estimated one
             var progress = new Progress<double>(p => ExportProgress.Value = p);
             await VideoExport.ExportAsync(source, _edits, target, taken, location, progress, _export.Token);
             var indexed = await Task.Run(() => S.Indexing.IndexFileNow(target));

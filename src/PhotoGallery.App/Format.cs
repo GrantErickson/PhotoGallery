@@ -36,4 +36,11 @@ public static class Format
         >= 1L << 10 => $"{bytes / 1024.0:F0} KB",
         _ => $"{bytes} B",
     };
+
+    public static string Distance(double meters) => meters switch
+    {
+        >= 100_000 => $"{meters / 1000:N0} km",
+        >= 1000 => $"{meters / 1000:0.#} km",
+        _ => $"{meters:0} m",
+    };
 }

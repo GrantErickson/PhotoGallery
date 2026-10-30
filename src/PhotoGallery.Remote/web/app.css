@@ -466,6 +466,7 @@ button.danger { color: var(--error); }
 .found-label::before { display: none; }
 .photo-pin { width: 44px; height: 44px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
              background: #ccc center / cover no-repeat; }
+.photo-pin.approx { border-style: dashed; }
 .marker-cluster.selected div { background-color: rgba(0, 120, 212, .9) !important; color: #fff; }
 .marker-cluster.selected { background-color: rgba(0, 120, 212, .4) !important; }
 @media (prefers-color-scheme: dark) {

@@ -336,6 +336,21 @@ public sealed class GalleryDatabase
             LastError        TEXT
         );
         """,
+        // v20: approximate locations for photos without one, from located photos taken around the same time
+        // (Places.LocationEstimator). LocationSource: 0 the file's, 1 estimated, 2 an estimate removed by hand.
+        // Estimates live in Latitude/Longitude so the map, your places and place names include them; the file's own
+        // GPS always wins when it has some, and estimates are never written to files.
+        """
+        ALTER TABLE Media ADD COLUMN LocationSource INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE Media ADD COLUMN LocationAccuracy REAL;
+        ALTER TABLE Media ADD COLUMN LocationFromId INTEGER REFERENCES Media(Id) ON DELETE SET NULL;
+        CREATE INDEX IX_Media_LocationFrom ON Media(LocationFromId) WHERE LocationFromId IS NOT NULL;
+        """,
+        // v21: how far the camera's clock was ahead of UTC (minutes), from the photo's own record of it (EXIF
+        // OffsetTimeOriginal, an iPhone video's creation date) or a name in UTC (OneDrive uploads, Pixel): when it was
+        // really taken, so photos from people in different time zones aren't lined up by their clocks' hours. Filled
+        // by re-reading every file once (LibraryIndexer.MetadataVersion 3).
+        "ALTER TABLE Media ADD COLUMN UtcOffset INTEGER;",
     ];
 
     private sealed class BoolHandler : SqlMapper.TypeHandler<bool>

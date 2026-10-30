@@ -61,6 +61,6 @@ public static class EditSaving
         }
     }
 
-    public static (double, double)? Location(MediaItem item) =>
-        item is { Latitude: { } lat, Longitude: { } lon } ? (lat, lon) : null;
+    /// <summary>The file's own location, for the saved file (an estimated one is never written).</summary>
+    public static (double, double)? Location(MediaItem item) => item.FileLocation;
 }

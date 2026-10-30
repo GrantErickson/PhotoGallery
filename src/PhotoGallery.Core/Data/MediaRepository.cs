@@ -87,28 +87,38 @@ public sealed class MediaRepository(GalleryDatabase database)
         return id;
     }
 
-    /// <summary>Inserts or updates files by path. Rating, album membership and tags survive a re-index.</summary>
+    /// <summary>
+    /// Inserts or updates files by path. Rating, album membership and tags survive a re-index, and so does an estimated
+    /// (or removed) location unless the file now has its own.
+    /// </summary>
     public void Upsert(SqliteConnection db, SqliteTransaction tx, MediaItem item, string folderPath)
     {
         item.Id = db.ExecuteScalar<long>(
             """
-            INSERT INTO Media (FolderId, Path, FileName, FileSize, FileModified, Kind, DateTaken, DateSource, Width, Height,
-                               Orientation, DurationMs, CameraMake, CameraModel, Latitude, Longitude, IsScreenshot,
+            INSERT INTO Media (FolderId, Path, FileName, FileSize, FileModified, Kind, DateTaken, UtcOffset, DateSource, Width,
+                               Height, Orientation, DurationMs, CameraMake, CameraModel, Latitude, Longitude, IsScreenshot,
                                ContentId, MotionOffset, MotionLength, Motion, OnlineOnly)
-            VALUES (@FolderId, @Path, @FileName, @FileSize, @FileModified, @Kind, @DateTaken, @DateSource, @Width, @Height,
-                    @Orientation, @DurationMs, @CameraMake, @CameraModel, @Latitude, @Longitude, @IsScreenshot,
+            VALUES (@FolderId, @Path, @FileName, @FileSize, @FileModified, @Kind, @DateTaken, @UtcOffset, @DateSource, @Width,
+                    @Height, @Orientation, @DurationMs, @CameraMake, @CameraModel, @Latitude, @Longitude, @IsScreenshot,
                     @ContentId, @MotionOffset, @MotionLength, @Motion, @OnlineOnly)
             ON CONFLICT(Path) DO UPDATE SET
                 QuickHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.QuickHash END,
                 PerceptualHash = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.PerceptualHash END,
                 Sharpness = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.Sharpness END,
                 Utility = CASE WHEN Media.FileSize = excluded.FileSize AND Media.FileModified = excluded.FileModified THEN Media.Utility END,
-                PoiId = CASE WHEN Media.Latitude IS excluded.Latitude AND Media.Longitude IS excluded.Longitude THEN Media.PoiId END,
+                PoiId = CASE WHEN excluded.Latitude IS NULL AND Media.LocationSource <> 0
+                               OR Media.Latitude IS excluded.Latitude AND Media.Longitude IS excluded.Longitude THEN Media.PoiId END,
                 FolderId = excluded.FolderId, FileName = excluded.FileName, FileSize = excluded.FileSize,
                 FileModified = excluded.FileModified, Kind = excluded.Kind, DateTaken = excluded.DateTaken,
-                DateSource = excluded.DateSource, Width = excluded.Width, Height = excluded.Height,
+                UtcOffset = excluded.UtcOffset, DateSource = excluded.DateSource, Width = excluded.Width, Height = excluded.Height,
                 Orientation = excluded.Orientation, DurationMs = excluded.DurationMs, CameraMake = excluded.CameraMake,
-                CameraModel = excluded.CameraModel, Latitude = excluded.Latitude, Longitude = excluded.Longitude,
+                CameraModel = excluded.CameraModel,
+                -- The file's GPS wins; without any, an estimated location (or a removed one) stays until it's estimated again.
+                Latitude = CASE WHEN excluded.Latitude IS NULL AND Media.LocationSource <> 0 THEN Media.Latitude ELSE excluded.Latitude END,
+                Longitude = CASE WHEN excluded.Latitude IS NULL AND Media.LocationSource <> 0 THEN Media.Longitude ELSE excluded.Longitude END,
+                LocationSource = CASE WHEN excluded.Latitude IS NULL THEN Media.LocationSource ELSE 0 END,
+                LocationAccuracy = CASE WHEN excluded.Latitude IS NULL THEN Media.LocationAccuracy END,
+                LocationFromId = CASE WHEN excluded.Latitude IS NULL THEN Media.LocationFromId END,
                 IsScreenshot = excluded.IsScreenshot, ContentId = excluded.ContentId,
                 MotionOffset = excluded.MotionOffset, MotionLength = excluded.MotionLength, OnlineOnly = excluded.OnlineOnly,
                 -- Pairing/cloud state is owned by RecomputeMotion; only embedded motion comes from the file itself.
@@ -337,6 +347,7 @@ public sealed class MediaRepository(GalleryDatabase database)
             sql.Append(" AND m.Latitude BETWEEN @south AND @north AND m.Longitude BETWEEN @west AND @east");
             p.AddDynamicParams(new { south, west, north, east });
         }
+        if (f.Located) sql.Append(" AND m.Latitude IS NOT NULL");
 
         if (ordered)
             sql.Append(f.AlbumId is not null ? " ORDER BY am.SortOrder, m.DateTaken"
@@ -401,12 +412,15 @@ public sealed class MediaRepository(GalleryDatabase database)
         return db.Query<FolderRow>("SELECT Id, ParentId, Path, Name FROM Folders ORDER BY Path").AsList();
     }
 
-    /// <summary>Every located photo/video (not screenshots or utility shots) for the map: id, latitude, longitude.</summary>
-    public List<(long Id, double Latitude, double Longitude)> GetGeoPoints()
+    /// <summary>
+    /// Every located photo/video (not screenshots or utility shots) for the map: id, latitude, longitude, and whether
+    /// the location is only an estimate.
+    /// </summary>
+    public List<(long Id, double Latitude, double Longitude, bool Approximate)> GetGeoPoints()
     {
         using var db = database.Open();
-        return db.Query<(long, double, double)>(
-            $"SELECT m.Id, m.Latitude, m.Longitude FROM Media m WHERE m.Latitude IS NOT NULL AND m.Longitude IS NOT NULL AND m.IsHidden = 0 AND NOT {Clutter}").AsList();
+        return db.Query<(long, double, double, bool)>(
+            $"SELECT m.Id, m.Latitude, m.Longitude, m.LocationSource = 1 FROM Media m WHERE m.Latitude IS NOT NULL AND m.Longitude IS NOT NULL AND m.IsHidden = 0 AND NOT {Clutter}").AsList();
     }
 
     public void SetRating(IEnumerable<long> ids, int rating)

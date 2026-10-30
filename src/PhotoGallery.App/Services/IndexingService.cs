@@ -92,6 +92,7 @@ public sealed class IndexingService(AppServices services)
                     ? $"Library up to date · {result.Found:N0} files"
                     : $"Indexed {result.Found:N0} files · {result.Added:N0} new, {result.Updated:N0} changed, {result.Removed:N0} removed");
                 if (result.Added + result.Updated + result.Removed > 0) LibraryChanged?.Invoke();
+                EstimateLocations();
             }
 
             lock (_gate)
@@ -104,6 +105,26 @@ public sealed class IndexingService(AppServices services)
                 }
                 _pending = false;
             }
+        }
+    }
+
+    /// <summary>
+    /// Gives photos without a location the one taken nearest in time (or takes estimates away when switched off). After
+    /// every index run, since new photos can place others; when nothing changed it's a fraction of a second.
+    /// </summary>
+    public void EstimateLocations()
+    {
+        try
+        {
+            var changed = services.Settings.EstimateLocations ? services.Locations.EstimateAll() : services.Locations.ClearEstimates();
+            if (changed == 0) return;
+            PhotoGallery.Core.Log.Info($"Approximate locations: {changed:N0} changed");
+            services.PlacesOnline.Nudge(); // the park or restaurant at the new ones
+            LibraryChanged?.Invoke();
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex)
+        {
+            PhotoGallery.Core.Log.Error("Estimating locations failed", ex);
         }
     }
 

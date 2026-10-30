@@ -33,6 +33,7 @@ public sealed partial class SettingsPage : Page
         ConfirmDeleteSwitch.IsOn = App.Services.Settings.ConfirmDelete;
         ThemeChoice.SelectedIndex = App.Services.Settings.Theme switch { "Light" => 1, "System" => 2, _ => 0 };
         PoiSwitch.IsOn = App.Services.Settings.NamePlacesFromOsm;
+        EstimateSwitch.IsOn = App.Services.Settings.EstimateLocations;
         RemoteSwitch.IsOn = App.Services.Settings.RemoteEnabled;
         RemoteChangesSwitch.IsOn = App.Services.Settings.RemoteAllowChanges;
         RemotePortBox.Value = App.Services.Settings.RemotePort;
@@ -82,6 +83,10 @@ public sealed partial class SettingsPage : Page
                : !App.Services.Settings.NamePlacesFromOsm ? "looking up is off"
                : poi.IsWorking ? "Looking up…" : tilesDone == tiles ? "Up to date" : "Waiting to start");
 
+        var (estimated, removed) = await Task.Run(App.Services.Locations.GetCounts);
+        EstimateStatsText.Text = !App.Services.Settings.EstimateLocations ? ""
+            : $"{estimated:N0} photos and videos have an approximate location" + (removed > 0 ? $" · {removed:N0} removed by you" : "");
+
         var similar = App.Services.Similar;
         var (compared, all) = await Task.Run(App.Services.Embeddings.GetProgress);
         var device = similar.Device is { } d ? $" · on {(d == "CPU" ? "the CPU" : $"the GPU ({d})")}" : "";
@@ -103,6 +108,18 @@ public sealed partial class SettingsPage : Page
         App.Services.Settings.NamePlacesFromOsm = PoiSwitch.IsOn;
         App.Services.SaveSettings();
         App.Services.PlacesOnline.Nudge();
+    }
+
+    /// <summary>On: photos are placed now (and after every index). Off: every approximate location is taken away.</summary>
+    private async void OnEstimateToggled(object sender, RoutedEventArgs e)
+    {
+        if (_loadingSwitch) return;
+        App.Services.Settings.EstimateLocations = EstimateSwitch.IsOn;
+        App.Services.SaveSettings();
+        EstimateSwitch.IsEnabled = false;
+        await Task.Run(App.Services.Indexing.EstimateLocations);
+        EstimateSwitch.IsEnabled = true;
+        await RefreshTranscriptsAsync();
     }
 
     private void OnThemeChanged(object sender, SelectionChangedEventArgs e)

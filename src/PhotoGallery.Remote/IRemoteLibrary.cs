@@ -48,8 +48,8 @@ public interface IRemoteLibrary
 
     List<FolderRow> GetFolders();
 
-    /// <summary>Every located photo and video, for the map.</summary>
-    List<(long Id, double Latitude, double Longitude)> GetGeoPoints();
+    /// <summary>Every located photo and video, for the map, and whether its location is only estimated.</summary>
+    List<(long Id, double Latitude, double Longitude, bool Approximate)> GetGeoPoints();
 
     /// <summary>Places by name for the map: on the host, or (online) from OpenStreetMap; IOException if that fails.</summary>
     Task<List<PhotoGallery.Core.Places.PlaceHit>> SearchPlacesAsync(string query, bool online, CancellationToken ct);

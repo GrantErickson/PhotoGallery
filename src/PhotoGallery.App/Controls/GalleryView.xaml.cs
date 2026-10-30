@@ -532,6 +532,7 @@ public sealed partial class GalleryView : UserControl
         if (ids.Count == 1)
             menu.Items.Add(MenuItem("Open", Symbol.OpenFile, () => Open(state.Item)));
         menu.Items.Add(RateMenu(ids));
+        if (ids.Count > 1) menu.Items.Add(MenuItem("Show their track on the map", Symbol.Directions, () => ShowTrack(ids)));
         menu.Items.Add(MenuItem(ids.Count == 1 ? "Copy path" : $"Copy {ids.Count:N0} paths", Symbol.Copy,
             () => Clipboard.CopyPaths(ids.Select(S.Media.GetPath).OfType<string>().ToList())));
         if (ids.Count == 1)
@@ -916,6 +917,41 @@ public sealed partial class GalleryView : UserControl
             null => $"The app decides for {ids.Count:N0} again",
         });
         _ = ReloadAsync(keepPosition: true);
+    }
+
+    private void OnTrackSelection(object sender, RoutedEventArgs e) => ShowTrack(SelectedIds());
+
+    /// <summary>The map, showing where these were taken in order.</summary>
+    private static void ShowTrack(IReadOnlyList<long> ids) =>
+        App.MainWindow.Navigate(typeof(Pages.MapPage), new Pages.TrackRequest(null, null, ids));
+
+    private async void OnRemoveEstimates(object sender, RoutedEventArgs e)
+    {
+        var ids = SelectedIds();
+        var removed = await Task.Run(() => S.Locations.RemoveEstimates(ids));
+        App.MainWindow.ShowStatus(removed switch
+        {
+            0 => "None of these had an approximate location",
+            1 => "Removed 1 approximate location",
+            _ => $"Removed {removed:N0} approximate locations",
+        });
+        if (removed > 0) _ = ReloadAsync(keepPosition: true); // they may leave a list of what's on the map
+    }
+
+    private async void OnAllowEstimates(object sender, RoutedEventArgs e)
+    {
+        var ids = SelectedIds();
+        var before = await Task.Run(() => S.Locations.AllowEstimates(ids));
+        if (before == 0)
+        {
+            App.MainWindow.ShowStatus("None of these had its approximate location removed");
+            return;
+        }
+        await Task.Run(S.Indexing.EstimateLocations);
+        var placed = await Task.Run(() => ids.Count(id => S.Media.Get(id) is { LocationSource: PhotoGallery.Core.Media.LocationSource.Estimated }));
+        App.MainWindow.ShowStatus(placed == before
+            ? $"Estimated {placed:N0} locations again"
+            : $"Estimated {placed:N0} of {before:N0} locations again; the others have no photo taken near enough in time");
     }
 
     private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject

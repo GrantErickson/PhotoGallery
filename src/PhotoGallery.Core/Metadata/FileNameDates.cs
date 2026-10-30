@@ -11,13 +11,11 @@ public static partial class FileNameDates
     {
         localZone ??= TimeZoneInfo.Local;
 
-        // OneDrive camera upload (iOS) and Pixel names are UTC: 20260924_031147076_iOS, PXL_20240418_181647617.
-        var m = UtcNameRegex().Match(fileName);
-        if (m.Success && TryBuild(m.Groups["d"].Value, m.Groups["t"].Value, out var utc))
-            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), localZone);
+        if (ParseUtc(fileName) is { } utc)
+            return TimeZoneInfo.ConvertTimeFromUtc(utc, localZone);
 
         // Samsung / generic Android and screenshots are local: 20260110_120709, IMG_20200805_181521, Screenshot 2021-03-04 101500.
-        m = LocalNameRegex().Match(fileName);
+        var m = LocalNameRegex().Match(fileName);
         if (m.Success && TryBuild(m.Groups["d"].Value, m.Groups["t"].Value, out var local))
             return local;
 
@@ -26,6 +24,16 @@ public static partial class FileNameDates
             return local;
 
         return null;
+    }
+
+    /// <summary>
+    /// The UTC time in a OneDrive camera upload's (iOS) or a Pixel's name: 20260924_031147076_iOS, PXL_20240418_181647617.
+    /// Against the photo's own clock, it says which time zone that clock was in.
+    /// </summary>
+    public static DateTime? ParseUtc(string fileName)
+    {
+        var m = UtcNameRegex().Match(fileName);
+        return m.Success && TryBuild(m.Groups["d"].Value, m.Groups["t"].Value, out var utc) ? DateTime.SpecifyKind(utc, DateTimeKind.Utc) : null;
     }
 
     private static bool TryBuild(string date, string time, out DateTime value) =>

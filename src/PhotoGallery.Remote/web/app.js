@@ -1394,9 +1394,11 @@
       });
       try {
         const points = await json("/api/map");
+        // Approximate locations (estimated from photos taken around the same time) have a dashed outline.
+        const approx = new Set(points.approx || []);
         const markers = points.ids.map((id, i) => {
           const marker = L.marker([points.lat[i], points.lon[i]], {
-            icon: new PhotoIcon({ className: "photo-pin", html: "", iconSize: [44, 44], iconAnchor: [22, 22], photoId: id }),
+            icon: new PhotoIcon({ className: approx.has(id) ? "photo-pin approx" : "photo-pin", html: "", iconSize: [44, 44], iconAnchor: [22, 22], photoId: id }),
             photoId: id,
           });
           marker.on("click", () => openList([id], id));
@@ -2347,6 +2349,10 @@
         const line = el("p");
         line.append(link);
         parts.push(line);
+      }
+      if (d.approximate != null) {
+        const within = d.approximate >= 1000 ? `${(d.approximate / 1000).toFixed(1)} km` : `${Math.round(d.approximate)} m`;
+        parts.push(el("p", "muted", `Approximate (within about ${within}), from a photo taken around the same time`));
       }
       section("Place", ...parts);
     }
