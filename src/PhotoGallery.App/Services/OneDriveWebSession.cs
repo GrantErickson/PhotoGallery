@@ -122,6 +122,17 @@ public sealed class OneDriveWebSession(AppServices services) : IOneDriveWebToken
             Captured -= OnCaptured;
             if (controller is not null)
             {
+                // Stop listening first, as the Connect page does: a request still in flight when the view closes was
+                // handed to its freed handler, which crashed the app inside WebView2 (Microsoft.Web.WebView2.Core).
+                try
+                {
+                    Detach(controller.CoreWebView2);
+                    controller.CoreWebView2.Stop();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Detaching the hidden OneDrive view failed: {ex.GetType().Name}");
+                }
                 // Let WebView2 finish dispatching its events before the view goes away.
                 var closing = controller;
                 App.MainWindow.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
