@@ -778,6 +778,11 @@ public sealed partial class ViewerControl : UserControl
             case VirtualKey.C when IsDown(VirtualKey.Control) && IsDown(VirtualKey.Shift):
                 if (_current is not null) Clipboard.CopyPaths([_current.Path]);
                 break;
+            // Text selected in the details or a transcript copies as text.
+            case VirtualKey.C when IsDown(VirtualKey.Control) &&
+                                   FocusManager.GetFocusedElement(XamlRoot) is not (TextBlock { SelectedText.Length: > 0 } or RichTextBlock { SelectedText.Length: > 0 }):
+                if (_current is not null) _ = Clipboard.CopyAsync([_current.Id]);
+                break;
             case >= VirtualKey.Number0 and <= VirtualKey.Number5:
                 SetRating(e.Key - VirtualKey.Number0);
                 break;
@@ -1002,9 +1007,40 @@ public sealed partial class ViewerControl : UserControl
         _ = ShowIndexAsync(_index);
     }
 
+    private void OnCopy(object sender, RoutedEventArgs e)
+    {
+        if (_current is not null) _ = Clipboard.CopyAsync([_current.Id]);
+    }
+
     private void OnCopyPath(object sender, RoutedEventArgs e)
     {
         if (_current is not null) Clipboard.CopyPaths([_current.Path]);
+    }
+
+    private async void OnPhotoDragStarting(UIElement sender, DragStartingEventArgs args)
+    {
+        if (_current is not { } item)
+        {
+            args.Cancel = true;
+            return;
+        }
+        args.AllowedOperations = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        Handoff.OfferLater(args.Data, [item.Id]);
+        // A small picture under the pointer, rather than the whole photo as shown.
+        var deferral = args.GetDeferral();
+        try
+        {
+            if (await Handoff.DragPictureAsync(item.Id) is { } picture)
+                args.DragUI.SetContentFromSoftwareBitmap(picture, new Windows.Foundation.Point(picture.PixelWidth / 2.0, picture.PixelHeight / 2.0));
+        }
+        catch (Exception ex) when (ex is IOException or System.Runtime.InteropServices.COMException)
+        {
+            // The default picture (the photo as shown) will do.
+        }
+        finally
+        {
+            deferral.Complete();
+        }
     }
 
     private PhotoGallery.Core.Places.Place? _shownPlace;

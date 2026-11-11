@@ -15,6 +15,12 @@ works out live in its own database.
 - **Adjustable tiles** (slider or Ctrl+mouse wheel), cropped around faces. Video tiles play a preview in place.
 - **Stars without opening a photo**: right-click a photo (or a selection) › Rate › ★ to ★★★★★ or Clear rating, or
   press 1–5 (0 clears) on the selected photos.
+- **Copy or drag into other apps**: Ctrl+C (or right-click › Copy) copies the photos and videos themselves, to paste
+  into PowerPoint, Word, a chat or a folder; or drag them there (from the viewer too). Ctrl+Shift+C copies their paths.
+  - JPEG, PNG, GIF and BMP photos go as they are, and so do videos.
+  - HEIC, RAW and other photos, photos stored sideways, and photos with edits kept in the gallery go as an upright
+    JPEG that looks as it does here, with the date taken, camera and the file's own location.
+  - One photo is copied as a picture too, for apps that only take pictures.
 - **Filters** on every gallery: photos or videos, minimum rating, Live Photos only, utility shots (none / with / only),
   and **people** (photos with everyone you pick, chosen from face avatars).
 - **Utility shots** stay out of the timeline and the map: screenshots, and photos of receipts, documents, screens,
@@ -36,8 +42,8 @@ works out live in its own database.
   back to where you started.
 
 ### Viewer
-- **Zoom**, next and previous, **ratings** (1–5; Clear or 0 removes them), tags, albums, copy path, show in Explorer,
-  open in OneDrive.
+- **Zoom**, next and previous, **ratings** (1–5; Clear or 0 removes them), tags, albums, copy (or drag the photo
+  into another app), copy path, show in Explorer, open in OneDrive.
 - **Details**: date, camera, size, location with the **place name** (your place, the park or restaurant, and the
   town). Click the name or the coordinates to open the map there.
 - **Faces**: names on hover, face outlines, and a click takes you to that person.
@@ -244,8 +250,8 @@ dotnet run --project src/PhotoGallery.App
 | Where | Keys |
 |---|---|
 | Anywhere | **Ctrl+E** search · **Alt+←/→** or mouse back/forward buttons: back/forward |
-| Gallery | **Enter** open · **Del** delete · **Ctrl+wheel** tile size |
-| Viewer | **←/→** previous/next · **Space** play Live Photo/video · **1–5** rate, **0** clear · **E** edit · **I** info · **Del** delete · **Ctrl+Shift+C** copy path · **Ctrl+F** find in transcript or photo text · **Esc** close |
+| Gallery | **Enter** open · **Del** delete · **Ctrl+C** copy · **Ctrl+Shift+C** copy paths · **Ctrl+wheel** tile size |
+| Viewer | **←/→** previous/next · **Space** play Live Photo/video · **1–5** rate, **0** clear · **E** edit · **I** info · **Del** delete · **Ctrl+C** copy · **Ctrl+Shift+C** copy path · **Ctrl+F** find in transcript or photo text · **Esc** close |
 | Viewer, video | **,** / **.** previous/next frame · **S** save frame |
 | Photo editor | **[** / **]** rotate · **Ctrl+S** save as copy · **Esc** close |
 | Video editor | **Space** play/pause · **I** / **O** set start/end · **Ctrl+S** save · **Esc** close |

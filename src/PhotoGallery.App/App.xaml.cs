@@ -41,6 +41,7 @@ public partial class App : Application
         _window = new MainWindow();
         _window.Closed += (_, _) =>
         {
+            Clipboard.KeepAfterExit();
             _services.Transcription.Shutdown();
             Task.Run(_services.Remote.StopAsync).Wait(TimeSpan.FromSeconds(3)); // off the UI thread: its awaits would need it
             _services.Similar.Dispose();

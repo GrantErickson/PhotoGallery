@@ -38,6 +38,20 @@ public sealed partial class GalleryView : UserControl
         _initialized = true;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
+        // Run after the grid's own handling, which marks them handled.
+        Grid.AddHandler(DragOverEvent, new DragEventHandler(AcceptReorderAsCopy), handledEventsToo: true);
+        Grid.AddHandler(DropEvent, new DragEventHandler(AcceptReorderAsCopy), handledEventsToo: true);
+    }
+
+    /// <summary>
+    /// Drags only allow copying, so that a drop in File Explorer can never move an original out of the library. An
+    /// album's grid accepts its own reorder as a move, which a copy-only drag would refuse: it's accepted as a copy instead.
+    /// </summary>
+    private static void AcceptReorderAsCopy(object sender, DragEventArgs e)
+    {
+        if (e.AcceptedOperation != Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move) return;
+        e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        if (e.DragUIOverride is { } ui) ui.IsGlyphVisible = ui.IsCaptionVisible = false; // it isn't a copy to the eye
     }
 
     /// <summary>When set, the view shows an album (custom order) and offers "Remove from album".</summary>
@@ -174,13 +188,13 @@ public sealed partial class GalleryView : UserControl
         {
             // Albums keep their own order and can be rearranged by dragging.
             _albumOrder = new System.Collections.ObjectModel.ObservableCollection<MediaSummary>(items);
-            Grid.CanDragItems = Grid.CanReorderItems = Grid.AllowDrop = true;
+            Grid.CanReorderItems = Grid.AllowDrop = true;
             Grid.ItemsSource = _albumOrder;
         }
         else
         {
             // Timeline views are grouped by month (headers inside the grid); the jump list navigates between them.
-            Grid.CanDragItems = Grid.CanReorderItems = Grid.AllowDrop = false;
+            Grid.CanReorderItems = Grid.AllowDrop = false;
             Grid.ItemsSource = GroupMode == GroupMode.None
                 ? items
                 : new Microsoft.UI.Xaml.Data.CollectionViewSource { IsSourceGrouped = true, Source = MonthGroup.Split(items, GroupMode) }.View;
@@ -533,8 +547,12 @@ public sealed partial class GalleryView : UserControl
             menu.Items.Add(MenuItem("Open", Symbol.OpenFile, () => Open(state.Item)));
         menu.Items.Add(RateMenu(ids));
         if (ids.Count > 1) menu.Items.Add(MenuItem("Show their track on the map", Symbol.Directions, () => ShowTrack(ids)));
-        menu.Items.Add(MenuItem(ids.Count == 1 ? "Copy path" : $"Copy {ids.Count:N0} paths", Symbol.Copy,
-            () => Clipboard.CopyPaths(ids.Select(S.Media.GetPath).OfType<string>().ToList())));
+        var copy = MenuItem(ids.Count == 1 ? "Copy" : $"Copy {ids.Count:N0}", Symbol.Copy, () => _ = Clipboard.CopyAsync(ids));
+        copy.KeyboardAcceleratorTextOverride = "Ctrl+C";
+        menu.Items.Add(copy);
+        var copyPaths = MenuItem(ids.Count == 1 ? "Copy path" : $"Copy {ids.Count:N0} paths", Symbol.Link, () => CopyPaths(ids));
+        copyPaths.KeyboardAcceleratorTextOverride = "Ctrl+Shift+C";
+        menu.Items.Add(copyPaths);
         if (ids.Count == 1)
             menu.Items.Add(MenuItem("Show in File Explorer", Symbol.Folder, () =>
             {
@@ -606,10 +624,11 @@ public sealed partial class GalleryView : UserControl
         stars.Visibility = Format.HasRating(rating);
     }
 
+    private static bool IsDown(VirtualKey key) => InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
     /// <summary>0–5 on the number row or the keypad, without Ctrl or Alt: the stars to give the selection.</summary>
     private static int? RatingKey(VirtualKey key)
     {
-        static bool IsDown(VirtualKey k) => InputKeyboardSource.GetKeyStateForCurrentThread(k).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
         if (IsDown(VirtualKey.Control) || IsDown(VirtualKey.Menu)) return null;
         return key switch
         {
@@ -626,6 +645,14 @@ public sealed partial class GalleryView : UserControl
         return item;
     }
 
+    /// <summary>Dragged out of the app (into PowerPoint, a chat, a folder…), photos and videos go as files; in an album, dragging also reorders it.</summary>
+    private void OnDragItemsStarting(object sender, DragItemsStartingEventArgs e)
+    {
+        var ids = e.Items.OfType<MediaSummary>().Select(i => i.Id).ToList();
+        if (ids.Count == 0) return;
+        Handoff.OfferLater(e.Data, ids);
+    }
+
     private void OnDragItemsCompleted(ListViewBase sender, DragItemsCompletedEventArgs args)
     {
         if (AlbumId is not { } albumId || _albumOrder is null) return;
@@ -633,14 +660,23 @@ public sealed partial class GalleryView : UserControl
         S.Collections.SetAlbumOrder(albumId, _items.Select(i => i.Id).ToList());
     }
 
-    private void OnCopySelectedPaths(object sender, RoutedEventArgs e) =>
-        Clipboard.CopyPaths(SelectedIds().Select(S.Media.GetPath).OfType<string>().ToList());
+    private void OnCopySelection(object sender, RoutedEventArgs e) => _ = Clipboard.CopyAsync(SelectedIds());
+
+    private void OnCopySelectedPaths(object sender, RoutedEventArgs e) => CopyPaths(SelectedIds());
+
+    private static void CopyPaths(IReadOnlyList<long> ids) => Clipboard.CopyPaths(ids.Select(S.Media.GetPath).OfType<string>().ToList());
 
     private void OnGridPreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == VirtualKey.Enter && Grid.SelectedItem is MediaSummary item)
         {
             Open(item);
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.C && Grid.SelectedItems.Count > 0 && IsDown(VirtualKey.Control) && !IsDown(VirtualKey.Menu))
+        {
+            if (IsDown(VirtualKey.Shift)) CopyPaths(SelectedIds());
+            else _ = Clipboard.CopyAsync(SelectedIds());
             e.Handled = true;
         }
         else if (e.Key == VirtualKey.Delete && Grid.SelectedItems.Count > 0)

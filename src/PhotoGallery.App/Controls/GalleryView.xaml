@@ -149,7 +149,8 @@
                     </AppBarButton.Flyout>
                 </AppBarButton>
                 <AppBarButton Icon="Delete" Label="Delete" Click="OnDeleteSelection" ToolTipService.ToolTip="Move to the Recycle Bin (Del)" />
-                <AppBarButton Icon="Copy" Label="Copy paths" Click="OnCopySelectedPaths" />
+                <AppBarButton Icon="Copy" Label="Copy" Click="OnCopySelection" ToolTipService.ToolTip="Copy, to paste into another app or a folder (Ctrl+C)" />
+                <AppBarButton Icon="Link" Label="Copy paths" Click="OnCopySelectedPaths" ToolTipService.ToolTip="Copy the files' full paths (Ctrl+Shift+C)" />
                 <AppBarButton Icon="Clear" Label="Clear selection" Click="OnClearSelection" />
             </CommandBar>
 
@@ -171,6 +172,8 @@
             ContainerContentChanging="OnContainerContentChanging"
             SelectionChanged="OnSelectionChanged"
             PreviewKeyDown="OnGridPreviewKeyDown"
+            CanDragItems="True"
+            DragItemsStarting="OnDragItemsStarting"
             DragItemsCompleted="OnDragItemsCompleted">
             <GridView.ItemContainerStyle>
                 <Style TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
