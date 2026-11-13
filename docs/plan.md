@@ -134,6 +134,9 @@ Local speech to text, nothing uploaded. Pipeline per video (`SpeechTranscriber`)
   threshold 0.85. Tuned on voice journals (must stay one speaker; at 0.5–0.7 walking/driving split one voice into 2–7)
   and journal + a different (TTS) voice interleaved (≈ all covered speech attributed correctly at 0.8–0.9). 3D-Speaker
   ERes2Net split more. `SpeakerAssigner` folds voices under 15 % / 4 s into neighbours and labels only when ≥ 2 remain.
+  Runs in its own process (`PhotoGallery.Speakers`, copied to `.\speakers`): since the November 2026 Windows update,
+  `Windows.Media.FaceAnalysis` loads Windows' inbox `onnxruntime.dll` (1.17) into the app, and sherpa-onnx, bound to
+  that instead of its own 1.28, crashed the app (access violation creating the diarizer) on the first video with speech.
 - Stored in `Transcripts` (valid for the file's size/date; model name so older pipelines get redone), words in
   `MediaFts.Speech`. Background queue newest first after videos without transcripts; the viewed video jumps the queue.
 

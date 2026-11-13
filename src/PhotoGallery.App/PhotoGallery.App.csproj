@@ -28,8 +28,6 @@
     <PackageReference Include="Whisper.net" />
     <PackageReference Include="Whisper.net.Runtime" />
     <PackageReference Include="Whisper.net.Runtime.Vulkan" />
-    <!-- Who's speaking: pyannote segmentation + NeMo TitaNet speaker embeddings (ONNX, CPU). -->
-    <PackageReference Include="org.k2fsa.sherpa.onnx" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PhotoGallery.Core\PhotoGallery.Core.csproj" />
@@ -37,12 +35,19 @@
     <ProjectReference Include="..\PhotoGallery.Remote\PhotoGallery.Remote.csproj" />
     <!-- CLIP runs in its own process (its ONNX Runtime is the DirectML build); built first, copied to .\embedder. -->
     <ProjectReference Include="..\PhotoGallery.Embedder\PhotoGallery.Embedder.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <!-- Who's speaking (sherpa-onnx) runs in its own process too (its ONNX Runtime isn't Windows'); copied to .\speakers. -->
+    <ProjectReference Include="..\PhotoGallery.Speakers\PhotoGallery.Speakers.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
-  <Target Name="CopyEmbedder" AfterTargets="Build">
+  <Target Name="CopyHelpers" AfterTargets="Build">
+    <PropertyGroup>
+      <EmbedderOut>..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\</EmbedderOut>
+      <SpeakersOut>..\PhotoGallery.Speakers\bin\$(Configuration)\$(TargetFramework)\win-x64\</SpeakersOut>
+    </PropertyGroup>
     <ItemGroup>
-      <EmbedderFiles Include="..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\**\*"
-                     Exclude="..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\**\*.pdb;..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\**\*.lib;..\PhotoGallery.Embedder\bin\$(Configuration)\$(TargetFramework)\win-x64\**\DirectML.Debug.*" />
+      <EmbedderFiles Include="$(EmbedderOut)**\*" Exclude="$(EmbedderOut)**\*.pdb;$(EmbedderOut)**\*.lib;$(EmbedderOut)**\DirectML.Debug.*" />
+      <SpeakersFiles Include="$(SpeakersOut)**\*" Exclude="$(SpeakersOut)**\*.pdb;$(SpeakersOut)**\*.lib" />
     </ItemGroup>
     <Copy SourceFiles="@(EmbedderFiles)" DestinationFiles="@(EmbedderFiles->'$(OutDir)embedder\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(SpeakersFiles)" DestinationFiles="@(SpeakersFiles->'$(OutDir)speakers\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>
