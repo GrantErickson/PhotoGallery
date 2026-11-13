@@ -56,6 +56,12 @@ public sealed partial class MainWindow : Window
     private (Controls.GalleryView Owner, long ItemId)? _forwardViewer;
     private (Controls.GalleryView Owner, long ItemId)? _viewerHandoff;
 
+    /// <summary>
+    /// Viewers left for another page from a page that's kept between visits (Folders, Map, On this day), re-opened when
+    /// Back returns there. Gallery pages keep theirs in their own history state instead (<see cref="TakeViewerHistory"/>).
+    /// </summary>
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Controls.GalleryView, object> _reopenOnBack = new();
+
     public async void GoBack()
     {
         if (VideoEditor.Visibility == Visibility.Visible)
@@ -115,7 +121,11 @@ public sealed partial class MainWindow : Window
     /// <summary>Closes the viewer and navigates, so that Back returns to the viewer on the same photo.</summary>
     public void NavigateFromViewer(Action navigate)
     {
-        if (_viewerOwner is { } owner && Viewer.CurrentId is { } id) _viewerHandoff = (owner, id);
+        if (_viewerOwner is { } owner && Viewer.CurrentId is { } id)
+        {
+            _viewerHandoff = (owner, id);
+            _reopenOnBack.AddOrUpdate(owner, id);
+        }
         Viewer.Close();
         _forwardViewer = null;
         navigate();
@@ -127,6 +137,7 @@ public sealed partial class MainWindow : Window
         long? reopen = _viewerHandoff is { } h && ReferenceEquals(h.Owner, gallery) ? h.ItemId : null;
         long? forward = _forwardViewer is { } f && ReferenceEquals(f.Owner, gallery) ? f.ItemId : null;
         _viewerHandoff = null;
+        _reopenOnBack.Remove(gallery);
         _forwardViewer = null;
         return (reopen, forward);
     }
@@ -208,6 +219,15 @@ public sealed partial class MainWindow : Window
     private void OnFrameNavigated(object sender, Microsoft.UI.Xaml.Navigation.NavigationEventArgs e)
     {
         if (e.NavigationMode == Microsoft.UI.Xaml.Navigation.NavigationMode.New) _forwardViewer = null;
+        // Back to a kept page: its viewer opens again. Arriving any other way, it starts afresh.
+        foreach (var (gallery, id) in _reopenOnBack.ToList())
+        {
+            if (!IsOnCurrentPage(gallery)) continue;
+            _reopenOnBack.Remove(gallery);
+            if (e.NavigationMode != Microsoft.UI.Xaml.Navigation.NavigationMode.Back) continue;
+            if (gallery.IsLoaded) gallery.OpenItem((long)id);
+            else gallery.ReopenViewerOnLoad = (long)id;
+        }
         SyncNavSelection(e.SourcePageType, e.Parameter);
         // The box shows the search on screen, and nothing elsewhere.
         _settingSearchText = true;
@@ -432,6 +452,33 @@ public sealed partial class MainWindow : Window
         if (Viewer.Visibility == Visibility.Visible) Viewer.Close();
         while (ContentFrame.Content is GalleryPage { SearchText: not null } && ContentFrame.CanGoBack) ContentFrame.GoBack();
         if (ContentFrame.Content is GalleryPage { SearchText: not null }) ContentFrame.Navigate(typeof(GalleryPage), TimelineRequest());
+    }
+
+    /// <summary>
+    /// The whole timeline around a photo: scrolled so it's in the middle and selected, with what was taken just before
+    /// and after around it. It's a new step in the history, so Back returns to where it was shown from, viewer and all.
+    /// </summary>
+    /// <param name="from">The gallery it's shown from, when not from the viewer.</param>
+    public void ShowInTimeline(long id, Controls.GalleryView? from = null)
+    {
+        var viewing = Viewer.Visibility == Visibility.Visible;
+        if ((viewing ? _viewerOwner : from) is { ShowsWholeTimeline: true } timeline)
+        {
+            // Already the whole timeline: just the grid around it.
+            if (viewing) Viewer.Close();
+            timeline.Reveal(id);
+            return;
+        }
+        if (App.Services.Media.Get(id) is not { } item) return;
+        var request = TimelineRequest() with
+        {
+            // The timeline leaves out utility shots; showing one, it shows them all.
+            Filter = item.IsClutter ? new MediaFilter { IncludeScreenshots = true } : MediaFilter.Timeline,
+            Subtitle = $"Around {item.FileName}, taken {item.TakenLocal.ToString("f", CultureInfo.CurrentCulture)}",
+            Reveal = id,
+        };
+        if (viewing) NavigateFromViewer(() => ContentFrame.Navigate(typeof(GalleryPage), request));
+        else ContentFrame.Navigate(typeof(GalleryPage), request);
     }
 
     /// <summary>A photo followed by the ones most like it (most similar first).</summary>

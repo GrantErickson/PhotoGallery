@@ -9,8 +9,10 @@ namespace PhotoGallery.App.Pages;
 /// <param name="Group">Month headers (date order), or <see cref="GroupMode.None"/> for the filter's own order.</param>
 /// <param name="Search">Search results for these words: the page runs the search and offers exact words, sorting and grouping.</param>
 /// <param name="Carry">A search's choices and filters carried over from the search before it.</param>
+/// <param name="Reveal">The item to show in the middle of the view, selected, when the page is first shown (Show in timeline).</param>
 public sealed record GalleryRequest(string Title, MediaFilter Filter, string? Subtitle = null, long? AlbumId = null, string? EmptyMessage = null,
-    long? PersonId = null, string? Section = null, GroupMode Group = GroupMode.Month, string? Search = null, SearchCarry? Carry = null);
+    long? PersonId = null, string? Section = null, GroupMode Group = GroupMode.Month, string? Search = null, SearchCarry? Carry = null,
+    long? Reveal = null);
 
 /// <summary>How a search was being looked at (exact words, sort, grouping, filters), kept for the next search.</summary>
 public sealed record SearchCarry(bool Exact, int Sort, int Group, Controls.GalleryView.ViewFilters Filters);
@@ -77,6 +79,7 @@ public sealed partial class GalleryPage : Page
             if (e.NavigationMode == NavigationMode.Forward && state.ReopenViewerOnForward is { } forwardId)
                 App.MainWindow.RestoreForwardViewer(Gallery, forwardId);
         }
+        else if (request.Reveal is { } reveal) Gallery.RevealOnNextLoad(reveal);
         TitleText.Text = request.Title;
         SubtitleText.Text = request.Subtitle ?? "";
         Gallery.AlbumId = request.AlbumId;

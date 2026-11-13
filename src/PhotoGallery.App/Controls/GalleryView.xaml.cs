@@ -134,6 +134,11 @@ public sealed partial class GalleryView : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // A page kept between visits (Folders, Map, On this day) reloads when it's shown again: as it was left, and
+        // with the viewer that was open when it was left for another page, coming back with Back.
+        if (_shown) _restore ??= (_topId, SelectedIds(), null);
+        if (ReopenViewerOnLoad is { } reopen && _restore is { } restore) _restore = (restore.AnchorId, restore.Selected, reopen);
+        ReopenViewerOnLoad = null;
         _loaded = true;
         RemoveFromAlbumButton.Visibility = AlbumId is null ? Visibility.Collapsed : Visibility.Visible;
         JumpList.Visibility = Flat ? Visibility.Collapsed : Visibility.Visible;
@@ -181,6 +186,7 @@ public sealed partial class GalleryView : UserControl
         if (version != _loadVersion) return;
 
         _items = items;
+        _shown = true;
         MarkDayStarts(items, dateOrdered: !Flat && GroupMode == GroupMode.Month);
         _lastSelection.Clear();
         _previousSelection.Clear();
@@ -210,6 +216,14 @@ public sealed partial class GalleryView : UserControl
             Grid.ScrollIntoView(items[index], ScrollIntoViewAlignment.Leading);
         if (_restore is not null)
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, ApplyRestore); // after layout
+        if (_reveal is { } reveal)
+        {
+            _reveal = null;
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (!Reveal(reveal)) App.MainWindow.ShowStatus("That photo isn't in this view.");
+            });
+        }
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, UpdateCurrentDate);
     }
 
@@ -473,6 +487,43 @@ public sealed partial class GalleryView : UserControl
     public void RestoreOnNextLoad(long? anchorId, IReadOnlyList<long> selectedIds, long? openViewerId) =>
         _restore = (anchorId, selectedIds, openViewerId);
 
+    /// <summary>The viewer to open on this item when the view is next shown (set when coming back to a kept page).</summary>
+    public long? ReopenViewerOnLoad { get; set; }
+
+    /// <summary>Items have been shown (so being loaded again means being come back to).</summary>
+    private bool _shown;
+
+    /// <summary>The item at the top left, kept up to date while scrolling (it can't be found once the view is off screen).</summary>
+    private long? _topId;
+
+    private long? _reveal;
+
+    /// <summary>After the next load: <see cref="Reveal"/> this item.</summary>
+    public void RevealOnNextLoad(long id) => _reveal = id;
+
+    /// <summary>Shows an item in the middle of the view, selected (alone) and focused; false if this view doesn't have it.</summary>
+    public bool Reveal(long id)
+    {
+        if (_items.FirstOrDefault(i => i.Id == id) is not { } item) return false;
+        Grid.SelectedItems.Clear();
+        Grid.SelectedItem = item;
+        Grid.ScrollIntoView(item, ScrollIntoViewAlignment.Leading);
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            // Then down from the top to the middle, so what was taken just before and after shows around it.
+            Grid.UpdateLayout();
+            if (_scroller is null || Grid.ContainerFromItem(item) is not GridViewItem tile) return;
+            var top = tile.TransformToVisual(_scroller).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+            _scroller.ChangeView(null, _scroller.VerticalOffset + top + tile.ActualHeight / 2 - _scroller.ViewportHeight / 2, null, disableAnimation: true);
+            tile.Focus(FocusState.Programmatic);
+        });
+        return true;
+    }
+
+    /// <summary>The whole timeline as the Photos page shows it, with no filter changed: it has every photo's neighbours.</summary>
+    public bool ShowsWholeTimeline =>
+        ReferenceEquals(_baseFilter, MediaFilter.Timeline) && AlbumId is null && Filters is { Kind: 0, Rating: 0, Live: false, Screenshots: 0, People.Count: 0 };
+
     private void ApplyRestore()
     {
         if (_restore is not { } restore) return;
@@ -518,6 +569,7 @@ public sealed partial class GalleryView : UserControl
     private void UpdateCurrentDate()
     {
         var first = FirstVisibleItem();
+        if (first is not null) _topId = first.Id;
         CurrentDate.Text = !Flat && first is { } item ? item.TakenLocal.ToString("MMMM yyyy", CultureInfo.CurrentCulture) : "";
         if (!Flat && first is { } top) UpdateCurrentJump(_items.IndexOf(top));
     }
@@ -547,6 +599,13 @@ public sealed partial class GalleryView : UserControl
             menu.Items.Add(MenuItem("Open", Symbol.OpenFile, () => Open(state.Item)));
         menu.Items.Add(RateMenu(ids));
         if (ids.Count > 1) menu.Items.Add(MenuItem("Show their track on the map", Symbol.Directions, () => ShowTrack(ids)));
+        if (ids.Count == 1 && !ShowsWholeTimeline)
+        {
+            var reveal = MenuItem("Show in timeline", Symbol.Pictures, () => App.MainWindow.ShowInTimeline(state.Item.Id, this));
+            reveal.Icon = new FontIcon { Glyph = "" }; // as Photos in the menu
+            reveal.KeyboardAcceleratorTextOverride = "T";
+            menu.Items.Add(reveal);
+        }
         var copy = MenuItem(ids.Count == 1 ? "Copy" : $"Copy {ids.Count:N0}", Symbol.Copy, () => _ = Clipboard.CopyAsync(ids));
         copy.KeyboardAcceleratorTextOverride = "Ctrl+C";
         menu.Items.Add(copy);
@@ -671,6 +730,11 @@ public sealed partial class GalleryView : UserControl
         if (e.Key == VirtualKey.Enter && Grid.SelectedItem is MediaSummary item)
         {
             Open(item);
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.T && Grid.SelectedItems.Count == 1 && Grid.SelectedItem is MediaSummary shown && !IsDown(VirtualKey.Control) && !IsDown(VirtualKey.Menu))
+        {
+            App.MainWindow.ShowInTimeline(shown.Id, this);
             e.Handled = true;
         }
         else if (e.Key == VirtualKey.C && Grid.SelectedItems.Count > 0 && IsDown(VirtualKey.Control) && !IsDown(VirtualKey.Menu))

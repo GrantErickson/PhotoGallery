@@ -768,6 +768,9 @@ public sealed partial class ViewerControl : UserControl
             case VirtualKey.E:
                 OpenEditor();
                 break;
+            case VirtualKey.T when !IsDown(VirtualKey.Control):
+                ShowInTimeline();
+                break;
             case VirtualKey.Delete:
                 _ = DeleteCurrentAsync();
                 break;
@@ -1005,6 +1008,14 @@ public sealed partial class ViewerControl : UserControl
         S.Thumbnails.Invalidate([_current.Id]);
         _changed = true;
         _ = ShowIndexAsync(_index);
+    }
+
+    private void OnShowInTimeline(object sender, RoutedEventArgs e) => ShowInTimeline();
+
+    /// <summary>The grid of the whole timeline around this photo (Back comes back here).</summary>
+    private void ShowInTimeline()
+    {
+        if (_current is { } item) App.MainWindow.ShowInTimeline(item.Id);
     }
 
     private void OnCopy(object sender, RoutedEventArgs e)

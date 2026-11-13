@@ -40,6 +40,9 @@
                         <ProgressRing x:Name="LiveBusy" Width="14" Height="14" IsActive="False" />
                     </StackPanel>
                 </Button>
+                <Button Click="OnShowInTimeline" ToolTipService.ToolTip="Show in timeline, among the photos taken around it (T)" Style="{StaticResource SubtleButtonStyle}">
+                    <FontIcon Glyph="&#xE91B;" FontSize="16" />
+                </Button>
                 <Button x:Name="SimilarButton" Click="OnFindSimilar" ToolTipService.ToolTip="Similar photos" Style="{StaticResource SubtleButtonStyle}">
                     <FontIcon Glyph="&#xE8A9;" FontSize="16" />
                 </Button>
